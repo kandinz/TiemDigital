@@ -45,7 +45,6 @@ const productSchema = z.object({
   description: z.string().max(10000),
   category: z.string().min(1).max(80),
   selling_price: z.number().int().min(1000).max(100000000),
-  price_xtr: z.number().int().min(0).max(1000000),
   in_stock: z.boolean(),
   image_url: z
     .union([z.literal(""), z.url().refine((s) => s.startsWith("https://"))])
@@ -97,7 +96,7 @@ export async function adminApi(request: Request, env: Env) {
     const [payments, wallets, review, backlog, reconciliation] =
       await Promise.all([
         env.DB.prepare(
-          "SELECT currency,SUM(total) AS total,COUNT(*) AS count FROM orders WHERE payment_status='PAID' GROUP BY currency",
+          "SELECT currency,channel,SUM(total) AS total,COUNT(*) AS count FROM orders WHERE payment_status='PAID' GROUP BY currency,channel",
         ).all(),
         env.DB.prepare(
           "SELECT COALESCE(SUM(balance),0) AS liability FROM wallets",
@@ -357,7 +356,9 @@ export async function adminApi(request: Request, env: Env) {
   if (path === "/products" && request.method === "GET")
     return json({
       products: (
-        await env.DB.prepare("SELECT * FROM products ORDER BY id DESC").all()
+        await env.DB.prepare(
+          "SELECT id,name,description,category,image_url,selling_price,in_stock,updated_at FROM products ORDER BY id DESC",
+        ).all()
       ).results,
     });
   if (path === "/products" && request.method === "POST") {
@@ -365,7 +366,7 @@ export async function adminApi(request: Request, env: Env) {
     const p = await readBody(request, productSchema);
     await env.DB.batch([
       env.DB.prepare(
-        "INSERT INTO products(id,name,description,category,image_url,selling_price,price_xtr,in_stock,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,description=excluded.description,category=excluded.category,image_url=excluded.image_url,selling_price=excluded.selling_price,price_xtr=excluded.price_xtr,in_stock=excluded.in_stock,updated_at=excluded.updated_at",
+        "INSERT INTO products(id,name,description,category,image_url,selling_price,in_stock,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,description=excluded.description,category=excluded.category,image_url=excluded.image_url,selling_price=excluded.selling_price,in_stock=excluded.in_stock,updated_at=excluded.updated_at",
       ).bind(
         p.id,
         p.name,
@@ -373,7 +374,6 @@ export async function adminApi(request: Request, env: Env) {
         p.category,
         p.image_url || null,
         p.selling_price,
-        p.price_xtr,
         Number(p.in_stock),
         new Date().toISOString(),
       ),
@@ -384,7 +384,7 @@ export async function adminApi(request: Request, env: Env) {
         admin.email,
         "PRODUCT_SAVE",
         String(p.id),
-        JSON.stringify({ priceVnd: p.selling_price, priceXtr: p.price_xtr }),
+        JSON.stringify({ priceVnd: p.selling_price }),
       ),
     ]);
     return json({ ok: true });

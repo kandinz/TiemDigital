@@ -48,7 +48,6 @@ interface Product {
   category: string;
   image_url: string | null;
   selling_price: number;
-  price_xtr: number;
   in_stock: boolean | number;
 }
 interface Customer {
@@ -553,8 +552,8 @@ function Finance({ admin, run }: { admin: Admin; run: Run }) {
             />
           </label>
           <p className="muted">
-            Dùng lý do ở trên. Hoàn ngân hàng/Stars cần xử lý theo nhà cung cấp,
-            không ghi giả là đã hoàn.
+            Dùng lý do ở trên. Hoàn chuyển khoản cần xử lý theo ngân hàng, không
+            ghi giả là đã hoàn.
           </p>
           <button disabled={reason.length < 5}>Gửi yêu cầu hoàn số dư</button>
         </form>
@@ -633,7 +632,6 @@ function Products({ run }: { run: Run }) {
     category: "Khác",
     image_url: "",
     selling_price: 10000,
-    price_xtr: 0,
     in_stock: false,
   });
   async function load() {
@@ -653,8 +651,7 @@ function Products({ run }: { run: Run }) {
             <thead>
               <tr>
                 <th>Sản phẩm</th>
-                <th>Giá website</th>
-                <th>Giá bot</th>
+                <th>Giá VND (website & Telegram)</th>
                 <th>Mở bán</th>
               </tr>
             </thead>
@@ -665,7 +662,6 @@ function Products({ run }: { run: Run }) {
                     <button onClick={() => setProduct(p)}>{p.name}</button>
                   </td>
                   <td>{amountLabel(p.selling_price)}</td>
-                  <td>{amountLabel(p.price_xtr, "XTR")}</td>
                   <td>{p.in_stock ? "Có" : "Không"}</td>
                 </tr>
               ))}
@@ -724,17 +720,6 @@ function Products({ run }: { run: Run }) {
                     ...product,
                     selling_price: Number(e.target.value),
                   })
-                }
-              />
-            </label>
-            <label>
-              Giá Stars (0 = không bán trong bot)
-              <input
-                type="number"
-                min={0}
-                value={product.price_xtr}
-                onChange={(e) =>
-                  setProduct({ ...product, price_xtr: Number(e.target.value) })
                 }
               />
             </label>
@@ -1134,7 +1119,12 @@ function ReadonlyPanel({ path, run }: { path: string; run: Run }) {
 }
 function Overview({ run }: { run: Run }) {
   const [data, setData] = useState<{
-    payments: { currency: string; total: number; count: number }[];
+    payments: {
+      currency: string;
+      channel: string;
+      total: number;
+      count: number;
+    }[];
     wallets: { liability: number };
     review: { count: number };
     backlog: { count: number };
@@ -1159,8 +1149,11 @@ function Overview({ run }: { run: Run }) {
             <strong>{data.backlog.count}</strong>
           </div>
           {data.payments.map((p) => (
-            <div className="metric" key={p.currency}>
-              <span>{p.count} đơn đã thanh toán</span>
+            <div className="metric" key={`${p.currency}:${p.channel}`}>
+              <span>
+                {p.count} đơn đã thanh toán ·{" "}
+                {p.channel === "telegram" ? "Telegram" : "Website"}
+              </span>
               <strong>{amountLabel(p.total, p.currency)}</strong>
             </div>
           ))}
@@ -1173,8 +1166,8 @@ function Overview({ run }: { run: Run }) {
           hình ngân hàng và thay đổi số dư cần hai người phê duyệt.
         </p>
         <p className="muted">
-          Đơn website nhận TPBank hoặc số dư VND. Đơn hàng số trong Telegram
-          nhận Stars.
+          Website và Telegram dùng chung tài khoản, giá VND và số dư. Cả hai
+          kênh nhận thanh toán bằng số dư hoặc QR TPBank.
         </p>
       </section>
     </>

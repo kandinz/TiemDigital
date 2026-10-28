@@ -1,6 +1,6 @@
 # Kế hoạch nền tảng Tiệm Digital: tài khoản, số dư, TPBank, admin và Telegram
 
-Ngày: 28/10/2026 — trạng thái: đề xuất kiến trúc, chưa triển khai hay deploy.
+Ngày: 28/10/2026 — cập nhật theo yêu cầu hiệu chỉnh: Telegram và website dùng chung tài khoản, số dư VND và QR TPBank; không dùng Stars. Đã có mã nguồn triển khai, chưa deploy production.
 
 ## 1. Phạm vi và quyết định kiến trúc
 
@@ -9,12 +9,12 @@ Yêu cầu đã xác nhận: TPBank nhận tiền; admin quản lý cả website
 Đề xuất:
 
 - Website: đăng ký/đăng nhập, quản lý hồ sơ, nạp số dư bằng QR TPBank, mua bằng số dư hoặc QR trực tiếp theo đơn.
-- Telegram: bán hàng số bằng Stars; quản lý đơn và hỗ trợ. Không dùng số dư VND hoặc QR ngân hàng để thay thế Stars trong giao dịch hàng số bên trong Telegram.
-- Backend dùng chung: danh mục, đơn hàng, thanh toán, sổ cái, kho hàng số, giao hàng và audit. Mỗi kênh có chính sách thanh toán riêng.
+- Telegram: quản lý đơn, nạp tiền và mua hàng bằng QR TPBank hoặc số dư VND của cùng tài khoản website. Không tạo ví riêng và không thanh toán Stars.
+- Backend dùng chung: tài khoản, giá VND, đơn hàng, thanh toán, sổ cái, giao hàng và audit. Cả hai kênh gọi cùng service thanh toán và dùng cùng số dư.
 - Cloudflare Workers + Static Assets, D1, Queues, Cron, R2, Access, Turnstile, Secrets và Email Service. Không cần VPS cho phương án TPBank qua nhà cung cấp phù hợp.
 - Bắt đầu một cửa hàng, một tài khoản TPBank hoạt động và tiền VND. Không xây multi-tenant, ví chuyển tiền ngang hàng hoặc rút tiền tự động trong bản đầu.
 
-**Ràng buộc Telegram:** Telegram yêu cầu Stars cho hàng số bán trong bot/mini app, kể cả khi có website riêng. Thiết kế bot dùng `XTR`; không coi QR ngoài hoặc số dư nạp bằng ngân hàng là đường vòng hợp lệ. [Telegram digital payments](https://core.telegram.org/bots/payments-stars)
+**Quyết định đã hiệu chỉnh:** người dùng yêu cầu QR TPBank và số dư chung cho cả web/bot. Tài liệu Telegram yêu cầu Stars cho hàng số trong bot; đây là rủi ro vận hành nền tảng cần theo dõi, không phải luồng thanh toán được chọn trong sản phẩm. [Telegram policy](https://core.telegram.org/bots/payments-stars)
 
 ## 2. Hiện trạng đã kiểm tra từ mã nguồn
 
@@ -98,7 +98,7 @@ Auth khách hàng dùng thư viện đã được duy trì, PoC tương thích W
 
 Quy ước bản đầu: số dư là khoản trả trước dùng mua hàng tại Tiệm Digital; không có chuyển tiền giữa người dùng hoặc rút tự động. Chính sách hạn mức, hoàn tiền và điều kiện cung cấp dịch vụ phải được duyệt trước khi nhận nạp thật.
 
-- Mọi số tiền lưu integer theo đơn vị nhỏ nhất; VND dùng đồng, Stars dùng số nguyên XTR; không cộng gộp VND/XTR hoặc dùng float cho tiền.
+- Mọi số tiền mới đều là VND, lưu integer theo đơn vị đồng; không dùng float. Trường tiền tệ cũ chỉ phục vụ đọc lịch sử, không dùng để tạo thanh toán mới.
 - Ledger hai vế bất biến: mỗi journal cùng currency phải cân bằng; tài khoản liability của khách và tài khoản clearing ngân hàng/doanh thu được phân biệt. Quy tắc ghi nhận kế toán cần kế toán duyệt.
 - `wallet_accounts.available_balance` là projection có kiểm soát, cập nhật cùng transaction với ledger; có kiểm tra tái tính và cảnh báo lệch. UI không có API ghi đè số dư.
 - Trừ ví: claim thanh toán đơn chưa trả → trừ có điều kiện `available_balance >= amount` → ghi journal → chuyển PAID → ghi outbox trong một atomic operation. Không đọc số dư rồi ghi lại bằng hai request riêng.
@@ -137,17 +137,17 @@ D1 và Queue không có transaction chung. Inbox/outbox phải lưu trước, c�
 
 Nếu kho key nội bộ: giữ chỗ/cấp key bằng transaction, UNIQUE key allocation theo order item, mã hóa giá trị key và chỉ chủ đơn được nhận. Nếu supplier ngoài có idempotency key thì dùng; nếu timeout mà chưa rõ kết quả thì tra cứu trước retry. Không hứa giao hàng “exactly once” khi supplier không có cơ chế đó. Bản đầu cho phép giao thủ công có audit nếu GumTool chỉ cung cấp catalog.
 
-## 7. Bot Telegram và liên kết tài khoản
+## 7. Bot Telegram và tài khoản thanh toán chung
 
-- Lệnh/menu: `/start`, sản phẩm, giỏ hàng, đơn của tôi, liên kết tài khoản, hỗ trợ, `/paysupport`.
-- Hàng số mua trong bot dùng Stars. Backend có `price_vnd` và `price_xtr` riêng được admin duyệt; không tự coi Stars là số dư VND.
-- Tạo invoice gắn order/server nonce và người mua; pre-checkout kiểm tra người mua, currency, giá, tồn kho và hạn đơn. Đáp ứng deadline Telegram; không đặt pre-checkout sau queue có độ trễ không giới hạn.
-- Chỉ `successful_payment` hợp lệ mới settle đơn Stars; UNIQUE charge ID và payment intent chống lặp. Refund Stars theo charge gốc và có journal/audit tương ứng. [Telegram payment lifecycle](https://core.telegram.org/bots/payments-stars)
-- Webhook kiểm tra `X-Telegram-Bot-Api-Secret-Token`, dedupe `update_id` theo bot; callback kiểm tra quyền sở hữu và trạng thái server, không tin giá/order owner trong callback data. [Bot API](https://core.telegram.org/bots/api#setwebhook)
-- Liên kết: khách đăng nhập website tạo mã một lần, TTL ngắn, chỉ lưu hash; xác nhận Telegram ID và xác nhận lại trên website trước khi gắn. Không ghép theo username, tên hiển thị hoặc email tự khai trong chat.
-- Tài khoản Telegram chỉ xem đơn của mình trong private chat. Không gửi key, số dư hoặc thông tin khách vào group.
-- Đơn web có thể gắn tài khoản sau xác thực để theo dõi/hỗ trợ; không biến bot thành checkout QR/VND cho hàng số. Thông báo key mặc định dùng trang nhận hàng đã xác thực; tránh lưu key rõ trong lịch sử chat.
-- API gửi Telegram bị rate limit/timeout: outbox retry theo chỉ dẫn API; trường hợp gửi thành công nhưng mất response có thể lặp thông báo, nhưng không cấp key hoặc settle tiền lại.
+- Menu: `/start`, `/products`, `/balance`, `/topup`, `/orders`, `/support` và `/paysupport`.
+- Liên kết Telegram ID với user đã đăng nhập website qua token một lần, TTL ngắn, hash trong D1 và xác nhận lại tại website. Không ghép qua username/email tự khai.
+- Danh mục và giá VND giống web. Tạo order channel=telegram nhưng cùng owner, tiền tệ VND và state machine.
+- Khách chọn trả bằng số dư hoặc QR TPBank. Nạp qua `/topup <amount>` tạo TOPUP intent và cộng đúng ví chung khi ngân hàng xác nhận.
+- Bot gọi cùng createOrder/payWallet/createIntent/intentFor với API web; website trả được đơn bot và bot trả được đơn web của chính owner.
+- Chỉ webhook TPBank/đối soát hoặc atomic wallet debit mới xác nhận PAID. Nút kiểm tra trạng thái không phải bằng chứng trả tiền. Không có luồng invoice/Stars.
+- Webhook bot có secret, dedupe update_id, giới hạn private chat và rate limit theo cùng user ID. Callback phải kiểm ownership, account lock và liên kết hiện hành.
+- Tiền xử lý cùng ledger, idempotency, trigger và outbox. Retry webhook/bấm lại/race web-bot không trừ thêm số dư hoặc settle hai lần.
+- Bot chỉ gửi thông báo và liên kết nhận hàng sau xác thực; không công khai key/PII trong group hoặc lịch sử chat.
 
 ## 8. Admin cấu hình website, thanh toán và vận hành
 
@@ -155,17 +155,17 @@ Khung giao diện: sidebar trái; khu vực chính danh sách/chi tiết; trạn
 
 | Màn hình | Chức năng |
 |---|---|
-| Tổng quan | Doanh số VND/Stars riêng, số dư liability, đơn chưa trả, giao hàng lỗi, đối soát chậm |
+| Tổng quan | Doanh số VND theo kênh web/Telegram, số dư liability, đơn chưa trả, giao hàng lỗi, đối soát chậm |
 | Khách hàng | Hồ sơ, khóa tài khoản, thu hồi phiên, liên kết Telegram, lịch sử đơn/sổ cái; hạn chế xem PII |
 | Số dư và ledger | Nạp/trừ/hoàn, journal gốc/bù, đối chiếu, yêu cầu điều chỉnh; không chỉnh trực tiếp balance |
 | Đơn hàng | Kênh web/Telegram, payment/fulfillment riêng, timeline, giao thủ công và retry có audit |
 | Giao dịch TPBank | Inbox, giao dịch unmatched, review thiếu/thừa, đối soát lại theo khoảng ngày |
 | Thanh toán | TPBank account/BIN/holder, provider, trạng thái kết nối, TTL intent, hạn mức top-up, bảo trì |
-| Sản phẩm/kho | Nguồn catalog, giá VND/Stars, tồn kho/giữ hàng, phương thức giao key, voucher |
+| Sản phẩm/kho | Nguồn catalog, giá VND dùng chung, tồn kho/giữ hàng, phương thức giao key, voucher |
 | Pages | Danh sách slug, SEO, hero/banner, FAQ, liên hệ, footer, điều khoản và hướng dẫn |
 | Biên tập page | Block được whitelist, draft → preview → publish → rollback; không nhúng HTML/JS tùy ý |
 | Media | Upload ảnh có giới hạn kích thước/type, kiểm tra nội dung, tách R2 public media khỏi bucket private |
-| Telegram | Bot identity, secret status, menu/template, webhook health, lỗi gửi và cấu hình Stars |
+| Telegram | Bot identity, secret status, menu/template, webhook health, lỗi gửi và cấu hình QR/số dư chung |
 | Bảo mật/audit | Phân quyền, phiên admin, diff cấu hình, log điều chỉnh ví, phê duyệt, cảnh báo |
 
 Phân quyền: Owner, Finance, Support, Content Editor, Auditor. Editor không đổi tài khoản nhận tiền; Support không cộng số dư; Finance tạo yêu cầu điều chỉnh và không tự duyệt yêu cầu của mình.
@@ -226,13 +226,13 @@ Mọi read/write nhạy cảm kiểm tra ownership/RBAC ở server. Tất cả c
 
 | Giai đoạn | Công việc | Tiêu chí hoàn thành |
 |---|---|---|
-| 0. Chốt contract và PoC | TPBank direct/SePay, account type, auth runtime, Email Service, Stars sandbox, catalog/fulfillment contract | Chứng minh nhận và đối soát được giao dịch, chốt luồng bank và Telegram |
+| 0. Chốt contract và PoC | TPBank direct/SePay, account type, auth runtime, Email Service, Telegram webhook sandbox, catalog/fulfillment contract | Chứng minh nhận và đối soát được giao dịch, chốt luồng bank và Telegram |
 | 1. Nền tảng Cloudflare | Worker boundaries, D1 schema, bindings, môi trường, Access/MFA, logs, CI | Không có đường vòng admin; staging tách production |
 | 2. Tài khoản và commerce | Auth, hồ sơ, giá server, order ownership, idempotency, catalog | Sửa giá client không ảnh hưởng tổng tiền server |
 | 3. QR và đối soát | Intent order/top-up, webhook inbox, atomic settlement, Queue/outbox, Cron, review | Webhook lặp/mất/đảo thứ tự không ghi tiền sai |
 | 4. Ví | Ledger, top-up credit, wallet debit, refund, approvals, customer wallet UI | Race không âm ví, không double credit/debit, sổ cái cân |
 | 5. Admin/CMS | Pages, media, preview/publish/rollback, finance, TPBank config, RBAC/audit | Editor không tác động tiền; thay config có version/phê duyệt |
-| 6. Telegram | Link account, menu/cart, XTR invoice, payment updates, hỗ trợ, notifications | Không giao khi mới pre-checkout; không settle lại charge lặp |
+| 6. Telegram | Link account, menu/cart, QR/số dư, payment status, hỗ trợ, notifications | Bot/web dùng chung tiền; callback hoặc webhook lặp không trừ số dư hai lần |
 | 7. Pilot production | Security tests, restore drill, giao dịch TPBank nhỏ có kiểm soát, runbooks, monitoring | Toàn bộ nghiệm thu bên dưới đạt trước mở nạp tiền rộng |
 
 Ước lượng lập kế hoạch: khoảng 5–8 tuần cho một developer có kinh nghiệm, chưa gồm thời gian duyệt hợp đồng/API ngân hàng hoặc chờ quyền nền tảng. Cần ước lượng lại sau PoC và quyết định giao key tự động hay thủ công.
@@ -253,7 +253,7 @@ Các kịch bản kiểm thử:
 8. Khách A không đọc đơn/ví/key của B bằng sửa ID; user Telegram khác không dùng callback/link token của A.
 9. Trừ ví thành công nhưng response timeout: retry cùng key nhận kết quả cũ; cùng key khác body bị từ chối.
 10. CMS XSS, CSRF, admin bypass qua preview URL, đổi TPBank không đủ role/phê duyệt: bị chặn.
-11. Stars pre-checkout chưa phải PAID; charge lặp hoặc currency/amount sai không cấp key; phản hồi pre-checkout trong deadline.
+11. Bot/web cùng trả một đơn chỉ có một settlement; tài khoản khác hoặc bot đã hủy liên kết không được thanh toán/đọc đơn.
 12. Restore D1 rồi reconcile không cộng lại tiền/giao lại key đã thực hiện; giao dịch ngoại hệ còn đủ bằng chứng để phục hồi.
 13. `npm run build` và `npm run lint` hiện có phải pass khi implementation thay frontend; bổ sung integration tests trên D1/Workers runtime cho tiền/auth và kiểm thử E2E staging.
 
@@ -261,7 +261,7 @@ Cần chốt khi triển khai, không ngăn việc review plan này:
 
 - TPBank cá nhân hay doanh nghiệp; đã có API contract trực tiếp hay dùng SePay API Banking?
 - Hạn mức nạp/số dư, chính sách hoàn, khoản nạp đến muộn và người duyệt điều chỉnh tiền.
-- Bot có chấp nhận mô hình Stars cho hàng số; giá XTR và người vận hành tranh chấp/refund.
+- Bot username, webhook secret và người vận hành hỗ trợ/tranh chấp thanh toán ngân hàng.
 - Domain, gói Cloudflare, Email Service entitlement, số admin và IdP MFA.
 - Nguồn giá/tồn kho chuẩn, API giao sản phẩm hoặc quy trình thủ công; chính sách bảo vệ key/tài khoản bán.
 

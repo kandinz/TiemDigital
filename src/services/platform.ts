@@ -7,7 +7,7 @@ export interface PlatformOrder {
   id: string;
   user_id: string;
   channel: string;
-  currency: "VND" | "XTR";
+  currency: "VND" | "XTR"; // Historical rows may retain XTR; no XTR checkout exists.
   total: number;
   items: { productId: number; name: string; price: number; quantity: number }[];
   customer: { fullName: string; email: string; phone: string; note?: string };
@@ -77,7 +77,7 @@ export async function api<T>(
 }
 export const amountLabel = (amount: number, currency = "VND") =>
   currency === "XTR"
-    ? `${amount.toLocaleString("vi-VN")} ⭐`
+    ? `${amount.toLocaleString("vi-VN")} XTR (lịch sử)`
     : `${amount.toLocaleString("vi-VN")} ₫`;
 export const timeLabel = (value: number) =>
   new Date(value * 1000).toLocaleString("vi-VN");

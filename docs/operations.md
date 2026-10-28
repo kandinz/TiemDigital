@@ -3,9 +3,9 @@
 ## Phạm vi bản triển khai
 
 - Website: Better Auth email OTP, tài khoản/phiên đăng nhập, danh mục giá server, đơn hàng riêng tư, ví VND, nạp QR TPBank, trả bằng ví hoặc QR, nhận sản phẩm đã mã hóa.
-- Admin: JWT Cloudflare Access + vai trò D1, khách hàng/khóa phiên, sản phẩm giá VND/XTR, đơn và giao hàng thủ công, CMS page và trang chủ, lịch sử phiên bản, phê duyệt hai người, sổ cái, audit, đối soát.
+- Admin: JWT Cloudflare Access + vai trò D1, khách hàng/khóa phiên, sản phẩm giá VND dùng chung, đơn và giao hàng thủ công, CMS page và trang chủ, lịch sử phiên bản, phê duyệt hai người, sổ cái, audit, đối soát.
 - Ngân hàng: SePay API Banking liên kết tài khoản TPBank. Webhook HMAC + timestamp; cron truy vấn SePay User API v2. Không phải API TPBank trực tiếp.
-- Telegram: catalog, mua từng sản phẩm bằng Stars, pre-checkout, successful payment, hỗ trợ `/paysupport`, liên kết tài khoản hai bước và thông báo đơn. Không thanh toán hàng số trong bot bằng QR hoặc ví VND.
+- Telegram: catalog VND, mua hàng bằng số dư tài khoản hoặc QR TPBank, nạp số dư bằng QR, `/balance`, `/orders`, `/support`; liên kết tài khoản hai bước. User, số dư, giá, đơn hàng, webhook ngân hàng và sổ cái dùng chung với website.
 - Runtime hiện tại là một Worker phân module (API, auth, commerce, payment, admin, bot, operations); không có service binding/core worker độc lập. Các endpoint admin vẫn xác thực JWT và role ngay trong Worker.
 - Giao hàng thủ công có mã hóa là luồng đang hoạt động. Catalog được quản lý trong D1 bởi Owner; không tự dùng giá fallback cũ hoặc gọi GumTool để giao key khi chưa có contract supplier.
 
@@ -42,13 +42,19 @@ Không có deployment, liên kết ngân hàng hay tạo bot nào được tự 
 4. Owner nhập TPBank BIN 970423, số tài khoản/chủ tài khoản và hạn mức, tạo yêu cầu bật thanh toán; Owner khác duyệt. Cần có cả webhook secret và API token đối soát.
 5. Chuyển một khoản nhỏ có kiểm soát: nạp ví; xác minh sổ cái; trả đơn ví; trả đơn QR trực tiếp; thử webhook lặp; đối chiếu sao kê. Chỉ mở nhận tiền rộng sau khi pilot đạt.
 
-Số dư chỉ dùng trong cửa hàng, chưa có chuyển tiền ngang hàng hoặc rút tiền tự động. Hoàn ví chỉ áp dụng đơn vốn trả bằng ví, cần hai người duyệt. Hoàn chuyển khoản và Stars hiện được xử lý theo quy trình hỗ trợ/nhà cung cấp bên ngoài; giao diện không tự đánh dấu đã hoàn hai loại này. Chưa có quy trình tự động hoàn Stars trong admin.
+Số dư chỉ dùng trong cửa hàng, chưa có chuyển tiền ngang hàng hoặc rút tiền tự động. Hoàn ví chỉ áp dụng đơn vốn trả bằng ví, cần hai người duyệt. Hoàn chuyển khoản hiện được xử lý theo quy trình hỗ trợ/ngân hàng bên ngoài; giao diện không tự đánh dấu đã hoàn khi ngân hàng chưa xác nhận.
 
 ## Telegram
 
-Tạo bot bằng BotFather thuộc chủ cửa hàng. Cấu hình token/username/secret ở Cloudflare; gọi `setWebhook` bằng công cụ quản trị của bạn với URL `https://<shop-domain>/webhooks/telegram`, `secret_token` và `allowed_updates=["message","callback_query","pre_checkout_query"]`. Không ghi token vào URL trong tài liệu hoặc log.
+Tạo bot bằng BotFather thuộc chủ cửa hàng. Cấu hình token/username/secret ở Cloudflare; gọi `setWebhook` bằng công cụ quản trị của bạn với URL `https://<shop-domain>/webhooks/telegram`, `secret_token` và `allowed_updates=["message","callback_query"]`. Không ghi token vào URL trong tài liệu hoặc log.
 
-Khách tạo liên kết trong `/account`, mở bot với token một lần, bot trả Telegram ID để khách xác nhận lại trên website. Username không dùng làm căn cứ sở hữu. Đơn bot thanh toán XTR, chỉ successful_payment mới ghi PAID; pre-checkout không phải bằng chứng thanh toán. Giá Stars bằng 0 nghĩa là không bán trên bot. Giao key qua trang tài khoản; bot chỉ gửi thông báo để hạn chế lộ key trong lịch sử chat.
+Khách tạo liên kết trong `/account`, mở bot với token một lần, bot trả Telegram ID để khách xác nhận lại trên website. Username không dùng làm căn cứ sở hữu. Sau liên kết, bot map Telegram ID sang cùng user ID đã xác minh email; không tạo ví riêng hoặc thu thập mật khẩu trong chat.
+
+Luồng mua: `/products` → chọn sản phẩm → tạo đơn VND → chọn **Thanh toán bằng số dư** hoặc **QR TPBank**. Luồng nạp: `/topup 100000` hoặc chọn mức nạp → QR TPBank → webhook ngân hàng xác nhận → số dư chung được cộng. `/balance` đọc đúng số dư website; `/orders` hiển thị đơn từ cả hai kênh. Nút kiểm tra giao dịch chỉ đọc trạng thái server, không tự đánh dấu đã trả. Bot cũng có thể thanh toán đơn web còn chờ của chính khách; web có thể thanh toán đơn bot.
+
+Bot gọi cùng service createOrder/payWallet/createIntent/intentFor với HTTP API website trong cùng Worker. Tất cả thao tác tiền có idempotency key và kiểm ownership; phiên Telegram bị hủy liên kết hoặc tài khoản bị khóa không thể tiếp tục trả tiền. Không còn sendInvoice, pre-checkout, hay handler ghi nhận Stars. Các trường XTR/STARS cũ trên database đã có được giữ để bảo toàn lịch sử; schema mới chỉ có VND và BANK/WALLET, guard cũng chặn loại thanh toán cũ trên database hiện hữu. Database có sẵn phải apply schema với `--refresh-triggers` khi dừng ghi. Giao key qua trang tài khoản; bot chỉ gửi thông báo để hạn chế lộ key trong lịch sử chat.
+
+Yêu cầu QR/số dư cho hàng số trong bot là quyết định sản phẩm được người dùng xác nhận. Tài liệu Telegram hiện yêu cầu Stars cho hàng số bán trong bot/mini app; mô hình này có thể bị Telegram hạn chế. Xem nguồn: https://core.telegram.org/bots/payments-stars .
 
 ## Bất biến tiền và giới hạn
 

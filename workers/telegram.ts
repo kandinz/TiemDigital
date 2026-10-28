@@ -1,7 +1,8 @@
 import { z } from "zod";
-import type { Actor, Env, StoredOrder } from "./types";
-import { HttpError, id, json, limitedText, now, sha256 } from "./http";
-import { pricedItems } from "./commerce";
+import type { Actor, Env } from "./types";
+import { HttpError, json, limitedText, now, rateLimit, sha256 } from "./http";
+import { createOrder, orderFor, payWallet, walletFor } from "./commerce";
+import { createIntent, intentFor, qrImageUrl } from "./payments";
 
 export async function telegramCall(env: Env, method: string, body: unknown) {
   if (!env.TELEGRAM_BOT_TOKEN)
@@ -48,48 +49,30 @@ export async function createLink(env: Env, actor: Actor) {
   };
 }
 const tgUser = z.object({ id: z.number().int().positive() });
+const chatSchema = z.object({ id: z.number().int(), type: z.string() });
 const telegramUpdateSchema = z.object({
   update_id: z.number().int().nonnegative(),
   message: z
     .object({
       from: tgUser,
-      chat: z.object({ id: z.number().int(), type: z.string() }),
-      text: z.string().optional(),
-      successful_payment: z
-        .object({
-          currency: z.string(),
-          total_amount: z.number().int(),
-          invoice_payload: z.string(),
-          telegram_payment_charge_id: z.string().min(1),
-        })
-        .optional(),
+      chat: chatSchema,
+      text: z.string().max(4096).optional(),
     })
     .optional(),
   callback_query: z
     .object({
       id: z.string(),
       from: tgUser,
-      data: z.string().optional(),
-      message: z
-        .object({ chat: z.object({ id: z.number().int(), type: z.string() }) })
-        .optional(),
-    })
-    .optional(),
-  pre_checkout_query: z
-    .object({
-      id: z.string(),
-      from: tgUser,
-      currency: z.string(),
-      total_amount: z.number().int(),
-      invoice_payload: z.string(),
+      data: z.string().max(64).optional(),
+      message: z.object({ chat: chatSchema }).optional(),
     })
     .optional(),
 });
+
 export async function telegramWebhook(request: Request, env: Env) {
   if (!env.TELEGRAM_WEBHOOK_SECRET)
     throw new HttpError(503, "Webhook bot chưa cấu hình");
   const supplied = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? "";
-  // Compare fixed-size digests through WebCrypto rather than a variable-length string comparison.
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(env.TELEGRAM_WEBHOOK_SECRET),
@@ -130,13 +113,89 @@ export async function telegramWebhook(request: Request, env: Env) {
   await processTelegramInbox(env, inboxId);
   return json({ ok: true });
 }
-async function linked(env: Env, telegramId: number) {
+
+async function linkedActor(
+  env: Env,
+  telegramId: number,
+): Promise<Actor | null> {
   return env.DB.prepare(
-    "SELECT l.user_id,l.chat_id FROM telegram_links l LEFT JOIN customers c ON c.id=l.user_id WHERE l.telegram_id=? AND COALESCE(c.disabled,0)=0",
+    "SELECT u.id,u.email,u.name FROM telegram_links l JOIN user u ON u.id=l.user_id LEFT JOIN customers c ON c.id=u.id WHERE l.telegram_id=? AND u.emailVerified=1 AND COALESCE(c.disabled,0)=0",
   )
     .bind(String(telegramId))
-    .first<{ user_id: string; chat_id: string }>();
+    .first<Actor>();
 }
+// A verified Telegram update resolves to the same Actor and calls the same
+// payment service as the HTTP website routes. No second wallet or API credential.
+function paymentRequest(env: Env, key: string, body: unknown = {}) {
+  return new Request(`${env.APP_ORIGIN}/api/orders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+    body: JSON.stringify(body),
+  });
+}
+const money = (value: number) => `${value.toLocaleString("vi-VN")} ₫`;
+async function showOrder(
+  env: Env,
+  chatId: string,
+  actor: Actor,
+  orderId: string,
+) {
+  const order = await orderFor(env, orderId, actor);
+  const canPay = order.payment_status === "UNPAID" && order.currency === "VND";
+  await sendText(
+    env,
+    chatId,
+    `Đơn ${order.id}\n${money(order.total)}\n${order.payment_status === "PAID" ? "Đã thanh toán" : order.payment_status === "REFUNDED" ? "Đã hoàn số dư" : "Chờ thanh toán"}\n${order.fulfillment_status === "DELIVERED" ? "Đã giao sản phẩm" : "Theo dõi giao hàng trong tài khoản"}`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          ...(canPay
+            ? [
+                [
+                  {
+                    text: "Thanh toán bằng số dư",
+                    callback_data: `wallet:${order.id}`,
+                  },
+                  { text: "QR TPBank", callback_data: `qr:${order.id}` },
+                ],
+              ]
+            : []),
+          [
+            { text: "Cập nhật đơn", callback_data: `status:${order.id}` },
+            { text: "Mở tài khoản", url: `${env.APP_ORIGIN}/account` },
+          ],
+        ],
+      },
+    },
+  );
+}
+async function showQr(
+  env: Env,
+  chatId: string,
+  intent: Awaited<ReturnType<typeof intentFor>>,
+) {
+  if (intent.status !== "PENDING") {
+    await sendText(
+      env,
+      chatId,
+      intent.status === "SUCCEEDED"
+        ? "Giao dịch đã được xác nhận."
+        : "QR đã hết hạn. Tạo yêu cầu mới trước khi chuyển tiền.",
+    );
+    return;
+  }
+  await telegramCall(env, "sendPhoto", {
+    chat_id: chatId,
+    photo: qrImageUrl(intent).toString(),
+    caption: `${intent.purpose === "TOPUP" ? "Nạp số dư tài khoản chung" : "Thanh toán đơn hàng"}\nSố tiền: ${money(intent.amount)}\nTPBank: ${intent.accountNumber}\nChủ tài khoản: ${intent.accountHolder}\nNội dung: ${intent.memo}\nHiệu lực đến ${new Date(intent.expiresAt * 1000).toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" })}\nChuyển đúng số tiền và nội dung. Hệ thống tự xác nhận khi nhận tiền.`,
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Kiểm tra giao dịch", callback_data: `intent:${intent.id}` }],
+      ],
+    },
+  });
+}
+
 export async function processTelegramInbox(env: Env, inboxId: string) {
   const inbox = await env.DB.prepare(
     "SELECT payload,status,created_at FROM inbox WHERE id=?",
@@ -145,140 +204,52 @@ export async function processTelegramInbox(env: Env, inboxId: string) {
     .first<{ payload: string; status: string; created_at: number }>();
   if (!inbox || inbox.status !== "PENDING") return;
   const update = telegramUpdateSchema.parse(JSON.parse(inbox.payload));
-  const checkout = update.pre_checkout_query;
+  const message = update.message;
+  const callback = update.callback_query;
+  const chat = message?.chat ?? callback?.message?.chat;
+  const sender = message?.from ?? callback?.from;
   if (
-    (checkout && now() - inbox.created_at > 8) ||
-    (update.callback_query && now() - inbox.created_at > 60)
+    chat?.type !== "private" ||
+    !sender ||
+    String(chat.id) !== String(sender.id) ||
+    (callback && now() - inbox.created_at > 60)
   ) {
-    await env.DB.prepare(
-      "UPDATE inbox SET status='DONE',error='INTERACTIVE_QUERY_EXPIRED' WHERE id=?",
-    )
+    await env.DB.prepare("UPDATE inbox SET status='DONE' WHERE id=?")
       .bind(inboxId)
       .run();
     return;
   }
-  if (checkout) {
-    const link = await linked(env, checkout.from.id);
-    const order = await env.DB.prepare(
-      "SELECT * FROM orders WHERE id=? AND user_id=?",
-    )
-      .bind(checkout.invoice_payload, link?.user_id ?? "")
-      .first<StoredOrder>();
-    let valid =
-      !!order &&
-      order.payment_status === "UNPAID" &&
-      order.currency === "XTR" &&
-      order.channel === "telegram" &&
-      checkout.currency === "XTR" &&
-      checkout.total_amount === order.total &&
-      order.created_at + 900 > now();
-    if (valid && order) {
-      try {
-        const items = JSON.parse(order.items) as {
-          productId: number;
-          quantity: number;
-          price: number;
-        }[];
-        const current = await pricedItems(env, items, "XTR");
-        valid =
-          current.reduce((sum, item) => sum + item.price * item.quantity, 0) ===
-          order.total;
-      } catch {
-        valid = false;
-      }
-    }
-    await telegramCall(env, "answerPreCheckoutQuery", {
-      pre_checkout_query_id: checkout.id,
-      ok: valid,
-      ...(!valid
-        ? {
-            error_message:
-              "Đơn không còn hợp lệ. Vui lòng tạo lại đơn hoặc liên hệ hỗ trợ.",
-          }
-        : {}),
-    });
-  } else if (update.message?.successful_payment) {
-    const payment = update.message.successful_payment;
-    const link = await linked(env, update.message.from.id);
-    const order = await env.DB.prepare(
-      "SELECT * FROM orders WHERE id=? AND user_id=?",
-    )
-      .bind(payment.invoice_payload, link?.user_id ?? "")
-      .first<StoredOrder>();
-    if (
-      !order ||
-      payment.currency !== "XTR" ||
-      order.currency !== "XTR" ||
-      order.channel !== "telegram" ||
-      payment.total_amount !== order.total
-    ) {
-      await env.DB.prepare(
-        "UPDATE inbox SET status='REVIEW',error='Sai chủ đơn, loại tiền hoặc số tiền' WHERE id=?",
-      )
-        .bind(inboxId)
-        .run();
-      return;
-    }
-    const charge = `stars:${payment.telegram_payment_charge_id}`;
-    const settled = await env.DB.prepare(
-      "SELECT order_id FROM settlements WHERE external_id=?",
-    )
-      .bind(charge)
-      .first<{ order_id: string }>();
-    if (!settled) {
-      try {
-        await env.DB.prepare(
-          "INSERT INTO settlements(id,order_id,source,external_id) VALUES(?,?,?,?)",
-        )
-          .bind(id(), order.id, "STARS", charge)
-          .run();
-      } catch (error) {
-        const previous = await env.DB.prepare(
-          "SELECT order_id FROM settlements WHERE external_id=?",
-        )
-          .bind(charge)
-          .first<{ order_id: string }>();
-        if (previous?.order_id !== order.id) {
-          if (!/UNIQUE constraint|ORDER_ALREADY_PAID/.test(String(error)))
-            throw error;
-          await env.DB.prepare(
-            "UPDATE inbox SET status='REVIEW',error='Đơn đã được thanh toán bằng giao dịch khác' WHERE id=?",
-          )
-            .bind(inboxId)
-            .run();
-          return;
-        }
-      }
-    } else if (settled.order_id !== order.id) {
-      throw new HttpError(409, "Charge đã dùng cho đơn khác");
-    }
-  } else {
-    const message = update.message;
-    const callback = update.callback_query;
-    const chat = message?.chat ?? callback?.message?.chat;
-    const sender = message?.from ?? callback?.from;
-    if (
-      chat?.type !== "private" ||
-      !sender ||
-      String(chat.id) !== String(sender.id)
-    ) {
-      await env.DB.prepare("UPDATE inbox SET status='DONE' WHERE id=?")
-        .bind(inboxId)
-        .run();
-      return;
-    }
-    const chatId = String(chat.id);
-    const text = message?.text ?? callback?.data ?? "";
-    if (callback)
+  const chatId = String(chat.id);
+  const text = message?.text ?? callback?.data;
+  // Ignore unrelated/native-payment updates. They cannot settle a bank order.
+  if (!text) {
+    await env.DB.prepare("UPDATE inbox SET status='DONE' WHERE id=?")
+      .bind(inboxId)
+      .run();
+    return;
+  }
+  if (callback) {
+    try {
       await telegramCall(env, "answerCallbackQuery", {
         callback_query_id: callback.id,
       });
+    } catch {
+      console.warn(
+        JSON.stringify({ event: "telegram_callback_ack_failed", id: inboxId }),
+      );
+    }
+  }
+  try {
     if (/^\/start [a-f0-9]{32}$/.test(text)) {
-      const challenge = await sha256(text.split(" ")[1]);
       const claimed = await env.DB.prepare(
         "UPDATE link_challenges SET telegram_id=?,chat_id=? WHERE id=? AND expires_at>? AND telegram_id IS NULL RETURNING id",
       )
-        .bind(String(sender.id), chatId, challenge, now())
+        .bind(
+          String(sender.id),
+          chatId,
+          await sha256(text.split(" ")[1]),
+          now(),
+        )
         .first();
       await sendText(
         env,
@@ -289,99 +260,158 @@ export async function processTelegramInbox(env: Env, inboxId: string) {
       );
     } else if (text === "/products" || text === "products") {
       const { results } = await env.DB.prepare(
-        "SELECT id,name,price_xtr FROM products WHERE in_stock=1 AND price_xtr>0 LIMIT 20",
-      ).all<{ id: number; name: string; price_xtr: number }>();
+        "SELECT id,name,selling_price FROM products WHERE in_stock=1 LIMIT 20",
+      ).all<{ id: number; name: string; selling_price: number }>();
       await sendText(
         env,
         chatId,
         results.length
-          ? "Chọn sản phẩm. Thanh toán trong bot bằng Telegram Stars."
-          : "Chưa có sản phẩm mở bán bằng Stars.",
+          ? "Chọn sản phẩm. Thanh toán bằng số dư chung hoặc QR TPBank."
+          : "Chưa có sản phẩm mở bán.",
         {
           reply_markup: {
             inline_keyboard: results.map((p) => [
               {
-                text: `${p.name} · ${p.price_xtr} ⭐`,
+                text: `${p.name} · ${money(p.selling_price)}`,
                 callback_data: `buy:${p.id}`,
               },
             ]),
           },
         },
       );
-    } else if (/^buy:\d+$/.test(text)) {
-      const link = await linked(env, sender.id);
-      if (!link)
+    } else if (
+      /^(buy:|wallet:|qr:|status:|intent:|topup:|\/topup|\/balance|\/orders)/.test(
+        text,
+      )
+    ) {
+      const actor = await linkedActor(env, sender.id);
+      if (!actor)
+        throw new HttpError(
+          401,
+          `Hãy đăng nhập và liên kết tài khoản Telegram tại ${env.APP_ORIGIN}/account. Tài khoản bị khóa không thể thanh toán.`,
+        );
+      const eventKey = `telegram-${String(update.update_id).padStart(12, "0")}`;
+      if (/^(buy:|wallet:|qr:|topup:|\/topup\s)/.test(text))
+        await rateLimit(env, `write:${actor.id}`, 30);
+      if (/^buy:\d+$/.test(text)) {
+        const order = await createOrder(
+          paymentRequest(env, eventKey, {
+            items: [{ productId: Number(text.slice(4)), quantity: 1 }],
+            customer: {
+              fullName: actor.name || "Khách hàng",
+              email: actor.email,
+              phone: "",
+            },
+          }),
+          env,
+          actor,
+          "telegram",
+        );
+        await showOrder(env, chatId, actor, order.id);
+      } else if (/^wallet:[A-Z0-9]+$/.test(text)) {
+        const orderId = text.slice(7);
+        const order = await orderFor(env, orderId, actor);
+        if (order.payment_status === "UNPAID")
+          await payWallet(
+            paymentRequest(env, `telegram-wallet-${orderId}`),
+            env,
+            actor,
+            orderId,
+          );
+        await showOrder(env, chatId, actor, orderId);
+      } else if (/^qr:[A-Z0-9]+$/.test(text)) {
+        const orderId = text.slice(3);
+        const order = await orderFor(env, orderId, actor);
+        if (order.payment_status !== "UNPAID")
+          await showOrder(env, chatId, actor, orderId);
+        else
+          await showQr(
+            env,
+            chatId,
+            await createIntent(
+              paymentRequest(env, eventKey),
+              env,
+              actor,
+              orderId,
+            ),
+          );
+      } else if (/^status:[A-Z0-9]+$/.test(text))
+        await showOrder(env, chatId, actor, text.slice(7));
+      else if (/^intent:[A-Z0-9]+$/.test(text)) {
+        const intent = await intentFor(env, text.slice(7), actor);
         await sendText(
           env,
           chatId,
-          `Hãy đăng nhập và liên kết Telegram trong mục Tài khoản tại ${env.APP_ORIGIN}/account.`,
+          `Giao dịch ${intent.id}: ${intent.status === "SUCCEEDED" ? "Đã nhận tiền" : intent.status === "EXPIRED" ? "Hết hạn — khoản đến muộn cần đối soát" : "Đang chờ ngân hàng xác nhận"}`,
         );
-      else {
-        const items = await pricedItems(
+        if (intent.orderId && intent.status === "SUCCEEDED")
+          await showOrder(env, chatId, actor, intent.orderId);
+      } else if (/^(\/topup\s+|topup:)\d+$/.test(text)) {
+        const amount = Number(text.replace(/^(\/topup\s+|topup:)/, ""));
+        await showQr(
           env,
-          [{ productId: Number(text.slice(4)), quantity: 1 }],
-          "XTR",
+          chatId,
+          await createIntent(
+            paymentRequest(env, eventKey, { amount }),
+            env,
+            actor,
+          ),
         );
-        const orderId = `TG${update.update_id}`;
-        await env.DB.prepare(
-          "INSERT OR IGNORE INTO orders(id,user_id,channel,currency,total,items,customer) VALUES(?,?,?,?,?,?,?)",
+      } else if (text === "/topup")
+        await sendText(
+          env,
+          chatId,
+          "Chọn số tiền nạp, hoặc nhập /topup 100000. Số dư dùng chung với website.",
+          {
+            reply_markup: {
+              inline_keyboard: [50000, 100000, 200000].map((amount) => [
+                { text: money(amount), callback_data: `topup:${amount}` },
+              ]),
+            },
+          },
+        );
+      else if (text === "/balance")
+        await sendText(
+          env,
+          chatId,
+          `Số dư khả dụng: ${money((await walletFor(env, actor)).balance)}\nĐây là cùng số dư trên tài khoản website.`,
+        );
+      else if (text === "/orders") {
+        const { results } = await env.DB.prepare(
+          "SELECT id FROM orders WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 10",
         )
-          .bind(
-            orderId,
-            link.user_id,
-            "telegram",
-            "XTR",
-            items[0].price,
-            JSON.stringify(items),
-            JSON.stringify({ fullName: "Telegram", email: "", phone: "" }),
-          )
-          .run();
-        await telegramCall(env, "sendInvoice", {
-          chat_id: chatId,
-          title: items[0].name.slice(0, 32),
-          description: "Sản phẩm số Tiệm Digital. Hỗ trợ: /paysupport",
-          payload: orderId,
-          currency: "XTR",
-          provider_token: "",
-          prices: [{ label: items[0].name, amount: items[0].price }],
-          start_parameter: orderId,
-        });
-      }
-    } else if (text === "/orders") {
-      const link = await linked(env, sender.id);
-      const rows = link
-        ? await env.DB.prepare(
-            "SELECT id,payment_status,fulfillment_status FROM orders WHERE user_id=? ORDER BY created_at DESC LIMIT 10",
-          )
-            .bind(link.user_id)
-            .all<{
-              id: string;
-              payment_status: string;
-              fulfillment_status: string;
-            }>()
-        : { results: [] };
+          .bind(actor.id)
+          .all<{ id: string }>();
+        await sendText(
+          env,
+          chatId,
+          results.length
+            ? "Đơn của bạn trên website và Telegram:"
+            : "Bạn chưa có đơn hàng.",
+          {
+            reply_markup: {
+              inline_keyboard: results.map((order) => [
+                { text: order.id, callback_data: `status:${order.id}` },
+              ]),
+            },
+          },
+        );
+      } else
+        throw new HttpError(
+          400,
+          "Lệnh không hợp lệ. Dùng /products, /balance, /topup hoặc /orders.",
+        );
+    } else if (text === "/paysupport" || text === "/support")
       await sendText(
         env,
         chatId,
-        rows.results.length
-          ? rows.results
-              .map(
-                (o) => `${o.id}: ${o.payment_status} / ${o.fulfillment_status}`,
-              )
-              .join("\n")
-          : "Chưa có đơn hoặc chưa liên kết tài khoản.",
+        `Hỗ trợ thanh toán: ${env.APP_ORIGIN}/pages/lien-he. Gửi mã đơn, không gửi OTP hoặc mật khẩu.`,
       );
-    } else if (text === "/paysupport" || text === "/support") {
+    else
       await sendText(
         env,
         chatId,
-        `Hỗ trợ thanh toán và hoàn tiền: ${env.APP_ORIGIN}/pages/lien-he. Gửi kèm mã đơn, không gửi OTP hoặc mật khẩu. Tiệm Digital chịu trách nhiệm hỗ trợ đơn mua hàng.`,
-      );
-    } else {
-      await sendText(
-        env,
-        chatId,
-        "Tiệm Digital\n/products — Mua hàng bằng Stars\n/orders — Đơn của tôi\n/paysupport — Hỗ trợ thanh toán\nLiên kết tài khoản trong mục Tài khoản trên website.",
+        "Tiệm Digital\n/products — Mua hàng\n/balance — Số dư chung\n/topup — Nạp tiền bằng QR TPBank\n/orders — Đơn của tôi\n/support — Hỗ trợ\nLiên kết tài khoản trong mục Tài khoản trên website.",
         {
           reply_markup: {
             inline_keyboard: [
@@ -390,7 +420,10 @@ export async function processTelegramInbox(env: Env, inboxId: string) {
           },
         },
       );
-    }
+  } catch (error) {
+    if (error instanceof HttpError && error.status < 500)
+      await sendText(env, chatId, error.message);
+    else throw error;
   }
   await env.DB.prepare("UPDATE inbox SET status='DONE' WHERE id=?")
     .bind(inboxId)

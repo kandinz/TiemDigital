@@ -54,11 +54,7 @@ export async function createIntent(
   let amount = "amount" in input ? (input.amount as number) : 0;
   if (orderId) {
     const order = await orderFor(env, orderId, actor);
-    if (
-      order.payment_status !== "UNPAID" ||
-      order.channel !== "web" ||
-      order.currency !== "VND"
-    )
+    if (order.payment_status !== "UNPAID" || order.currency !== "VND")
       throw new HttpError(409, "Đơn không thể thanh toán bằng QR");
     amount = order.total;
   } else if (amount < config.minTopup || amount > config.maxTopup)
@@ -122,6 +118,21 @@ export async function intentFor(env: Env, intentId: string, actor: Actor) {
     memo: intent.id,
     qrUrl: `/api/intents/${intent.id}/qr`,
   };
+}
+export function qrImageUrl(intent: {
+  bankBin: string;
+  accountNumber: string;
+  amount: number;
+  memo: string;
+  accountHolder: string;
+}) {
+  const image = new URL(
+    `https://img.vietqr.io/image/${intent.bankBin}-${intent.accountNumber}-compact2.png`,
+  );
+  image.searchParams.set("amount", String(intent.amount));
+  image.searchParams.set("addInfo", intent.memo);
+  image.searchParams.set("accountName", intent.accountHolder);
+  return image;
 }
 export const bankSchema = z.object({
   id: z.union([z.string().min(1).max(100), z.number().int().nonnegative()]),

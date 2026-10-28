@@ -52,7 +52,7 @@ export interface StoredOrder {
   id: string;
   user_id: string;
   channel: "web" | "telegram";
-  currency: "VND" | "XTR";
+  currency: "VND" | "XTR"; // XTR is read-only legacy history; new orders must be VND.
   total: number;
   items: string;
   customer: string;

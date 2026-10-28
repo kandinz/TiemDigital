@@ -69,9 +69,15 @@ export function serializeOrder(order: StoredOrder) {
     customer: JSON.parse(customer),
   };
 }
-export async function createOrder(request: Request, env: Env, actor: Actor) {
+export async function createOrder(
+  request: Request,
+  env: Env,
+  actor: Actor,
+  channel: "web" | "telegram" = "web",
+) {
   const input = await readBody(request, orderSchema);
-  const cmd = await command(request, env, actor, "order", input);
+  const scope = channel === "web" ? "order" : "order:telegram";
+  const cmd = await command(request, env, actor, scope, input);
   if (cmd.previous)
     return serializeOrder(await orderFor(env, cmd.previous, actor));
   if (input.promoCode)
@@ -79,7 +85,7 @@ export async function createOrder(request: Request, env: Env, actor: Actor) {
       400,
       "Mã ưu đãi chưa được kích hoạt trên hệ thống thanh toán",
     );
-  const items = await pricedItems(env, input.items, "VND");
+  const items = await pricedItems(env, input.items);
   const total = items.reduce(
     (sum, item) => sum + item.price * item.quantity,
     0,
@@ -92,7 +98,7 @@ export async function createOrder(request: Request, env: Env, actor: Actor) {
       ).bind(
         orderId,
         actor.id,
-        "web",
+        channel,
         "VND",
         total,
         JSON.stringify(items),
@@ -101,7 +107,7 @@ export async function createOrder(request: Request, env: Env, actor: Actor) {
       commandStatement(env, actor, cmd, orderId),
     ]);
   } catch (error) {
-    const retry = await command(request, env, actor, "order", input);
+    const retry = await command(request, env, actor, scope, input);
     if (retry.previous)
       return serializeOrder(await orderFor(env, retry.previous, actor));
     throw error;
@@ -111,7 +117,6 @@ export async function createOrder(request: Request, env: Env, actor: Actor) {
 export async function pricedItems(
   env: Env,
   requested: { productId: number; quantity: number }[],
-  currency: "VND" | "XTR",
 ) {
   const merged = new Map<number, number>();
   for (const item of requested)
@@ -130,15 +135,21 @@ export async function pricedItems(
         id: number;
         name: string;
         selling_price: number;
-        price_xtr: number;
       }>();
-    const price =
-      currency === "VND" ? product?.selling_price : product?.price_xtr;
+    const price = product?.selling_price;
     if (!product || !price)
       throw new HttpError(409, "Sản phẩm chưa sẵn sàng để bán trên kênh này");
     result.push({ productId, name: product.name, price, quantity });
   }
   return result;
+}
+export async function walletFor(env: Env, actor: Actor) {
+  const wallet = await env.DB.prepare(
+    "SELECT balance FROM wallets WHERE user_id=?",
+  )
+    .bind(actor.id)
+    .first<{ balance: number }>();
+  return { balance: wallet?.balance ?? 0, currency: "VND" as const };
 }
 export async function payWallet(
   request: Request,

@@ -1,5 +1,7 @@
 // This is the schema source of truth. Apply explicitly with scripts/schema.mjs;
 // requests never change schema or seed production money/accounts.
+// Existing databases may retain legacy currency columns/enum values for history.
+// New orders/settlements are restricted to VND + BANK/WALLET by the guards below.
 export const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, emailVerified INTEGER NOT NULL DEFAULT 0, image TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS session (id TEXT PRIMARY KEY, expiresAt INTEGER NOT NULL, token TEXT NOT NULL UNIQUE, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, ipAddress TEXT, userAgent TEXT, userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE)`,
@@ -11,8 +13,8 @@ export const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS rateLimit (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, count INTEGER NOT NULL, lastRequest INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY REFERENCES user(id), disabled INTEGER NOT NULL DEFAULT 0 CHECK(disabled IN (0,1)), phone TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT (unixepoch()))`,
   `CREATE TABLE IF NOT EXISTS wallets (user_id TEXT PRIMARY KEY REFERENCES user(id), balance INTEGER NOT NULL DEFAULT 0 CHECK(typeof(balance)='integer' AND balance>=0), updated_at INTEGER NOT NULL DEFAULT (unixepoch()))`,
-  `CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT 'Khác', image_url TEXT, selling_price INTEGER NOT NULL CHECK(selling_price>0), price_xtr INTEGER NOT NULL DEFAULT 0 CHECK(price_xtr>=0), in_stock INTEGER NOT NULL DEFAULT 1 CHECK(in_stock IN(0,1)), updated_at TEXT NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id), channel TEXT NOT NULL CHECK(channel IN('web','telegram')), currency TEXT NOT NULL CHECK(currency IN('VND','XTR')), total INTEGER NOT NULL CHECK(typeof(total)='integer' AND total>0), items TEXT NOT NULL CHECK(json_valid(items)), customer TEXT NOT NULL CHECK(json_valid(customer)), payment_status TEXT NOT NULL DEFAULT 'UNPAID' CHECK(payment_status IN('UNPAID','PAID','REFUNDED')), fulfillment_status TEXT NOT NULL DEFAULT 'NOT_READY' CHECK(fulfillment_status IN('NOT_READY','QUEUED','DELIVERED')), delivery TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch()))`,
+  `CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT 'Khác', image_url TEXT, selling_price INTEGER NOT NULL CHECK(selling_price>0), in_stock INTEGER NOT NULL DEFAULT 1 CHECK(in_stock IN(0,1)), updated_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id), channel TEXT NOT NULL CHECK(channel IN('web','telegram')), currency TEXT NOT NULL CHECK(currency='VND'), total INTEGER NOT NULL CHECK(typeof(total)='integer' AND total>0), items TEXT NOT NULL CHECK(json_valid(items)), customer TEXT NOT NULL CHECK(json_valid(customer)), payment_status TEXT NOT NULL DEFAULT 'UNPAID' CHECK(payment_status IN('UNPAID','PAID','REFUNDED')), fulfillment_status TEXT NOT NULL DEFAULT 'NOT_READY' CHECK(fulfillment_status IN('NOT_READY','QUEUED','DELIVERED')), delivery TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch()))`,
   `CREATE INDEX IF NOT EXISTS orders_owner ON orders(user_id,created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY CHECK(id='payment'), version INTEGER NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)), updated_at INTEGER NOT NULL DEFAULT (unixepoch()))`,
   `INSERT OR IGNORE INTO settings(id,version,body) VALUES('payment',1,'{"enabled":false,"provider":"sepay","bankBin":"970423","bankName":"TPBank","accountNumber":"","accountHolder":"","minTopup":10000,"maxTopup":5000000,"intentTtl":900}')`,
@@ -22,7 +24,7 @@ export const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS inbox_pending ON inbox(status,created_at)`,
   `CREATE TABLE IF NOT EXISTS bank_transactions (id TEXT PRIMARY KEY, provider TEXT NOT NULL, provider_id TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount>0), account_number TEXT NOT NULL, content TEXT NOT NULL, happened_at INTEGER NOT NULL, intent_id TEXT REFERENCES intents(id), status TEXT NOT NULL DEFAULT 'REVIEW' CHECK(status IN('REVIEW','ALLOCATED')), UNIQUE(provider,provider_id))`,
   `CREATE TABLE IF NOT EXISTS allocations (transaction_id TEXT PRIMARY KEY REFERENCES bank_transactions(id), intent_id TEXT NOT NULL UNIQUE REFERENCES intents(id), created_at INTEGER NOT NULL DEFAULT(unixepoch()))`,
-  `CREATE TABLE IF NOT EXISTS settlements (id TEXT PRIMARY KEY, order_id TEXT NOT NULL UNIQUE REFERENCES orders(id), source TEXT NOT NULL CHECK(source IN('WALLET','BANK','STARS')), external_id TEXT UNIQUE, created_at INTEGER NOT NULL DEFAULT(unixepoch()))`,
+  `CREATE TABLE IF NOT EXISTS settlements (id TEXT PRIMARY KEY, order_id TEXT NOT NULL UNIQUE REFERENCES orders(id), source TEXT NOT NULL CHECK(source IN('WALLET','BANK')), external_id TEXT UNIQUE, created_at INTEGER NOT NULL DEFAULT(unixepoch()))`,
   `CREATE TABLE IF NOT EXISTS journals (id TEXT PRIMARY KEY, source TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES user(id), kind TEXT NOT NULL CHECK(kind IN('TOPUP','PURCHASE','ADJUSTMENT','REFUND')), amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount>0), wallet_delta INTEGER NOT NULL CHECK(abs(wallet_delta)=amount), debit_account TEXT NOT NULL, credit_account TEXT NOT NULL, memo TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT(unixepoch()), CHECK(debit_account<>credit_account))`,
   `CREATE INDEX IF NOT EXISTS journals_owner ON journals(user_id,created_at DESC)`,
   `CREATE VIEW IF NOT EXISTS ledger_entries AS SELECT id AS journal_id,debit_account AS account,-amount AS amount,'VND' AS currency FROM journals UNION ALL SELECT id,credit_account,amount,'VND' FROM journals`,
@@ -51,12 +53,12 @@ export const SCHEMA_STATEMENTS = [
   `CREATE TRIGGER IF NOT EXISTS journal_no_update BEFORE UPDATE ON journals BEGIN SELECT RAISE(ABORT,'IMMUTABLE_LEDGER'); END`,
   `CREATE TRIGGER IF NOT EXISTS journal_no_delete BEFORE DELETE ON journals BEGIN SELECT RAISE(ABORT,'IMMUTABLE_LEDGER'); END`,
   `CREATE TRIGGER IF NOT EXISTS settlement_guard BEFORE INSERT ON settlements BEGIN
+    SELECT CASE WHEN NEW.source NOT IN('WALLET','BANK') THEN RAISE(ABORT,'INVALID_PAYMENT_METHOD') END;
     SELECT CASE WHEN EXISTS(SELECT 1 FROM orders o JOIN wallets w ON w.user_id=o.user_id WHERE o.id=NEW.order_id AND w.balance<>COALESCE((SELECT SUM(wallet_delta) FROM journals WHERE user_id=o.user_id),0)) THEN RAISE(ABORT,'LEDGER_MISMATCH') END;
     SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM orders WHERE id=NEW.order_id AND payment_status='UNPAID') THEN RAISE(ABORT,'ORDER_ALREADY_PAID') END;
-    SELECT CASE WHEN NEW.source='WALLET' AND NOT EXISTS(SELECT 1 FROM orders WHERE id=NEW.order_id AND currency='VND' AND channel='web') THEN RAISE(ABORT,'INVALID_PAYMENT_METHOD') END;
-    SELECT CASE WHEN NEW.source='BANK' AND NOT EXISTS(SELECT 1 FROM orders WHERE id=NEW.order_id AND currency='VND' AND channel='web') THEN RAISE(ABORT,'INVALID_PAYMENT_METHOD') END;
-    SELECT CASE WHEN NEW.source='STARS' AND NOT EXISTS(SELECT 1 FROM orders WHERE id=NEW.order_id AND currency='XTR' AND channel='telegram') THEN RAISE(ABORT,'INVALID_PAYMENT_METHOD') END;
+    SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM orders WHERE id=NEW.order_id AND currency='VND') THEN RAISE(ABORT,'INVALID_PAYMENT_METHOD') END;
   END`,
+  `CREATE TRIGGER IF NOT EXISTS order_currency_guard BEFORE INSERT ON orders WHEN NEW.currency<>'VND' BEGIN SELECT RAISE(ABORT,'INVALID_CURRENCY'); END`,
   `CREATE TRIGGER IF NOT EXISTS settlement_apply AFTER INSERT ON settlements BEGIN
     INSERT INTO journals(id,source,user_id,kind,amount,wallet_delta,debit_account,credit_account,memo)
       SELECT NEW.id,'settlement:'||NEW.id,user_id,'PURCHASE',total,-total,'wallet:'||user_id,'sales',id FROM orders WHERE id=NEW.order_id AND NEW.source='WALLET';

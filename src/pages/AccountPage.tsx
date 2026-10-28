@@ -290,7 +290,7 @@ export function AccountPage() {
                     <span className="eyebrow">Số dư khả dụng</span>
                     <div className="balance-value">{amountLabel(balance)}</div>
                     <p className="small">
-                      Dùng thanh toán đơn hàng trên website Tiệm Digital.
+                      Dùng thanh toán trên website và bot Telegram Tiệm Digital.
                     </p>
                   </div>
                   <button onClick={() => setTab("wallet")}>
@@ -302,8 +302,8 @@ export function AccountPage() {
                     <h2>Mọi đơn hàng trong một tài khoản</h2>
                     <p>
                       Theo dõi trạng thái thanh toán và nhận sản phẩm ngay tại
-                      đây. Đơn trong Telegram thanh toán bằng Stars; số dư
-                      website được quản lý riêng.
+                      đây. Website và Telegram dùng chung tài khoản, số dư và
+                      thanh toán bằng QR TPBank.
                     </p>
                     <button onClick={() => setTab("orders")}>
                       Xem {orders.length} đơn hàng →
@@ -450,7 +450,7 @@ export function AccountPage() {
                           {paymentLabel(o.payment_status)}
                         </span>
                         <div className="action-row">
-                          {o.channel === "web" &&
+                          {o.currency === "VND" &&
                             o.payment_status === "UNPAID" && (
                               <>
                                 <button
@@ -556,8 +556,8 @@ export function AccountPage() {
                 ) : (
                   <>
                     <p>
-                      Liên kết để theo dõi đơn và mua hàng trong bot bằng
-                      Telegram Stars.
+                      Liên kết để mua hàng, thanh toán QR TPBank hoặc sử dụng
+                      cùng số dư tài khoản ngay trong bot.
                     </p>
                     <button
                       className="primary"

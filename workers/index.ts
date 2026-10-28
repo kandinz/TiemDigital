@@ -1,8 +1,14 @@
 import type { Env } from "./types";
 import { auth, customer } from "./auth";
 import { checkOrigin, HttpError, json, rateLimit } from "./http";
-import { createOrder, orderFor, payWallet, serializeOrder } from "./commerce";
-import { bankWebhook, createIntent, intentFor } from "./payments";
+import {
+  createOrder,
+  orderFor,
+  payWallet,
+  serializeOrder,
+  walletFor,
+} from "./commerce";
+import { bankWebhook, createIntent, intentFor, qrImageUrl } from "./payments";
 import { adminApi } from "./admin";
 import { administrator } from "./auth";
 import { createLink, telegramWebhook } from "./telegram";
@@ -140,7 +146,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
     if (url.pathname === "/api/catalog" && request.method === "GET") {
       const { results } = await env.DB.prepare(
-        "SELECT * FROM products ORDER BY id DESC",
+        "SELECT id,name,description,category,image_url,selling_price,in_stock,updated_at FROM products ORDER BY id DESC",
       ).all();
       return json({
         products: results.map((p) => ({ ...p, in_stock: !!p.in_stock })),
@@ -221,12 +227,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         });
       }
       if (url.pathname === "/api/me/wallet" && request.method === "GET") {
-        const wallet = await env.DB.prepare(
-          "SELECT balance FROM wallets WHERE user_id=?",
-        )
-          .bind(actor.id)
-          .first<{ balance: number }>();
-        return json({ balance: wallet?.balance ?? 0, currency: "VND" });
+        return json(await walletFor(env, actor));
       }
       if (
         url.pathname === "/api/me/wallet/transactions" &&
@@ -273,12 +274,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       if (intentMatch && request.method === "GET") {
         const intent = await intentFor(env, intentMatch[1], actor);
         if (!intentMatch[2]) return json(intent);
-        const image = new URL(
-          `https://img.vietqr.io/image/${intent.bankBin}-${intent.accountNumber}-compact2.png`,
-        );
-        image.searchParams.set("amount", String(intent.amount));
-        image.searchParams.set("addInfo", intent.memo);
-        image.searchParams.set("accountName", intent.accountHolder);
+        const image = qrImageUrl(intent);
         const response = await fetch(image, {
           signal: AbortSignal.timeout(10000),
         });

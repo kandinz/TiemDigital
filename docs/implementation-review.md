@@ -1,5 +1,7 @@
 # Implementation review — 28/10/2026
 
+> Review ban đầu bên dưới là lịch sử của bản `6aae733`. Yêu cầu đã được người dùng hiệu chỉnh: bot Telegram và web dùng chung tài khoản/số dư VND, thanh toán QR TPBank hoặc ví, không dùng Stars. Xem phần review hiệu chỉnh cuối tài liệu.
+
 Fixed point được người dùng chấp thuận: `60992278c5b9b1465be69a3ade58c311131fd995` (HEAD trước khi triển khai). Spec: `docs/plans/2026-10-28-payment-platform-cloudflare.md`. Review hai trục bằng hai agent độc lập, sau đó review lại các sửa đổi.
 
 ## Standards
@@ -32,3 +34,19 @@ Kết quả recheck: năm điểm đã sửa ở mức mã nguồn; reviewer kh�
 - Lint không có error; còn bốn warning (purity/effect và escape) trong mã frontend.
 - Credential/domain, Email Service, Access policy MFA, TPBank/SePay thật, bot thật và pilot giao dịch là gate bên ngoài chưa được xác minh. Review mã và test cục bộ không thay thế những gate này.
 - Các giới hạn chức năng còn lại được ghi trong `docs/operations.md`, gồm giao hàng thủ công, hoàn ngân hàng/Stars theo quy trình hỗ trợ, lịch sử UI 100 bản ghi, chưa có MFA riêng cho khách và chưa cấu hình cảnh báo ngoài hệ thống.
+
+## Review hiệu chỉnh: tài khoản và thanh toán chung web/Telegram
+
+Mốc so sánh: `6aae73328c18dd184a0115ff36261978e156f4d5`. Spec hiện hành: yêu cầu hiệu chỉnh của người dùng và mục 1/7 trong plan đã cập nhật. Code dùng chung Actor, createOrder, payWallet, walletFor, createIntent, intentFor và QR builder giữa web/bot. Không còn invoice/Stars handler hoặc giá Stars trong admin; schema mới chỉ chấp nhận VND và BANK/WALLET. Dữ liệu tiền tệ cũ trên database có sẵn chỉ phục vụ lịch sử.
+
+### Standards
+
+Không có vi phạm tiêu chuẩn hoặc smell đáng báo cáo. Có một finding hành vi P2: lỗi ACK nút Telegram đã trả lời có thể chặn recovery sau khi tiền đã commit nhưng thông báo timeout. Đã sửa ACK thành best-effort sau guard private chat/tuổi callback. Hồi quy giả lập sendMessage lỗi500 sau commit, ACK lần retry trả400: retry hoàn tất và số dư chỉ trừ một lần. Reviewer kiểm lại và xác nhận finding đã được xử lý.
+
+### Spec
+
+Review xác nhận chung user/số dư/giá VND, QR trả đơn tách TOPUP, ownership, khóa tài khoản và chống lặp/race. Có một finding P3: dashboard chưa tách doanh số theo channel; đã sửa API GROUP BY currency,channel và UI nhãn Website/Telegram. Reviewer xác nhận không còn finding trong phần kiểm lại.
+
+### Kiểm chứng hiệu chỉnh
+
+Chín test HTTP/D1 đạt, gồm luồng bot tạo đơn nhìn thấy trên web, QR TPBank trả đơn không cộng ví, bot nạp QR cộng số dư web, bot dùng ví chung, thanh toán đơn web từ bot, race web/bot cùng đơn không double debit, callback retry sau lỗi gửi, chặn người khác/khóa tài khoản. Build, typecheck và Wrangler production dry-run thành công; không có deploy production trong bước này.

@@ -569,12 +569,11 @@ describe("public Worker API", () => {
             "telegram",
             JSON.stringify({
               update_id: 80000 + n,
-              pre_checkout_query: {
+              callback_query: {
                 id: `expired-${n}`,
                 from: { id: 12345 },
-                currency: "XTR",
-                total_amount: 50,
-                invoice_payload: "TGUNKNOWN",
+                data: "products",
+                message: { chat: { id: 12345, type: "private" } },
               },
             }),
             old,
@@ -612,8 +611,8 @@ describe("public Worker API", () => {
       mock.mockRestore();
     }
   });
-  it("only settles Stars after a valid successful_payment and deduplicates the charge", async () => {
-    const cookie = await login("stars@example.com");
+  it("shares one VND account between Telegram and web for QR, top-ups and wallet payments", async () => {
+    const cookie = await login("telegram-shared@example.com");
     const user = (await (
       await request("/api/me", undefined, cookie)
     ).json()) as { id: string };
@@ -623,64 +622,235 @@ describe("public Worker API", () => {
       .bind(user.id, "12345", "12345")
       .run();
     await env.DB.prepare(
-      "INSERT INTO orders(id,user_id,channel,currency,total,items,customer) VALUES(?,?,?,?,?,?,?)",
-    )
-      .bind("TG90001", user.id, "telegram", "XTR", 50, "[]", "{}")
-      .run();
+      "INSERT INTO products(id,name,selling_price,updated_at) VALUES(9003,'Shared VND product',20000,'2026-10-28')",
+    ).run();
     const botEnv = {
       ...testEnv,
       TELEGRAM_WEBHOOK_SECRET: "test-telegram-secret",
+      TELEGRAM_BOT_TOKEN: "test-bot-token",
     };
-    const update = {
-      update_id: 70001,
-      message: {
-        from: { id: 12345 },
-        chat: { id: 12345, type: "private" },
-        successful_payment: {
-          currency: "XTR",
-          total_amount: 50,
-          invoice_payload: "TG90001",
-          telegram_payment_charge_id: "charge-90001",
-        },
-      },
-    };
-    async function webhook(body: unknown, secret = "test-telegram-secret") {
-      return worker.fetch(
-        new Request("http://localhost:8787/webhooks/telegram", {
-          method: "POST",
-          headers: { "X-Telegram-Bot-Api-Secret-Token": secret },
-          body: JSON.stringify(body),
-        }),
-        botEnv,
-      );
+    const sent: { method: string; body: Record<string, any> }[] = [];
+    const answeredCallbacks = new Set<string>();
+    let failStatusForOrder = "";
+    const originalFetch = globalThis.fetch;
+    const mock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input, init) => {
+        const url = String(input);
+        if (url.startsWith("https://api.telegram.org/bottest-bot-token/")) {
+          sent.push({
+            method: url.split("/").at(-1)!,
+            body: JSON.parse(String(init?.body)),
+          });
+          const outgoing = sent.at(-1)!;
+          if (outgoing.method === "answerCallbackQuery") {
+            const callback = String(outgoing.body.callback_query_id);
+            if (answeredCallbacks.has(callback))
+              return Promise.resolve(
+                Response.json({ ok: false }, { status: 400 }),
+              );
+            answeredCallbacks.add(callback);
+          }
+          if (
+            outgoing.method === "sendMessage" &&
+            failStatusForOrder &&
+            String(outgoing.body.text).includes(failStatusForOrder)
+          ) {
+            failStatusForOrder = "";
+            return Promise.resolve(
+              Response.json({ ok: false }, { status: 500 }),
+            );
+          }
+          return Promise.resolve(Response.json({ ok: true }));
+        }
+        return originalFetch(input, init);
+      });
+    let updateId = 70000;
+    async function message(
+      text: string,
+      callback = false,
+      sender = 12345,
+      secret = "test-telegram-secret",
+    ) {
+      const body = callback
+        ? {
+            update_id: ++updateId,
+            callback_query: {
+              id: `callback-${updateId}`,
+              from: { id: sender },
+              data: text,
+              message: { chat: { id: sender, type: "private" } },
+            },
+          }
+        : {
+            update_id: ++updateId,
+            message: {
+              from: { id: sender },
+              chat: { id: sender, type: "private" },
+              text,
+            },
+          };
+      const send = () =>
+        worker.fetch(
+          new Request("http://localhost:8787/webhooks/telegram", {
+            method: "POST",
+            headers: { "X-Telegram-Bot-Api-Secret-Token": secret },
+            body: JSON.stringify(body),
+          }),
+          botEnv,
+        );
+      return { response: await send(), retry: send };
     }
-    expect((await webhook(update, "forged")).status).toBe(401);
-    expect(
-      (
-        await webhook({
-          ...update,
-          update_id: 70000,
-          message: {
-            ...update.message,
-            successful_payment: {
-              ...update.message.successful_payment,
-              total_amount: 1,
+    function lastPhoto() {
+      return sent.filter((s) => s.method === "sendPhoto").at(-1)!.body;
+    }
+    function photoIntent() {
+      return (
+        lastPhoto().reply_markup.inline_keyboard[0][0].callback_data as string
+      ).slice("intent:".length);
+    }
+    async function latestOrder() {
+      return (
+        (await (await request("/api/me/orders", undefined, cookie)).json()) as {
+          orders: import("../src/services/platform").PlatformOrder[];
+        }
+      ).orders.filter((o) => o.payment_status === "UNPAID")[0];
+    }
+    try {
+      expect(
+        (await message("/products", false, 12345, "forged")).response.status,
+      ).toBe(401);
+      expect((await message("/products")).response.status).toBe(200);
+      expect(JSON.stringify(sent.at(-1)?.body)).toContain("20.000");
+      const bought = await message("buy:9003", true);
+      expect(bought.response.status).toBe(200);
+      expect((await bought.retry()).status).toBe(200);
+      const order = await latestOrder();
+      expect(order).toMatchObject({
+        channel: "telegram",
+        currency: "VND",
+        total: 20000,
+        user_id: user.id,
+      });
+      expect((await message(`qr:${order.id}`, true)).response.status).toBe(200);
+      const qrIntent = photoIntent();
+      expect(lastPhoto().photo).toContain("970423-123456789");
+      expect(
+        (
+          await bankWebhook({
+            id: 71001,
+            gateway: "TPBank",
+            accountNumber: "123456789",
+            transferType: "in",
+            transferAmount: 20000,
+            content: qrIntent,
+            transactionDate: new Date().toISOString(),
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        await (
+          await request(`/api/orders/${order.id}`, undefined, cookie)
+        ).json(),
+      ).toMatchObject({ payment_status: "PAID" });
+      expect(
+        await (await request("/api/me/wallet", undefined, cookie)).json(),
+      ).toMatchObject({ balance: 0 });
+      expect((await message("/topup 50000")).response.status).toBe(200);
+      const topup = photoIntent();
+      await bankWebhook({
+        id: 71002,
+        gateway: "TPBank",
+        accountNumber: "123456789",
+        transferType: "in",
+        transferAmount: 50000,
+        content: topup,
+        transactionDate: new Date().toISOString(),
+      });
+      expect(
+        await (await request("/api/me/wallet", undefined, cookie)).json(),
+      ).toMatchObject({ balance: 50000 });
+      await message("buy:9003", true);
+      const walletOrder = await latestOrder();
+      failStatusForOrder = walletOrder.id;
+      const lostStatus = await message(`wallet:${walletOrder.id}`, true);
+      expect(lostStatus.response.status).toBe(502);
+      expect((await lostStatus.retry()).status).toBe(200);
+      expect(
+        (await message(`wallet:${walletOrder.id}`, true)).response.status,
+      ).toBe(200);
+      expect(
+        await (await request("/api/me/wallet", undefined, cookie)).json(),
+      ).toMatchObject({ balance: 30000 });
+      const web = (await (
+        await request(
+          "/api/orders",
+          {
+            items: [{ productId: 9003, quantity: 1 }],
+            customer: {
+              fullName: "Shared customer",
+              email: "telegram-shared@example.com",
+              phone: "",
             },
           },
-        })
-      ).status,
-    ).toBe(200);
-    expect(
-      await (await request("/api/orders/TG90001", undefined, cookie)).json(),
-    ).toMatchObject({ payment_status: "UNPAID" });
-    expect((await webhook(update)).status).toBe(200);
-    expect((await webhook(update)).status).toBe(200);
-    expect(
-      await (await request("/api/orders/TG90001", undefined, cookie)).json(),
-    ).toMatchObject({ payment_status: "PAID" });
-    expect(
-      await (await request("/api/me/wallet", undefined, cookie)).json(),
-    ).toMatchObject({ balance: 0 });
+          cookie,
+        )
+      ).json()) as { id: string };
+      const raced = await Promise.all([
+        message(`wallet:${web.id}`, true),
+        request(`/api/orders/${web.id}/payments/wallet`, {}, cookie),
+      ]);
+      expect(raced[0].response.status).toBe(200);
+      expect([200, 409]).toContain(raced[1].status);
+      expect(
+        await (
+          await request(`/api/orders/${web.id}`, undefined, cookie)
+        ).json(),
+      ).toMatchObject({ payment_status: "PAID" });
+      expect(
+        await (await request("/api/me/wallet", undefined, cookie)).json(),
+      ).toMatchObject({ balance: 10000 });
+      await message("/balance");
+      expect(String(sent.at(-1)?.body.text)).toContain("10.000");
+      const strangerCookie = await login("telegram-stranger@example.com");
+      const stranger = (await (
+        await request("/api/me", undefined, strangerCookie)
+      ).json()) as { id: string };
+      await env.DB.prepare(
+        "INSERT INTO telegram_links(user_id,telegram_id,chat_id) VALUES(?,?,?)",
+      )
+        .bind(stranger.id, "67890", "67890")
+        .run();
+      await message(`qr:${web.id}`, true, 67890);
+      expect(String(sent.at(-1)?.body.text)).toContain("Không tìm thấy");
+      const before = (
+        (await (await request("/api/me/orders", undefined, cookie)).json()) as {
+          orders: unknown[];
+        }
+      ).orders.length;
+      await env.DB.prepare("UPDATE customers SET disabled=1 WHERE id=?")
+        .bind(user.id)
+        .run();
+      await message("buy:9003", true);
+      expect(String(sent.at(-1)?.body.text)).toContain("Tài khoản bị khóa");
+      await env.DB.prepare("UPDATE customers SET disabled=0 WHERE id=?")
+        .bind(user.id)
+        .run();
+      expect(
+        (
+          (await (
+            await request("/api/me/orders", undefined, cookie)
+          ).json()) as { orders: unknown[] }
+        ).orders.length,
+      ).toBe(before);
+      expect(
+        sent.some((s) =>
+          ["sendInvoice", "answerPreCheckoutQuery"].includes(s.method),
+        ),
+      ).toBe(false);
+    } finally {
+      mock.mockRestore();
+    }
   });
   it("uses server prices and allocates direct bank payment to the order, not the wallet", async () => {
     const cookie = await login("direct-bank@example.com");
