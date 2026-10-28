@@ -20,6 +20,7 @@ import { Footer } from './components/Footer';
 import { FloatingSupport } from './components/FloatingSupport';
 import type { CartItem, Order, Product, PromoCode } from './types';
 import { fetchProducts } from './services/api';
+import { api, type PageBlock } from './services/platform';
 import { ShoppingBag, Check, Sparkles } from 'lucide-react';
 
 const CART_STORAGE_KEY = 'tiem_digital_cart';
@@ -37,6 +38,8 @@ export const App: React.FC = () => {
   const [categories, setCategories] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isLiveApi, setIsLiveApi] = useState<boolean>(false);
+  const [homePage, setHomePage] = useState<{title:string;description:string;blocks:PageBlock[]}|null>(null);
+  const [catalogError,setCatalogError]=useState('');
 
   // Filter & Search State
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -83,6 +86,7 @@ export const App: React.FC = () => {
   // Nạp danh sách sản phẩm từ Swagger API
   const loadCatalog = async () => {
     setIsLoading(true);
+    setCatalogError('');
     try {
       const data = await fetchProducts();
       setProducts(data.products);
@@ -90,6 +94,7 @@ export const App: React.FC = () => {
       setIsLiveApi(!data.fromCache);
     } catch (e) {
       console.error('Lỗi nạp sản phẩm', e);
+      setCatalogError('Chưa tải được danh mục. Vui lòng thử cập nhật lại.');
     } finally {
       setIsLoading(false);
     }
@@ -97,6 +102,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     loadCatalog();
+    api<{title:string;description:string;blocks:PageBlock[]}>('/api/pages/trang-chu').then(setHomePage).catch(()=>{});
   }, []);
 
   // Hiển thị thông báo Toast nhanh
@@ -234,6 +240,7 @@ export const App: React.FC = () => {
 
       {/* Hero Banner */}
       <Hero
+        content={homePage}
         onExploreClick={() => handleNavigateSection('products')}
         onTagClick={(tag) => {
           setSearchQuery(tag);
@@ -242,6 +249,8 @@ export const App: React.FC = () => {
         totalProducts={products.length}
         isLiveApi={isLiveApi}
       />
+
+      {homePage?.blocks.length ? <section className="max-w-7xl mx-auto px-4 py-8 space-y-6">{homePage.blocks.map((block,index)=>block.type==='text'?<article key={index}><h2 className="text-2xl font-bold">{block.heading}</h2><p className="whitespace-pre-wrap text-slate-500 mt-2">{block.text}</p></article>:block.type==='image'?<img key={index} src={block.url} alt={block.alt??''} className="rounded-xl max-w-full"/>:<a key={index} href={block.url} className="text-emerald-500">{block.label} →</a>)}</section> : null}
 
       {/* Products Section */}
       <main id="products" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16">
@@ -280,7 +289,7 @@ export const App: React.FC = () => {
         />
 
         {/* Product Grid */}
-        {isLoading ? (
+        {catalogError ? <p role="alert" className="text-center text-rose-500 py-12">{catalogError}</p> : isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6 py-12">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div
@@ -366,14 +375,14 @@ export const App: React.FC = () => {
         onCheckout={handleCheckoutFromCart}
       />
 
-      <CheckoutModal
+      {isCheckoutOpen && <CheckoutModal
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
         items={cart}
         promo={checkoutPromo}
         discountAmount={checkoutDiscount}
         onOrderSuccess={handleOrderSuccess}
-      />
+      />}
 
       <OrderSuccessModal
         order={successOrder}
@@ -384,11 +393,11 @@ export const App: React.FC = () => {
         }}
       />
 
-      <OrderTrackerModal
+      {trackerModalOpen && <OrderTrackerModal
         isOpen={trackerModalOpen}
         onClose={() => setTrackerModalOpen(false)}
         initialCode={trackerInitialCode}
-      />
+      />}
 
     </div>
   );

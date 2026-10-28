@@ -1,0 +1,459 @@
+.platform {
+  --ink: #152b3c;
+  --muted: #64748b;
+  --line: #dbe4ea;
+  --accent: #047857;
+  --paper: #fff;
+  color: var(--ink);
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.platform-shell {
+  min-height: 100vh;
+  background: #f1f5f7;
+}
+.platform .topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 5vw;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  gap: 16px;
+}
+.platform .wordmark {
+  font-weight: 900;
+  letter-spacing: -0.6px;
+  font-size: 22px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.platform .wordmark span {
+  color: var(--accent);
+}
+.platform a {
+  color: var(--accent);
+}
+.platform .workspace {
+  max-width: 1250px;
+  margin: auto;
+  padding: 36px 24px;
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 32px;
+}
+.platform .navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-self: start;
+  position: sticky;
+  top: 24px;
+}
+.platform .navigation button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.platform .navigation button.active {
+  background: #dff1e9;
+  color: #065f46;
+  font-weight: 800;
+}
+.platform .content {
+  min-width: 0;
+}
+.platform h1 {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1.3;
+  margin: 0 0 8px;
+}
+.platform h2 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+.platform h3 {
+  font-size: 17px;
+  font-weight: 750;
+}
+.platform p {
+  margin: 8px 0;
+}
+.platform .eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.platform .muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+.platform .panel {
+  padding: 24px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  margin-bottom: 20px;
+}
+.platform .panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.platform .stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.platform .action-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.platform button,
+.platform a.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  border: 1px solid #cad7df;
+  border-radius: 9px;
+  padding: 9px 15px;
+  font-size: 13px;
+  font-weight: 700;
+  background: #fff;
+  text-decoration: none;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.platform button:hover {
+  background: #edf5f2;
+}
+.platform button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.platform .primary {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border-color: var(--accent) !important;
+}
+.platform .quiet {
+  border: 0;
+  background: transparent;
+}
+.platform :is(button, a, input, textarea, select):focus-visible {
+  outline: 3px solid #34d399;
+  outline-offset: 3px;
+}
+.platform label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+.platform input,
+.platform textarea,
+.platform select {
+  background: #f8fafb;
+  border: 1px solid #cbd5df;
+  border-radius: 8px;
+  padding: 11px 12px;
+  font: inherit;
+  font-weight: 400;
+  min-width: 0;
+  color: var(--ink);
+  width: 100%;
+}
+.platform textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+.platform input[type="checkbox"] {
+  width: auto;
+}
+.platform .check-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+.platform .form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 18px;
+}
+.platform .notice {
+  padding: 12px 16px;
+  border-radius: 9px;
+  background: #e4f3ed;
+  color: #065f46;
+  border: 1px solid #b5dfcd;
+}
+.platform .notice.error {
+  background: #fff0ec;
+  color: #9f3422;
+  border-color: #f2c7bc;
+}
+.platform .balance-card {
+  background: #173a37;
+  border-radius: 16px;
+  padding: 28px 32px;
+  color: #eafff6;
+  margin: 24px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+.platform .balance-card .eyebrow {
+  color: #a6c8bc;
+}
+.platform .balance-value {
+  font-size: 38px;
+  letter-spacing: -1.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.platform .balance-strip {
+  display: flex;
+  justify-content: space-between;
+  padding: 16px;
+  background: #edf5f2;
+  border-radius: 10px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.platform .balance-strip span {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.platform .receipt-lines > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.platform .receipt-lines {
+  margin: 16px 0 24px;
+}
+.platform .table-wrap {
+  overflow-x: auto;
+}
+.platform table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 12px;
+}
+.platform th {
+  color: var(--muted);
+  font-weight: 700;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.platform td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #edf1f4;
+  vertical-align: top;
+}
+.platform .mono {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.platform .status {
+  display: inline-block;
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 11px;
+  background: #fff1d4;
+  color: #8b5d07;
+  font-weight: 750;
+  width: max-content;
+}
+.platform .status.good {
+  background: #e0f3e9;
+  color: #0a654b;
+}
+.platform .metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  margin: 24px 0;
+}
+.platform .metric {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+}
+.platform .metric strong {
+  display: block;
+  font-size: 25px;
+  letter-spacing: -1px;
+  margin-top: 10px;
+}
+.platform .empty-state {
+  padding: 30px 0;
+  color: var(--muted);
+}
+.platform .empty-state h3 {
+  color: var(--ink);
+}
+.platform .modal-overlay,
+.platform.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: #122638b8;
+  backdrop-filter: blur(6px);
+  z-index: 70;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+.platform .dialog-card {
+  background: #fff;
+  padding: 28px;
+  border-radius: 18px;
+  max-width: 640px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+}
+.platform .qr-panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+  align-items: center;
+}
+.platform .qr-panel img {
+  border-radius: 8px;
+  background: white;
+  object-fit: contain;
+}
+.platform dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  width: 100%;
+  font-size: 12px;
+}
+.platform dt {
+  color: var(--muted);
+}
+.platform dd {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.platform .copy {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+.platform .auth-card {
+  max-width: 440px;
+  margin: 60px auto;
+  padding: 30px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+.platform .code-block {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 18px;
+  background: #f1f5f7;
+  border-radius: 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+.platform .page-body {
+  max-width: 760px;
+  padding: 48px 24px;
+  margin: auto;
+}
+.platform .page-body p {
+  white-space: pre-wrap;
+}
+.platform .preview {
+  border-left: 4px solid #047857;
+  padding-left: 18px;
+}
+.platform .danger {
+  color: #a43b25;
+}
+.platform .positive {
+  color: #047857;
+}
+.platform .small {
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .platform .workspace {
+    display: block;
+    padding: 22px 16px;
+  }
+  .platform .navigation {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    white-space: nowrap;
+    margin-bottom: 24px;
+    padding-bottom: 8px;
+  }
+  .platform .topbar {
+    padding: 16px;
+  }
+  .platform .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .platform h1 {
+    font-size: 27px;
+  }
+  .platform .balance-card {
+    padding: 22px;
+    align-items: start;
+    flex-direction: column;
+  }
+  .platform .balance-value {
+    font-size: 32px;
+  }
+  .platform .dialog-card {
+    padding: 20px;
+  }
+  .platform .panel {
+    padding: 18px;
+  }
+  .platform .auth-card {
+    margin: 24px 16px;
+  }
+  .platform .panel-heading {
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .platform * {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}

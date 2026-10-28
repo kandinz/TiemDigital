@@ -34,6 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20 gap-4">
           
+          <a href="/account" className="text-xs font-bold text-emerald-600 dark:text-emerald-400 shrink-0">Tài khoản & số dư</a>
           {/* Logo & Brand Identity */}
           <div className="flex items-center gap-3 cursor-pointer select-none" onClick={() => onNavigateSection('hero')}>
             <div className="relative flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 p-[1.5px] shadow-lg shadow-emerald-500/20 group">

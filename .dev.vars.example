@@ -1,0 +1,8 @@
+BETTER_AUTH_SECRET="replace-with-at-least-32-random-characters"
+EMAIL_FROM="Tiệm Digital <shop@your-domain.com>"
+SEPAY_WEBHOOK_SECRET=""
+SEPAY_API_TOKEN=""
+TELEGRAM_BOT_TOKEN=""
+TELEGRAM_WEBHOOK_SECRET=""
+TELEGRAM_BOT_USERNAME=""
+DELIVERY_KEY="replace-with-base64-encoded-32-random-bytes"

@@ -17,7 +17,7 @@ export const FaqSection: React.FC = () => {
     {
       question: 'Sau khi chuyển khoản, tôi sẽ nhận tài khoản/token thế nào?',
       answer:
-        'Hệ thống của Tiệm Digital xử lý đơn hàng tự động. Ngay sau khi bạn xác nhận chuyển khoản đúng nội dung và số tiền, thông tin tài khoản, Redeem Code cùng hướng dẫn chi tiết sẽ được gửi trực tiếp vào địa chỉ Email bạn đã đăng ký trong vòng 1 - 3 phút.',
+        'Sau khi hệ thống xác nhận tiền vào TPBank hoặc trừ số dư thành công, đơn được chuyển sang chờ giao. Bạn đăng nhập mục Tài khoản để theo dõi và nhận thông tin sản phẩm khi cửa hàng giao hoàn tất.',
     },
     {
       question: 'Token API Claude có dùng được cho Cursor, VS Code và Claude Dev không?',

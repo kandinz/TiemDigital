@@ -10,6 +10,7 @@ interface HeroProps {
   onTagClick: (tag: string) => void;
   totalProducts: number;
   isLiveApi: boolean;
+  content?: { title: string; description: string } | null;
 }
 
 export const Hero: React.FC<HeroProps> = ({
@@ -17,6 +18,7 @@ export const Hero: React.FC<HeroProps> = ({
   onTagClick,
   totalProducts,
   isLiveApi,
+  content,
 }) => {
   const quickTags = ['Claude 50M', 'Gemini Pro', 'Claude 100$', 'Muse AI 31 Tỷ', 'Bảo Hành 1-1'];
 
@@ -38,7 +40,7 @@ export const Hero: React.FC<HeroProps> = ({
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
             <span className="text-slate-700 dark:text-slate-300">
-              {isLiveApi ? 'Đã kết nối trực tiếp Swagger API' : 'Sẵn sàng phục vụ 24/7'}
+              {isLiveApi ? 'Danh mục được cập nhật từ cửa hàng' : 'Sẵn sàng phục vụ 24/7'}
             </span>
             <span className="text-slate-300 dark:text-slate-700">•</span>
             <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
@@ -51,17 +53,17 @@ export const Hero: React.FC<HeroProps> = ({
         {/* Main Headings */}
         <div className="text-center max-w-4xl mx-auto space-y-4 sm:space-y-6">
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-slate-900 dark:text-white leading-[1.15] font-['Plus_Jakarta_Sans']">
-            Hệ Thống Phân Phối{' '}
+            {content ? content.title : <>Hệ Thống Phân Phối{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500">
               Tài Khoản AI & API Token
             </span>{' '}
-            Chính Hãng
+            Chính Hãng</>}
           </h1>
 
           <p className="text-sm sm:text-base lg:text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto leading-relaxed">
-            <strong className="text-slate-900 dark:text-white font-semibold">Tiệm Digital</strong> cung cấp tài khoản 
+            {content ? content.description : <><strong className="text-slate-900 dark:text-white font-semibold">Tiệm Digital</strong> cung cấp tài khoản
             Anthropic Claude, Google Gemini, OpenAI và token lập trình cho Cursor, VS Code, 9Router. 
-            Cam kết kích hoạt siêu tốc trong 30 giây, bảo hành 1 đổi 1.
+            Theo dõi thanh toán và nhận sản phẩm trong tài khoản của bạn.</>}
           </p>
 
           {/* Quick Suggestion Chips */}

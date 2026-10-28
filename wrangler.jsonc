@@ -1,0 +1,80 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tiemdigital",
+  "main": "workers/index.ts",
+  "compatibility_date": "2026-10-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true,
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tiemdigital",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+    },
+  ],
+  "vars": {
+    "ENVIRONMENT": "local",
+    "APP_ORIGIN": "http://localhost:8787",
+    "ADMIN_ORIGIN": "http://localhost:8787",
+  },
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "observability": { "enabled": true },
+  "env": {
+    "production": {
+      "vars": {
+        "ENVIRONMENT": "production",
+        "APP_ORIGIN": "https://shop.example.com",
+        "ADMIN_ORIGIN": "https://admin.example.com",
+        "ACCESS_ISSUER": "https://your-team.cloudflareaccess.com",
+        "ACCESS_AUD": "replace-with-access-application-audience",
+        "TURNSTILE_SITE_KEY": "replace-with-turnstile-site-key",
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "tiemdigital-production",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+        },
+      ],
+      "queues": {
+        "producers": [{ "binding": "EVENTS", "queue": "tiemdigital-events" }],
+        "consumers": [
+          {
+            "queue": "tiemdigital-events",
+            "dead_letter_queue": "tiemdigital-dlq",
+            "max_retries": 5,
+          },
+        ],
+      },
+      "r2_buckets": [
+        { "binding": "MEDIA", "bucket_name": "tiemdigital-private" },
+      ],
+      "send_email": [{ "name": "EMAIL" }],
+    },
+    "staging": {
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "APP_ORIGIN": "https://staging.example.com",
+        "ADMIN_ORIGIN": "https://admin-staging.example.com",
+        "ACCESS_ISSUER": "https://your-team.cloudflareaccess.com",
+        "ACCESS_AUD": "replace-with-staging-access-audience",
+        "TURNSTILE_SITE_KEY": "replace-with-turnstile-site-key",
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "tiemdigital-staging",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+        },
+      ],
+      "send_email": [{ "name": "EMAIL" }],
+    },
+  },
+}

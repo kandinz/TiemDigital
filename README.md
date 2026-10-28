@@ -1,5 +1,7 @@
 # Tiệm Digital — Nền Tảng Phân Phối Tài Khoản AI & Token Bản Quyền
 
+> Phiên bản nền tảng thanh toán: tài khoản email OTP, số dư VND, QR TPBank qua SePay, admin/CMS và bot Telegram Stars chạy trên Cloudflare Workers/D1. Xem [hướng dẫn chạy, cấu hình và giới hạn vận hành](docs/operations.md). Phần giới thiệu giao diện ban đầu bên dưới có một số mô tả cũ (localStorage đơn hàng, MB, voucher, MoMo) đã được thay thế; không dùng làm đặc tả thanh toán hiện hành.
+
 Trang bán hàng trực tuyến chuyên nghiệp cho thương hiệu **Tiệm Digital**, tích hợp đồng bộ dữ liệu thời gian thực từ [Swagger GumTool Catalog API](https://gumtool.pages.dev/product/swagger).
 
 ---
