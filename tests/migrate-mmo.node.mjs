@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import { quote, digest, mapOwner, compatibleSubset } from '../scripts/migrate-mmo.mjs';
+
+assert.equal(quote("key'|password\nnext"), "'key''|password\nnext'");
+assert.equal(quote(null), 'NULL');
+assert.equal(quote(25500), '25500');
+const source = { id: 77, user_id: 'gum-user', purchase_order_id: 'mmo-69', delivered_data: 'key|password' };
+assert.deepEqual(mapOwner('mmo_transactions', source, 'tiem-owner'), { ...source, user_id: 'tiem-owner' });
+assert.equal(source.user_id, 'gum-user');
+assert.equal(mapOwner('mmo_providers', source, 'tiem-owner'), source);
+const columns = Object.keys(source);
+assert.equal(digest([source, { ...source, id: 78 }], columns), digest([{ ...source, id: 78 }, source], columns));
+assert.notEqual(digest([source], columns), digest([{ ...source, delivered_data: 'lost' }], columns));
+assert.notEqual(digest([source], columns), digest([source, source], columns));
+assert.ok(compatibleSubset('mmo_orders', [source], [source, { ...source, id: 78 }], columns));
+assert.ok(!compatibleSubset('mmo_orders', [{ ...source, delivered_data: 'changed' }], [source], columns));
+assert.ok(!compatibleSubset('mmo_orders', [{ ...source, id: 99 }], [source], columns));
+const provider = { id: 'vendor', api_key: 'secret', balance_cache: 'old', balance_cached_at: 'before' };
+assert.ok(compatibleSubset('mmo_providers', [provider], [{ ...provider, balance_cache: 'new', balance_cached_at: 'now' }], Object.keys(provider)));
+assert.ok(!compatibleSubset('mmo_providers', [provider], [{ ...provider, api_key: 'changed-secret' }], Object.keys(provider)));
+console.log('MMO migration quoting, ownership and full-row verification passed');

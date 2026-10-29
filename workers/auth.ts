@@ -84,6 +84,16 @@ export async function administrator(
   request: Request,
   env: Env,
 ): Promise<Admin> {
+  if (env.ADMIN_AUTH_MODE === 'session') {
+    if (new URL(request.url).origin !== env.APP_ORIGIN)
+      throw new HttpError(403, 'Vui lòng mở admin trên website TiệmDigital');
+    const actor = await customer(request, env);
+    const role = await env.DB.prepare('SELECT role FROM admin_accounts WHERE user_id=?')
+      .bind(actor.id).first<{ role: Admin['role'] }>();
+    if (!role) throw new HttpError(403, 'Tài khoản chưa được cấp quyền quản trị');
+    // Audit and two-person approvals use this immutable identity, never a mutable profile email.
+    return { userId: actor.id, username: actor.username ?? actor.name, email: `user:${actor.id}`, role: role.role };
+  }
   if (
     new URL(request.url).origin !== env.ADMIN_ORIGIN ||
     !env.ACCESS_ISSUER ||

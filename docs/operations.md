@@ -3,10 +3,10 @@
 ## Phạm vi bản triển khai
 
 - Website: Better Auth username/password, email/password, OTP email và xác nhận qua bot Telegram; tài khoản/phiên đăng nhập, danh mục giá server, đơn hàng riêng tư, ví VND, nạp QR ngân hàng, trả bằng ví hoặc QR, nhận sản phẩm đã mã hóa.
-- Admin: JWT Cloudflare Access + vai trò D1, khách hàng/khóa phiên, sản phẩm giá VND dùng chung, đơn và giao hàng thủ công, CMS page và trang chủ, lịch sử phiên bản, phê duyệt hai người, sổ cái, audit, đối soát.
+- Admin: phiên TiệmDigital + quyền theo ID tài khoản trong D1 (production/local), hoặc JWT Cloudflare Access khi chọn chế độ Access; khách hàng/khóa phiên, sản phẩm giá VND dùng chung, đơn và giao hàng thủ công, CMS page và trang chủ, lịch sử phiên bản, phê duyệt hai người, sổ cái, audit, đối soát.
 - Ngân hàng: SePay API Banking liên kết tài khoản ACB. Webhook HMAC + timestamp; cron truy vấn SePay User API v2. Không phải API ACB trực tiếp.
 - Telegram: catalog VND, mua hàng bằng số dư tài khoản hoặc QR ngân hàng, nạp số dư bằng QR, `/balance`, `/orders`, `/support`; liên kết tài khoản hai bước. User, số dư, giá, đơn hàng, webhook ngân hàng và sổ cái dùng chung với website.
-- Runtime hiện tại là một Worker phân module (API, auth, commerce, payment, admin, bot, operations); không có service binding/core worker độc lập. Các endpoint admin vẫn xác thực JWT và role ngay trong Worker.
+- Runtime hiện tại là một Worker phân module (API, auth, commerce, payment, admin, bot, operations); không có service binding/core worker độc lập. Các endpoint admin xác thực phiên TiệmDigital/quyền theo ID hoặc JWT Access/quyền theo email tùy `ADMIN_AUTH_MODE`, ngay trong Worker. Xem [Admin và MMO](mmo-migration.md).
 - Giao hàng thủ công có mã hóa là luồng đang hoạt động. Catalog được quản lý trong D1 bởi Owner; không tự dùng giá fallback cũ hoặc gọi GumTool để giao key khi chưa có contract supplier.
 
 ## Chạy và kiểm tra cục bộ
@@ -19,7 +19,7 @@
 
 Ứng dụng mặc định không có sản phẩm, tài khoản admin hay số dư mẫu. Thanh toán ngân hàng mặc định tắt. Test HTTP chạy trên Workers/D1 thật trong Miniflare, email và JWKS Access được thay bằng dịch vụ ngoài giả lập ở ranh giới test; không có bypass đăng nhập/admin trong runtime ứng dụng.
 
-Đăng nhập bằng mã email cần Email Service hoạt động với domain đã onboard. Local Wrangler không tự gửi email tới khách khi chưa có binding tương ứng. Test suite kiểm chứng OTP mà không gửi email thật. Username/password không cần Email Service; đăng nhập Telegram cần bot đã cấu hình. Để dùng admin cần Cloudflare Access/JWKS hợp lệ kể cả khi chạy local; không có mật khẩu admin mặc định.
+Đăng nhập bằng mã email cần Email Service hoạt động với domain đã onboard. Local Wrangler không tự gửi email tới khách khi chưa có binding tương ứng. Test suite kiểm chứng OTP mà không gửi email thật. Username/password không cần Email Service; đăng nhập Telegram cần bot đã cấu hình. Local/production dùng tài khoản TiệmDigital đã được cấp quyền qua `admin_accounts`; tạo tài khoản rồi chạy `node scripts/admin.mjs --username=<username> --role=owner`. Chỉ chế độ `ADMIN_AUTH_MODE=access` cần Access/JWKS; không có mật khẩu admin mặc định.
 
 ## Provision Cloudflare
 
@@ -35,12 +35,12 @@ Telegram login cần bot token, webhook secret và bot username hiện có. `/ap
 
 1. Dùng account/domain thuộc quyền quản lý. Tạo D1 riêng cho staging và production, Queues và DLQ, R2 cho media, Email Service với SPF/DKIM.
 2. Điền ID tài nguyên và hostname thật vào `wrangler.worker.jsonc`. Giữ `workers_dev=false`, `preview_urls=false` khi cấu hình hostname riêng; route/custom domain cho shop, admin, hooks phải trỏ đúng Worker. Nếu dùng hostname hooks riêng, bổ sung `HOOKS_ORIGIN` vào env (xem ghi chú code/config trước khi dùng); mặc định webhook dùng hostname shop.
-3. Bảo vệ toàn hostname admin bằng Access, IdP MFA/passkey, session ngắn và reauthentication policy cho admin. Worker kiểm chữ ký JWT, issuer, audience, expiry và vai trò D1. Chỉ có `Cf-Access-Authenticated-User-Email` không được chấp nhận.
+3. Nếu chọn `ADMIN_AUTH_MODE=access`, bảo vệ toàn hostname admin bằng Access, IdP MFA/passkey, session ngắn và reauthentication policy cho admin. Worker kiểm chữ ký JWT, issuer, audience, expiry và vai trò D1. Chỉ có `Cf-Access-Authenticated-User-Email` không được chấp nhận.
 4. `node scripts/schema.mjs --remote --env=staging`. Không áp dụng production trước khi có backup và kiểm tra staging. Script mặc định chỉ thêm cấu trúc chưa tồn tại. Nếu database đã tạo bằng phiên bản trước khi review: dừng các tác vụ ghi tiền, chạy lại với `--refresh-triggers` để thay các trigger bằng bản hiện tại, kiểm tra rồi mới mở ghi. Lệnh giữ nguyên bảng/dữ liệu nhưng không được chạy refresh trigger khi còn giao dịch đang ghi. Thay đổi cột bảng trong các phiên bản sau cần DDL có kiểm soát riêng.
-5. Bootstrap ít nhất hai Owner khác nhau bằng `node scripts/admin.mjs --email=<email> --role=owner --remote --env=staging`. Các Owner phải là hai danh tính độc lập qua IdP; không dùng hai email alias của một người để thay thế kiểm soát hai người.
+5. Production dùng `ADMIN_AUTH_MODE=session`: tạo tài khoản TiệmDigital trước, cấp quyền theo `--username` như [Admin và MMO](mmo-migration.md). Để dùng phê duyệt hai người, cần hai tài khoản độc lập. Với chế độ Access, bootstrap ít nhất hai Owner khác nhau bằng `node scripts/admin.mjs --email=<email> --role=owner --remote --env=staging`. Các Owner phải là hai danh tính độc lập qua IdP; không dùng hai email alias của một người để thay thế kiểm soát hai người.
 6. Cấu hình secrets bằng `wrangler secret put <NAME> --config wrangler.worker.jsonc --env staging`: BETTER_AUTH_SECRET, TURNSTILE_SECRET, DELIVERY_KEY, SEPAY_WEBHOOK_SECRET, SEPAY_API_TOKEN. Nếu dùng bot: TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET. Không nhập secrets vào admin hoặc Vite `VITE_*`.
 7. Biến không bí mật: APP_ORIGIN, ADMIN_ORIGIN, ACCESS_ISSUER, ACCESS_AUD, TURNSTILE_SITE_KEY, EMAIL_FROM, TELEGRAM_BOT_USERNAME. Khai báo `EMAIL` send_email binding; staging cần queues/R2 riêng nếu muốn kiểm chứng đủ chức năng này.
-8. `npm run deploy -- --env=staging` từ môi trường đã login Cloudflare. Script chặn domain/ID placeholder, thiếu cấu hình Access/Turnstile và thiếu secrets cốt lõi. Script không thay thế việc kiểm tra Access policy hoặc schema đã apply.
+8. `npm run deploy -- --env=staging` từ môi trường đã login Cloudflare. Script chặn domain/ID placeholder, thiếu cấu hình Access (khi chọn chế độ Access)/Turnstile và thiếu secrets cốt lõi. Script không thay thế việc kiểm tra Access policy hoặc schema đã apply.
 
 Không có deployment, liên kết ngân hàng hay tạo bot nào được tự thực hiện trong lúc triển khai mã nguồn này; cần credentials/domain thật của chủ dự án.
 
@@ -77,7 +77,7 @@ Yêu cầu QR/số dư cho hàng số trong bot là quyết định sản phẩm
 - Ledger/order endpoints hiện giới hạn 100 bản ghi gần nhất. Chưa có cursor UI/export lịch sử đầy đủ. Chủ cửa hàng phải kiểm tra khối lượng thực tế trước khi dùng lâu dài.
 - Chưa bật D1 read replicas. Khi bật, phải sửa luồng đọc tiền sang primary/session và kiểm chứng read-after-write; không bật replication chỉ ở dashboard rồi giả định API hiện tại đã xử lý.
 - R2 media là dữ liệu công khai qua `/media/<uuid>`; không upload giấy tờ cá nhân, biên lai hoặc key vào media. Chỉ ảnh PNG/JPEG/WebP tối đa 2 MB, không SVG/HTML.
-- Auth khách hàng dùng mật khẩu, OTP email hoặc xác nhận qua bot Telegram; chưa có passkey/MFA riêng cho khách. Admin MFA do Access/IdP enforcement. Chưa có KMS tách account hoặc archive audit bất biến ngoài D1.
+- Auth khách hàng dùng mật khẩu, OTP email hoặc xác nhận qua bot Telegram; chưa có passkey/MFA riêng cho khách. Admin chế độ session dùng cùng phương thức đăng nhập; chế độ Access có MFA khi IdP/policy được cấu hình. Chưa có KMS tách account hoặc archive audit bất biến ngoài D1.
 
 ## Theo dõi và phục hồi
 
@@ -95,4 +95,4 @@ Không bật nhận tiền trước khi kiểm tra định tuyến cùng origin,
 
 Cloudflare Pages Git build tự đọc `wrangler.jsonc`: file này chỉ chứa cấu hình Pages và service binding `PLATFORM` tới Worker `tiemdigital-production`. Cấu hình backend nằm riêng trong `wrangler.worker.jsonc`; lệnh Worker/D1 phải truyền `--config wrangler.worker.jsonc`. Không trộn `main`, `assets`, `triggers`, môi trường `staging` hoặc queue consumer vào cấu hình Pages. `npm run check:pages` chạy bước xác thực `build-env` mà Pages sử dụng, sau đó bundle Pages Functions; CI phải qua bước này.
 
-Các Pages Functions chuyển `/api/*` và `/webhooks/*` qua service binding, giữ nguyên URL và body. Backend phải đặt `APP_ORIGIN=https://tiemdigital.pages.dev` để nhận request này. `ADMIN_ORIGIN` giữ hostname Worker hiện có để duy trì hostname quản trị và webhook đã cấu hình. Cần kiểm tra Access/Turnstile/email, secrets và staging riêng; việc frontend deploy thành công không chứng minh đã gửi OTP hoặc xử lý giao dịch thật.
+Các Pages Functions chuyển `/api/*` và `/webhooks/*` qua service binding, giữ nguyên URL và body. Backend phải đặt `APP_ORIGIN=https://tiemdigital.pages.dev` để nhận request này. `ADMIN_ORIGIN` giữ hostname Worker hiện có cho tương thích định tuyến. Trong chế độ session, admin và mọi API admin chạy trên `APP_ORIGIN`; truy cập trang admin ở hostname Worker được chuyển về website để dùng cùng cookie. Cần kiểm tra Access/Turnstile/email, secrets và staging riêng; việc frontend deploy thành công không chứng minh đã gửi OTP hoặc xử lý giao dịch thật.

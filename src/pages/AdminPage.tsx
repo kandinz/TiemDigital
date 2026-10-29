@@ -8,8 +8,11 @@ import {
   type PlatformOrder,
 } from "../services/platform";
 import "../platform.css";
+import { AuthForm } from '../components/AuthForm';
 
 interface Admin {
+  userId?: string;
+  username?: string;
   email: string;
   role: string;
 }
@@ -66,7 +69,8 @@ type Tab =
   | "products"
   | "pages"
   | "telegram"
-  | "audit";
+  | "audit"
+  | "mmo";
 type Run = (task: () => Promise<void>) => Promise<void>;
 function useAdminCommand() {
   const pending = useRef(new Map<string, string>());
@@ -95,6 +99,7 @@ const labels: [Tab, string][] = [
   ["pages", "Nội dung website"],
   ["telegram", "Telegram & hệ thống"],
   ["audit", "Nhật ký quản trị"],
+  ["mmo", "MMO"],
 ];
 
 function Orders({ run }: { run: Run }) {
@@ -1176,7 +1181,10 @@ function Overview({ run }: { run: Run }) {
 }
 export function AdminPage() {
   const [admin, setAdmin] = useState<Admin | null>(null);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(window.location.pathname.startsWith("/admin/mmo") ? "mmo" : "overview");
+  const [loading, setLoading] = useState(true);
+  const [authMode, setAuthMode] = useState("session");
+  const [adminUrl, setAdminUrl] = useState("/admin");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -1193,11 +1201,16 @@ export function AdminPage() {
       setBusy(false);
     }
   }, []);
-  useEffect(() => {
-    api<Admin>("/api/admin/me")
-      .then(setAdmin)
-      .catch((error) => setError(error.message));
+  const loadAdmin = useCallback(async () => {
+    try { const identity = await api<Admin>('/api/admin/me'); setError(''); setAdmin(identity); }
+    catch (error) { if ((error as Error & { status?: number }).status !== 401) setError((error as Error).message); }
+    finally { setLoading(false); }
   }, []);
+  useEffect(() => {
+    void loadAdmin();
+    api<{ adminAuthMode: string; adminUrl: string }>('/api/public/config')
+      .then(config => { setAuthMode(config.adminAuthMode); setAdminUrl(config.adminUrl); }).catch(() => {});
+  }, [loadAdmin]);
   return (
     <div className="platform platform-shell">
       <header className="topbar">
@@ -1206,26 +1219,26 @@ export function AdminPage() {
         </a>
         <div className="action-row">
           <span>
-            {admin?.email} · {admin?.role}
+            {admin && `${admin.username ?? admin.email} · ${admin.role}`}
           </span>
-          <a href="/cdn-cgi/access/logout">Đăng xuất Access</a>
+          {admin && (authMode === 'access' ? <a href="/cdn-cgi/access/logout">Đăng xuất Access</a> : <button onClick={() => void run(async () => { await api('/api/auth/sign-out', { body: {} }); setAdmin(null); })}>Đăng xuất</button>)}
         </div>
       </header>
       {!admin ? (
-        <section className="auth-card">
-          <h1>Quản trị cửa hàng</h1>
-          <p>Đăng nhập qua Cloudflare Access và tài khoản được cấp quyền.</p>
+        <div>
+          {loading ? <section className="auth-card"><p role="status">Đang kiểm tra phiên đăng nhập…</p></section> : authMode === 'session' ? <AuthForm admin onLogin={() => void loadAdmin()} /> : <section className="auth-card"><h1>Quản trị cửa hàng</h1><a href={adminUrl}>Đăng nhập qua Cloudflare Access</a></section>}
           {error && <p className="notice error">{error}</p>}
-        </section>
+        </div>
       ) : (
-        <div className="workspace">
+        <div className={`workspace ${tab === 'mmo' ? 'mmo-workspace' : ''}`}>
           <nav className="navigation" aria-label="Quản trị">
-            {labels.map(([id, label]) => (
+            {labels.filter(([id]) => id !== "mmo" || admin.role === "owner").map(([id, label]) => (
               <button
                 key={id}
                 className={tab === id ? "active" : ""}
                 onClick={() => {
                   setTab(id);
+                  window.history.replaceState(null, "", id === "mmo" ? "/admin/mmo" : "/admin");
                   setError("");
                   setMessage("");
                 }}
@@ -1261,6 +1274,7 @@ export function AdminPage() {
             {tab === "pages" && <Pages run={run} />}{" "}
             {tab === "telegram" && <ReadonlyPanel path="status" run={run} />}{" "}
             {tab === "audit" && <ReadonlyPanel path="audit" run={run} />}
+            {tab === 'mmo' && admin.role === 'owner' && <iframe title="MMO Marketplace" className="mmo-frame" src="/admin/mmo-ui" allow="clipboard-write" />}
           </main>
         </div>
       )}

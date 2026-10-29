@@ -15,6 +15,7 @@ import { serializeOrder } from "./commerce";
 import { encryptDelivery } from "./delivery";
 import { sha256 } from "./http";
 import { sweep } from "./operations";
+import { mmoApi } from './mmo';
 
 const blockSchema = z.discriminatedUnion("type", [
   z.object({
@@ -56,6 +57,12 @@ export async function adminApi(request: Request, env: Env) {
   checkOrigin(request, env, true);
   const url = new URL(request.url);
   const path = url.pathname.slice("/api/admin".length);
+  if (path === '/mmo' || path.startsWith('/mmo/')) {
+    requireRole(admin, ['owner']);
+    if (!['GET', 'HEAD'].includes(request.method))
+      await audit(env, admin.email, 'MMO_REQUEST', path, { method: request.method });
+    return mmoApi(request, env, admin);
+  }
   if (path === "/me" && request.method === "GET") return json(admin);
   if (path === "/media" && request.method === "POST") {
     requireRole(admin, ["owner", "editor"]);

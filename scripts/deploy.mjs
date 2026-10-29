@@ -19,8 +19,7 @@ if (
     "Configure real domains, environment and resource IDs before deploy",
   );
 if (
-  !target.vars.ACCESS_ISSUER ||
-  !target.vars.ACCESS_AUD ||
+  (target.vars.ADMIN_AUTH_MODE !== 'session' && (!target.vars.ACCESS_ISSUER || !target.vars.ACCESS_AUD)) ||
   !target.vars.TURNSTILE_SITE_KEY
 )
   throw new Error("Configure Access and Turnstile before deploy");
@@ -48,6 +47,7 @@ for (const args of [
   ["node_modules/typescript/bin/tsc", "-b"],
   ["node_modules/typescript/bin/tsc", "-p", "tsconfig.worker.json"],
   ["node_modules/vite/bin/vite.js", "build"],
+  ["node_modules/vite/bin/vite.js", "build", "--config", "modules/mmo/vite.config.ts"],
   [cli, "--config", "wrangler.worker.jsonc", "deploy", "--env", environment],
 ]) {
   const result = spawnSync(process.execPath, args, { stdio: "inherit" });

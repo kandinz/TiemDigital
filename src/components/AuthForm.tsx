@@ -3,7 +3,7 @@ import { api } from '../services/platform';
 import { EmailLogin } from './EmailLogin';
 import { TelegramLogin } from './TelegramLogin';
 
-export function AuthForm({ onLogin }: { onLogin: () => void }) {
+export function AuthForm({ onLogin, admin = false }: { onLogin: () => void; admin?: boolean }) {
   const [mode, setMode] = useState<'login' | 'register' | 'email'>('login');
   const [identifier, setIdentifier] = useState('');
   const [email, setEmail] = useState('');
@@ -15,11 +15,12 @@ export function AuthForm({ onLogin }: { onLogin: () => void }) {
 
   if (mode === 'email') return <EmailLogin onLogin={onLogin} onBack={() => setMode('login')} />;
   return <section className="auth-card">
-    <div className="auth-modes" role="group" aria-label="Chọn đăng nhập hoặc đăng ký">
+    {!admin && <div className="auth-modes" role="group" aria-label="Chọn đăng nhập hoặc đăng ký">
       <button type="button" aria-pressed={!registering} onClick={() => { setMode('login'); setError(''); }}>Đăng nhập</button>
-      <button type="button" aria-pressed={registering} onClick={() => { setMode('register'); setError(''); }}>Đăng ký</button>
-    </div>
-    <h1>{registering ? 'Tạo tài khoản' : 'Đăng nhập'}</h1>
+      {!admin && <button type="button" aria-pressed={registering} onClick={() => { setMode('register'); setError(''); }}>Đăng ký</button>}
+    </div>}
+    <h1>{admin ? 'Đăng nhập quản trị' : registering ? 'Tạo tài khoản' : 'Đăng nhập'}</h1>
+    {admin && <p>Dùng tài khoản TiệmDigital đã được cấp quyền quản trị.</p>}
     <form aria-label={registering ? 'Đăng ký tài khoản' : 'Đăng nhập bằng mật khẩu'} onSubmit={async (event) => {
       event.preventDefault(); setError('');
       if (registering && password !== confirmation) { setError('Mật khẩu nhập lại chưa khớp.'); return; }

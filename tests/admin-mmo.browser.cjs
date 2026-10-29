@@ -1,0 +1,63 @@
+// Run against npm run dev on localhost only. Uses local D1 and a dedicated fixture account.
+const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
+const { chromium } = require('playwright');
+const origin = process.env.STOREFRONT_URL || 'http://localhost:8787';
+const username = 'mmo_browser_test', password = 'Browser-test-password-42';
+assert.equal(new URL(origin).hostname, 'localhost', 'This check writes fixtures only to local D1');
+
+(async () => {
+  const signup = await fetch(`${origin}/api/auth/register`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ username, password }) });
+  assert.ok([200, 400].includes(signup.status), `Fixture account: ${signup.status}`);
+  const grant = spawnSync(process.execPath, ['scripts/admin.mjs', `--username=${username}`, '--role=owner'], { encoding: 'utf8' });
+  assert.equal(grant.status, 0, grant.stderr);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' });
+    const page = await context.newPage(), errors = [], failures = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500) failures.push(`${response.status()} ${response.url()}`); });
+    page.setDefaultTimeout(10000);
+    await page.goto(`${origin}/admin`);
+    await page.getByLabel('Username hoặc email').fill(username);
+    await page.getByLabel('Mật khẩu', { exact: true }).fill(password);
+    await page.getByRole('form', { name: 'Đăng nhập bằng mật khẩu' }).getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+    await page.getByRole('button', { name: 'MMO', exact: true }).click();
+    const frame = page.frameLocator('iframe[title="MMO Marketplace"]');
+    await frame.getByText('Không có sản phẩm', { exact: true }).waitFor();
+    assert.equal(await frame.locator('html').getAttribute('data-app-theme'), 'light');
+    await frame.getByRole('button', { name: 'USD', exact: true }).click();
+    await frame.getByRole('button', { name: 'VND', exact: true }).waitFor();
+    await frame.getByRole('button', { name: 'Bán hàng & chi phí', exact: true }).click();
+    await frame.getByRole('button', { name: 'Ghi Nhận Giao Dịch', exact: true }).click();
+    const name = `Browser sale ${Date.now()}`;
+    await frame.getByPlaceholder('VD: Netflix Premium 1T, ChatGPT Plus, YouTube...').fill(name);
+    await frame.getByPlaceholder('VD: 50k, 120000').fill('50k');
+    await frame.getByPlaceholder('VD: 99k, 150000').fill('99k');
+    const saved = page.waitForResponse(response => response.url().includes('/api/admin/mmo/transactions') && response.request().method() === 'POST');
+    await frame.getByRole('button', { name: 'Lưu Đơn Bán', exact: true }).click();
+    const response = await saved;
+    assert.equal(response.status(), 200);
+    const { id } = await response.json();
+    await frame.getByText(name, { exact: true }).waitFor();
+    await frame.getByRole('button', { name: 'Báo cáo & bảo hành', exact: true }).click();
+    await frame.getByText('Báo Cáo Hiệu Quả Kinh Doanh', { exact: true }).waitFor();
+    await frame.getByRole('button', { name: 'Cấu hình NCC', exact: true }).click();
+    await frame.getByText('Tỷ giá', { exact: false }).first().waitFor();
+    await frame.getByRole('button', { name: 'Kho sản phẩm', exact: true }).click();
+    await frame.getByText('Không có sản phẩm', { exact: true }).waitFor();
+    await page.screenshot({ path: '.wrangler/admin-mmo-desktop.png', fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Admin must fit mobile width');
+    assert.ok(await frame.locator('body').evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'MMO must fit mobile width');
+    await page.screenshot({ path: '.wrangler/admin-mmo-mobile.png', fullPage: true });
+    const deleted = await context.request.delete(`${origin}/api/admin/mmo/transactions/${id}`, { headers: { origin } });
+    assert.equal(deleted.status(), 200);
+    await page.getByRole('button', { name: 'Đăng xuất', exact: true }).click();
+    await page.getByRole('heading', { name: 'Đăng nhập quản trị' }).waitFor();
+    assert.equal((await context.request.get(`${origin}/api/admin/mmo/orders`)).status(), 401);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(failures, []);
+    console.log('Admin login/logout, MMO navigation, sale save, reports, settings, light theme and mobile layout passed');
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

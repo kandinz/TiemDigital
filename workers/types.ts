@@ -14,6 +14,7 @@ export interface Env {
   APP_ORIGIN: string;
   ADMIN_ORIGIN: string;
   ENVIRONMENT: string;
+  ADMIN_AUTH_MODE?: 'session' | 'access';
   BETTER_AUTH_SECRET: string;
   EMAIL_FROM?: string;
   ACCESS_ISSUER?: string;
@@ -35,6 +36,8 @@ export interface Actor {
   username?: string | null;
 }
 export interface Admin {
+  userId?: string;
+  username?: string;
   email: string;
   role: "owner" | "finance" | "support" | "editor" | "auditor";
 }

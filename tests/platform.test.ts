@@ -14,6 +14,7 @@ const testEnv = {
   APP_ORIGIN: "http://localhost:8787",
   ADMIN_ORIGIN: "http://localhost:8787",
   ENVIRONMENT: "local",
+  ADMIN_AUTH_MODE: 'access',
   BETTER_AUTH_SECRET: "test-secret-with-at-least-thirty-two-characters",
   SEPAY_WEBHOOK_SECRET: "test-bank-secret",
   EMAIL_FROM: "shop@example.com",
@@ -222,6 +223,7 @@ describe("public Worker API", () => {
     const issuer = "https://tests.cloudflareaccess.com";
     const accessEnv = {
       ...testEnv,
+      ADMIN_AUTH_MODE: 'access' as const,
       ACCESS_ISSUER: issuer,
       ACCESS_AUD: "test-aud",
       SEPAY_API_TOKEN: "test-provider-token",

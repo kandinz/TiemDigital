@@ -20,16 +20,19 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const response = await handle(request, env);
     const headers = new Headers(response.headers);
+    const pathname = new URL(request.url).pathname;
+    if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin/')) headers.set('Cache-Control', 'no-store');
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-    headers.set("X-Frame-Options", "DENY");
+    const mmoFrame = pathname === '/admin/mmo-ui';
+    headers.set("X-Frame-Options", mmoFrame ? 'SAMEORIGIN' : 'DENY');
     headers.set(
       "Permissions-Policy",
       "camera=(), microphone=(), geolocation=()",
     );
     headers.set(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+      `default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self' https://challenges.cloudflare.com; frame-src 'self' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors ${mmoFrame ? "'self'" : "'none'"}; form-action 'self'`,
     );
     if (env.ENVIRONMENT === "production")
       headers.set("Strict-Transport-Security", "max-age=31536000");
@@ -60,11 +63,18 @@ async function handle(request: Request, env: Env): Promise<Response> {
       env.ADMIN_ORIGIN !== env.APP_ORIGIN &&
       url.pathname === "/"
     )
-      return Response.redirect(`${env.ADMIN_ORIGIN}/admin`, 302);
+      return Response.redirect(`${env.ADMIN_AUTH_MODE === 'session' ? env.APP_ORIGIN : env.ADMIN_ORIGIN}/admin`, 302);
     if (url.pathname.startsWith("/api/admin/"))
       return await adminApi(request, env);
     if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
-      await administrator(request, env);
+      if (env.ADMIN_AUTH_MODE !== 'session') await administrator(request, env);
+      else if (url.origin !== env.APP_ORIGIN) return Response.redirect(`${env.APP_ORIGIN}${url.pathname}${url.search}`, 302);
+      if (url.pathname === '/admin/mmo-ui') {
+        const admin = await administrator(request, env);
+        if (admin.role !== 'owner') throw new HttpError(403, 'Không đủ quyền MMO');
+        const asset = new URL('/mmo/index.html', url);
+        return env.SITE_ASSETS.fetch(new Request(asset, { headers: request.headers }));
+      }
       return env.SITE_ASSETS.fetch(request);
     }
     if (url.pathname === "/webhooks/bank/sepay" && request.method === "POST")
@@ -73,6 +83,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return await telegramWebhook(request, env);
     if (url.pathname === "/api/public/config" && request.method === "GET")
       return json({
+        adminAuthMode: env.ADMIN_AUTH_MODE ?? 'access',
+        adminUrl: `${env.ADMIN_AUTH_MODE === 'session' ? env.APP_ORIGIN : env.ADMIN_ORIGIN}/admin`,
         turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null,
         botUsername: env.TELEGRAM_BOT_USERNAME ?? null,
       });

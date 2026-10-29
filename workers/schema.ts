@@ -2,15 +2,18 @@
 // requests never change schema or seed production money/accounts.
 // Existing databases may retain legacy currency columns/enum values for history.
 // New orders/settlements are restricted to VND + BANK/WALLET by the guards below.
+import { MMO_SCHEMA_STATEMENTS } from './mmo/schema.ts';
 export function authColumnUpgrades(columns: string[]) {
   return columns.length ? ['username', 'displayUsername'].filter((name) => !columns.includes(name)).map((name) => `ALTER TABLE user ADD COLUMN ${name} TEXT`) : [];
 }
 
 export const SCHEMA_STATEMENTS = [
+  ...MMO_SCHEMA_STATEMENTS,
   `CREATE TABLE IF NOT EXISTS user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, emailVerified INTEGER NOT NULL DEFAULT 0, image TEXT, username TEXT, displayUsername TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS user_username ON user(username COLLATE NOCASE) WHERE username IS NOT NULL`,
   `CREATE TABLE IF NOT EXISTS session (id TEXT PRIMARY KEY, expiresAt INTEGER NOT NULL, token TEXT NOT NULL UNIQUE, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, ipAddress TEXT, userAgent TEXT, userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE)`,
   `CREATE INDEX IF NOT EXISTS session_user ON session(userId)`,
+  `CREATE TABLE IF NOT EXISTS admin_accounts (user_id TEXT PRIMARY KEY REFERENCES user(id) ON DELETE CASCADE, role TEXT NOT NULL CHECK(role IN('owner','finance','support','editor','auditor')))`,
   `CREATE TABLE IF NOT EXISTS account (id TEXT PRIMARY KEY, accountId TEXT NOT NULL, providerId TEXT NOT NULL, userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, accessToken TEXT, refreshToken TEXT, idToken TEXT, accessTokenExpiresAt INTEGER, refreshTokenExpiresAt INTEGER, scope TEXT, password TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS account_user ON account(userId)`,
   `CREATE TABLE IF NOT EXISTS verification (id TEXT PRIMARY KEY, identifier TEXT NOT NULL, value TEXT NOT NULL, expiresAt INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`,

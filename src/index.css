@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source not "../modules/mmo";
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {

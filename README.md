@@ -50,6 +50,6 @@ Nếu Playwright nằm ngoài `node_modules` của dự án, đặt `NODE_PATH` 
 
 ## Vận hành
 
-`/admin` dành cho quản trị theo quyền; cấu hình và quy trình triển khai nằm trong [docs/operations.md](docs/operations.md). Trang nội dung đã xuất bản vẫn được phục vụ tại `/pages/:slug`.
+`/admin` đăng nhập bằng tài khoản TiệmDigital đã được cấp quyền. Owner mở module MMO tại `/admin/mmo`; hướng dẫn cấp quyền và chuyển dữ liệu từ Gum Tool nằm trong [docs/mmo-migration.md](docs/mmo-migration.md). cấu hình và quy trình triển khai nằm trong [docs/operations.md](docs/operations.md). Trang nội dung đã xuất bản vẫn được phục vụ tại `/pages/:slug`.
 
 Cloudflare Pages tự đọc `wrangler.jsonc` để build/deploy frontend và Pages Functions. Backend, database, môi trường local/staging/production dùng riêng `wrangler.worker.jsonc`; các lệnh Worker phải truyền `--config wrangler.worker.jsonc`. CI kiểm tra cấu hình Pages bằng chính bước `build-env` trước khi xác nhận bản build hợp lệ.

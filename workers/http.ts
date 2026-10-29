@@ -74,7 +74,7 @@ export function checkOrigin(request: Request, env: Env, admin = false) {
   if (
     !["GET", "HEAD"].includes(request.method) &&
     request.headers.get("origin") !==
-      (admin ? env.ADMIN_ORIGIN : env.APP_ORIGIN)
+      (admin && env.ADMIN_AUTH_MODE !== 'session' ? env.ADMIN_ORIGIN : env.APP_ORIGIN)
   ) {
     throw new HttpError(403, "Nguồn yêu cầu không hợp lệ");
   }

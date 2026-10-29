@@ -3,7 +3,9 @@
   "name": "tiemdigital",
   "main": "workers/index.ts",
   "compatibility_date": "2026-10-28",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": false,
   "preview_urls": false,
   "assets": {
@@ -22,10 +24,17 @@
   "vars": {
     "ENVIRONMENT": "local",
     "APP_ORIGIN": "http://localhost:8787",
-    "ADMIN_ORIGIN": "http://localhost:8787"
+    "ADMIN_ORIGIN": "http://localhost:8787",
+    "ADMIN_AUTH_MODE": "session"
   },
-  "triggers": { "crons": ["*/5 * * * *"] },
-  "observability": { "enabled": true },
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  },
+  "observability": {
+    "enabled": true
+  },
   "env": {
     "production": {
       "workers_dev": true,
@@ -33,7 +42,8 @@
         "ENVIRONMENT": "production",
         "APP_ORIGIN": "https://tiemdigital.pages.dev",
         "ADMIN_ORIGIN": "https://tiemdigital-production.kandin-cs.workers.dev",
-        "TELEGRAM_BOT_USERNAME": "tiemdigital_bot"
+        "TELEGRAM_BOT_USERNAME": "tiemdigital_bot",
+        "ADMIN_AUTH_MODE": "session"
       },
       "d1_databases": [
         {
@@ -43,7 +53,12 @@
         }
       ],
       "queues": {
-        "producers": [{ "binding": "EVENTS", "queue": "tiemdigital-events" }],
+        "producers": [
+          {
+            "binding": "EVENTS",
+            "queue": "tiemdigital-events"
+          }
+        ],
         "consumers": [
           {
             "queue": "tiemdigital-events",
@@ -69,7 +84,11 @@
           "database_id": "00000000-0000-0000-0000-000000000000"
         }
       ],
-      "send_email": [{ "name": "EMAIL" }]
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ]
     }
   }
 }

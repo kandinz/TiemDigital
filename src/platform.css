@@ -481,3 +481,8 @@
     transition: none !important;
   }
 }
+
+.mmo-frame { display: block; width: 100%; height: calc(100dvh - 190px); min-height: 640px; border: 1px solid var(--line); border-radius: 12px; background: transparent; }
+@media (max-width: 700px) { .mmo-frame { min-height: 680px; height: calc(100dvh - 180px); } }
+
+@media (min-width: 900px) { .platform .workspace.mmo-workspace { max-width: 1760px; } }
