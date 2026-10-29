@@ -3,6 +3,7 @@ import type { Actor, Env } from "./types";
 import { HttpError, json, limitedText, now, rateLimit, sha256 } from "./http";
 import { createOrder, orderFor, payWallet, walletFor } from "./commerce";
 import { createIntent, intentFor, qrImageUrl } from "./payments";
+import { publicEmail } from './auth';
 
 export async function telegramCall(env: Env, method: string, body: unknown) {
   if (!env.TELEGRAM_BOT_TOKEN)
@@ -133,11 +134,12 @@ async function linkedActor(
   env: Env,
   telegramId: number,
 ): Promise<Actor | null> {
-  return env.DB.prepare(
-    "SELECT u.id,u.email,u.name FROM telegram_links l JOIN user u ON u.id=l.user_id LEFT JOIN customers c ON c.id=u.id WHERE l.telegram_id=? AND (u.emailVerified=1 OR (u.id='telegram:' || l.telegram_id AND u.email='telegram-' || l.telegram_id || '@users.invalid')) AND COALESCE(c.disabled,0)=0",
+  const actor = await env.DB.prepare(
+    "SELECT u.id,u.email,u.name FROM telegram_links l JOIN user u ON u.id=l.user_id LEFT JOIN customers c ON c.id=u.id WHERE l.telegram_id=? AND (u.emailVerified=1 OR EXISTS(SELECT 1 FROM account a WHERE a.userId=u.id AND a.providerId='credential') OR (u.id='telegram:' || l.telegram_id AND u.email='telegram-' || l.telegram_id || '@users.invalid')) AND COALESCE(c.disabled,0)=0",
   )
     .bind(String(telegramId))
     .first<Actor>();
+  return actor ? { ...actor, email: publicEmail(actor.email) } : null;
 }
 // A verified Telegram update resolves to the same Actor and calls the same
 // payment service as the HTTP website routes. No second wallet or API credential.
@@ -353,7 +355,24 @@ export async function processTelegramInbox(env: Env, inboxId: string) {
     }
   }
   try {
-    if (/^\/start [a-f0-9]{32}$/.test(text)) {
+    if (/^\/start login_[a-f0-9]{32}$/.test(text)) {
+      const actor = await linkedActor(env, sender.id);
+      if (!actor) throw new HttpError(401, 'Hãy gửi /start để tạo tài khoản trong bot, rồi tạo lại yêu cầu đăng nhập từ website.');
+      const token = text.slice('/start login_'.length);
+      const claimed = await env.DB.prepare('UPDATE telegram_logins SET user_id=?,telegram_id=? WHERE id=? AND expires_at>? AND confirmed_at IS NULL AND (telegram_id IS NULL OR telegram_id=?) RETURNING id')
+        .bind(actor.id, String(sender.id), await sha256(token), now(), String(sender.id)).first();
+      if (!claimed) throw new HttpError(400, 'Yêu cầu đăng nhập đã hết hạn hoặc đã sử dụng.');
+      await sendText(env, chatId, 'Xác nhận đăng nhập tài khoản Telegram của bạn trên website Tiệm Digital. Chỉ xác nhận nếu bạn vừa yêu cầu đăng nhập; không dùng liên kết người khác gửi.', {
+        reply_markup: { inline_keyboard: [[{ text: 'Xác nhận đăng nhập website', callback_data: `web-login:${token}` }]] },
+      });
+    } else if (/^web-login:[a-f0-9]{32}$/.test(text)) {
+      if (!callback) throw new HttpError(400, 'Vui lòng dùng nút xác nhận trong bot.');
+      const actor = await linkedActor(env, sender.id);
+      if (!actor) throw new HttpError(403, 'Tài khoản không còn khả dụng.');
+      const confirmed = await env.DB.prepare('UPDATE telegram_logins SET confirmed_at=? WHERE id=? AND user_id=? AND telegram_id=? AND expires_at>? AND confirmed_at IS NULL RETURNING id')
+        .bind(now(), await sha256(text.slice('web-login:'.length)), actor.id, String(sender.id), now()).first();
+      await sendText(env, chatId, confirmed ? 'Đã xác nhận. Quay lại trình duyệt để tiếp tục đăng nhập.' : 'Yêu cầu đã hết hạn hoặc đã sử dụng. Hãy tạo lại trên website.');
+    } else if (/^\/start [a-f0-9]{32}$/.test(text)) {
       const claimed = await env.DB.prepare(
         "UPDATE link_challenges SET telegram_id=?,chat_id=? WHERE id=? AND expires_at>? AND telegram_id IS NULL RETURNING id",
       )

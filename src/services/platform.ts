@@ -2,6 +2,7 @@ export interface Customer {
   id: string;
   email: string;
   name: string;
+  username?: string | null;
 }
 export interface PlatformOrder {
   id: string;

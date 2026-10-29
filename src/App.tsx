@@ -6,7 +6,7 @@ import { ProductCard } from './components/ProductCard';
 import { ProductDetailModal } from './components/ProductDetailModal';
 import { CheckoutModal } from './components/CheckoutModal';
 import { OrderSuccessModal } from './components/OrderSuccessModal';
-import { Footer } from './components/Footer';
+import { SupportButton } from './components/SupportButton';
 import type { Purchase, Product } from './types';
 import type { PlatformOrder } from './services/platform';
 import { fetchProducts } from './services/api';
@@ -70,19 +70,22 @@ export default function App() {
   return <div className="shop-shell">
     <Header refreshKey={accountVersion} />
     <main id="products" className="shop-container catalog">
-      <div className="catalog-heading"><h1>Sản phẩm <span aria-live="polite">{isLoading ? '…' : catalogError ? '' : filteredProducts.length}</span></h1>
+      <h1 className="sr-only">Sản phẩm</h1>
+      <div className="catalog-layout">
+        <aside className="catalog-sidebar"><CategoryPills categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} /></aside>
+        <section className="catalog-content" aria-label="Danh sách sản phẩm">
         <div className="catalog-tools">
           <div className="catalog-search"><Search size={17} aria-hidden="true" /><input type="search" aria-label="Tìm sản phẩm" placeholder="Tìm sản phẩm…" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} /></div>
           <select aria-label="Sắp xếp sản phẩm" value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="default">Mặc định</option><option value="price-asc">Giá tăng dần</option><option value="price-desc">Giá giảm dần</option></select>
         </div>
-      </div>
-      <CategoryPills categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />
       {isLoading ? <div className="product-grid" role="status" aria-label="Đang tải sản phẩm">{[1, 2, 3, 4, 5, 6].map((item) => <div key={item} className="product-skeleton" />)}</div>
         : catalogError ? <div className="shop-empty"><p role="alert">{catalogError}</p><button className="shop-button" onClick={() => void loadCatalog()}><RefreshCw size={16} />Thử lại</button></div>
         : !filteredProducts.length ? <div className="shop-empty"><Package size={28} /><h2>{products.length ? 'Không tìm thấy sản phẩm' : 'Chưa có sản phẩm'}</h2><p>{products.length ? 'Thử từ khóa hoặc danh mục khác.' : 'Vui lòng quay lại sau hoặc liên hệ hỗ trợ.'}</p>{products.length ? <button className="shop-button" onClick={resetFilters}>Xóa bộ lọc</button> : <a className="shop-button" href="/pages/lien-he">Hỗ trợ</a>}</div>
         : <div className="product-grid">{filteredProducts.map((product) => <ProductCard key={product.id} product={product} onQuickView={setQuickViewProduct} onBuyNow={buyNow} />)}</div>}
+        </section>
+      </div>
     </main>
-    <Footer />
+    <SupportButton />
     {quickViewProduct && <ProductDetailModal key={quickViewProduct.id} product={quickViewProduct} onClose={() => setQuickViewProduct(null)} onBuyNow={buyNow} />}
     {purchase && <CheckoutModal key={purchase.product.id} onClose={closeCheckout} purchase={purchase} onOrderSuccess={(order) => { setSuccessOrder(order); setAccountVersion((value) => value + 1); }} />}
     {successOrder && <OrderSuccessModal order={successOrder} onClose={() => setSuccessOrder(null)} />}

@@ -28,6 +28,7 @@ const customer = { id: 'browser-test', name: 'Khách kiểm thử', email: 'brow
       if (path === '/api/public/config') return reply({ turnstileSiteKey: null });
       if (path === '/api/auth/email-otp/send-verification-otp') return reply({ success: true });
       if (path === '/api/auth/sign-in/email-otp') { loggedIn = true; return reply({ user: customer }); }
+      if (path === '/api/auth/sign-in/username') { assert.equal(request.postDataJSON().username, 'browseruser'); loggedIn = true; return reply({ user: customer }); }
       if (path === '/api/auth/sign-out') { loggedIn = false; return reply({ success: true }); }
       if (path === '/api/auth/list-sessions') return reply([]);
       if (path === '/api/me') return loggedIn ? reply(customer) : reply({ error: 'Đăng nhập để tiếp tục.' }, 401);
@@ -69,6 +70,10 @@ const customer = { id: 'browser-test', name: 'Khách kiểm thử', email: 'brow
     assert.equal(await page.locator('.product-card').count(), 3);
     assert.equal(await page.getByRole('button', { name: /Giỏ hàng|Thêm .* vào giỏ/ }).count(), 0);
     assert.equal(await page.locator('.shop-header nav').count(), 0);
+    assert.equal(await page.locator('footer').count(), 0);
+    const sidebar = await page.locator('.catalog-sidebar').boundingBox();
+    const grid = await page.locator('.product-grid').boundingBox();
+    assert.ok(sidebar.x + sidebar.width < grid.x, 'Categories must be in a left sidebar');
     await page.getByRole('button', { name: 'Gemini', exact: true }).click();
     assert.equal(await page.locator('.product-card').count(), 1);
     await page.getByRole('button', { name: 'Tất cả', exact: true }).click();
@@ -81,11 +86,10 @@ const customer = { id: 'browser-test', name: 'Khách kiểm thử', email: 'brow
     await page.getByRole('button', { name: 'Xem chi tiết Claude API 50M Tokens 2day' }).click();
     await page.getByRole('spinbutton').fill('2');
     await page.getByRole('dialog').getByRole('button', { name: 'Mua ngay', exact: true }).click();
-    await page.getByRole('link', { name: 'Đăng nhập bằng email' }).click();
-    await page.getByRole('textbox', { name: 'Email', exact: true }).fill(customer.email);
-    await page.getByRole('button', { name: 'Gửi mã đăng nhập' }).click();
-    await page.getByRole('textbox', { name: 'Mã gồm 6 số' }).fill('123456');
-    await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+    await page.getByRole('link', { name: 'Đăng nhập để tiếp tục' }).click();
+    await page.getByRole('textbox', { name: 'Username hoặc email', exact: true }).fill('browseruser');
+    await page.getByLabel('Mật khẩu', { exact: true }).fill('Test-password-42');
+    await page.getByRole('form', { name: 'Đăng nhập bằng mật khẩu' }).getByRole('button', { name: 'Đăng nhập', exact: true }).click();
     await page.getByRole('dialog', { name: 'Thanh toán' }).getByRole('button', { name: 'Tạo đơn và chọn thanh toán' }).waitFor();
     assert.match(await page.locator('.receipt-lines').innerText(), /Claude API.*× 2/);
     await page.keyboard.press('Escape');

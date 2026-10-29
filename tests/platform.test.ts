@@ -270,6 +270,13 @@ describe("public Worker API", () => {
       );
     }
     try {
+      // This scenario must also run alone, without the preceding purchase test.
+      await env.DB.prepare("INSERT OR IGNORE INTO products(id,name,selling_price,updated_at) VALUES(9001,'Test key',70000,'2026-10-28')").run();
+      await env.DB.prepare("UPDATE settings SET body=? WHERE id='payment'").bind(JSON.stringify({
+        enabled: true, provider: 'sepay', bankBin: '970416', bankName: 'ACB',
+        accountNumber: '123456789', accountHolder: 'TIEM DIGITAL', minTopup: 10000,
+        maxTopup: 5000000, intentTtl: 900,
+      })).run();
       await env.DB.batch(
         [
           "owner-one@example.com",
@@ -610,7 +617,8 @@ describe("public Worker API", () => {
     } finally {
       mock.mockRestore();
     }
-  });
+  // Includes real RSA operations and dozens of D1/API calls on the Worker runtime.
+  }, 15000);
   it("accepts ACB top-ups and rejects a different bank", async () => {
     const cookie = await login("acb-buyer@example.com");
     const previous = await env.DB.prepare("SELECT body FROM settings WHERE id='payment'").first<{ body: string }>();

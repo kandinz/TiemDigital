@@ -1,5 +1,5 @@
 import type { Env } from "./types";
-import { auth, customer } from "./auth";
+import { auth, customer, register } from "./auth";
 import { checkOrigin, HttpError, json, rateLimit } from "./http";
 import {
   createOrder,
@@ -91,6 +91,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
     if (url.pathname.startsWith("/api/auth/")) {
       checkOrigin(request, env);
+      if (request.method === 'POST' && (url.pathname === '/api/auth/register' || url.pathname.startsWith('/api/auth/sign-in/') || url.pathname === '/api/auth/telegram/start')) {
+        await rateLimit(env, `auth:${request.headers.get('cf-connecting-ip') ?? 'unknown'}`, 12, 60);
+      }
+      if (url.pathname === '/api/auth/register' && request.method === 'POST') return await register(request, env);
+      if (url.pathname === '/api/auth/sign-up/email') throw new HttpError(404, 'Vui lòng đăng ký bằng username.');
       if (
         url.pathname === "/api/auth/email-otp/send-verification-otp" &&
         request.method === "POST"

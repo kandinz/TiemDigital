@@ -2,7 +2,7 @@
 
 ## Phạm vi bản triển khai
 
-- Website: Better Auth email OTP, tài khoản/phiên đăng nhập, danh mục giá server, đơn hàng riêng tư, ví VND, nạp QR ngân hàng, trả bằng ví hoặc QR, nhận sản phẩm đã mã hóa.
+- Website: Better Auth username/password, email/password, OTP email và xác nhận qua bot Telegram; tài khoản/phiên đăng nhập, danh mục giá server, đơn hàng riêng tư, ví VND, nạp QR ngân hàng, trả bằng ví hoặc QR, nhận sản phẩm đã mã hóa.
 - Admin: JWT Cloudflare Access + vai trò D1, khách hàng/khóa phiên, sản phẩm giá VND dùng chung, đơn và giao hàng thủ công, CMS page và trang chủ, lịch sử phiên bản, phê duyệt hai người, sổ cái, audit, đối soát.
 - Ngân hàng: SePay API Banking liên kết tài khoản ACB. Webhook HMAC + timestamp; cron truy vấn SePay User API v2. Không phải API ACB trực tiếp.
 - Telegram: catalog VND, mua hàng bằng số dư tài khoản hoặc QR ngân hàng, nạp số dư bằng QR, `/balance`, `/orders`, `/support`; liên kết tài khoản hai bước. User, số dư, giá, đơn hàng, webhook ngân hàng và sổ cái dùng chung với website.
@@ -19,9 +19,17 @@
 
 Ứng dụng mặc định không có sản phẩm, tài khoản admin hay số dư mẫu. Thanh toán ngân hàng mặc định tắt. Test HTTP chạy trên Workers/D1 thật trong Miniflare, email và JWKS Access được thay bằng dịch vụ ngoài giả lập ở ranh giới test; không có bypass đăng nhập/admin trong runtime ứng dụng.
 
-Đăng nhập thật cần Email Service hoạt động với domain đã onboard. Local Wrangler không tự gửi email tới khách khi chưa có binding tương ứng. Test suite kiểm chứng OTP mà không gửi email thật. Để dùng admin cần Cloudflare Access/JWKS hợp lệ kể cả khi chạy local; không có mật khẩu admin mặc định.
+Đăng nhập bằng mã email cần Email Service hoạt động với domain đã onboard. Local Wrangler không tự gửi email tới khách khi chưa có binding tương ứng. Test suite kiểm chứng OTP mà không gửi email thật. Username/password không cần Email Service; đăng nhập Telegram cần bot đã cấu hình. Để dùng admin cần Cloudflare Access/JWKS hợp lệ kể cả khi chạy local; không có mật khẩu admin mặc định.
 
 ## Provision Cloudflare
+
+### Tài khoản username/password và Telegram
+
+`POST /api/auth/register` nhận username (3–30 ký tự chữ/số/chấm/gạch dưới), mật khẩu (8–128 ký tự) và email tùy chọn. Better Auth băm mật khẩu và quản lý session cookie. Username chuẩn hóa chữ thường, có unique index không phân biệt hoa/thường. Tài khoản không email dùng định danh nội bộ trong database; API `/api/me` và giao diện trả email rỗng. Email chưa xác minh không nhận thông báo tự động. Login username/password và email/password dùng endpoint chuẩn Better Auth; OTP email cũ được giữ lại.
+
+Database hiện có cần thêm hai cột nullable `user.username`, `user.displayUsername`, unique index `user_username` và bảng `telegram_logins`. `scripts/schema.mjs` đọc `PRAGMA table_info(user)` rồi chỉ thêm cột còn thiếu trước khi áp dụng `SCHEMA_STATEMENTS`; chạy lại được. Thay đổi cộng thêm, không chuyển chủ sở hữu hay chỉnh số dư/đơn hàng. Áp dụng schema trước khi deploy backend mới, rồi mới cập nhật frontend.
+
+Telegram login cần bot token, webhook secret và bot username hiện có. `/api/auth/telegram/start` tạo yêu cầu 5 phút, gắn vào cookie HttpOnly của trình duyệt. Bot chỉ chấp nhận private chat đã xác thực webhook; `/start login_<token>` yêu cầu người dùng bấm nút xác nhận. `/api/auth/telegram/complete` kiểm tra cookie, thời hạn, trạng thái tài khoản và liên kết Telegram, tiêu thụ yêu cầu một lần rồi cấp session Better Auth cho đúng user cũ. Không đăng nhập bằng cách nhập Telegram ID/username, không ghép tài khoản chỉ vì trùng tên. Người dùng mới trên Telegram gửi `/start` trong bot trước khi tạo lại yêu cầu web.
 
 1. Dùng account/domain thuộc quyền quản lý. Tạo D1 riêng cho staging và production, Queues và DLQ, R2 cho media, Email Service với SPF/DKIM.
 2. Điền ID tài nguyên và hostname thật vào `wrangler.worker.jsonc`. Giữ `workers_dev=false`, `preview_urls=false` khi cấu hình hostname riêng; route/custom domain cho shop, admin, hooks phải trỏ đúng Worker. Nếu dùng hostname hooks riêng, bổ sung `HOOKS_ORIGIN` vào env (xem ghi chú code/config trước khi dùng); mặc định webhook dùng hostname shop.
@@ -67,7 +75,7 @@ Yêu cầu QR/số dư cho hàng số trong bot là quyết định sản phẩm
 - Ledger/order endpoints hiện giới hạn 100 bản ghi gần nhất. Chưa có cursor UI/export lịch sử đầy đủ. Chủ cửa hàng phải kiểm tra khối lượng thực tế trước khi dùng lâu dài.
 - Chưa bật D1 read replicas. Khi bật, phải sửa luồng đọc tiền sang primary/session và kiểm chứng read-after-write; không bật replication chỉ ở dashboard rồi giả định API hiện tại đã xử lý.
 - R2 media là dữ liệu công khai qua `/media/<uuid>`; không upload giấy tờ cá nhân, biên lai hoặc key vào media. Chỉ ảnh PNG/JPEG/WebP tối đa 2 MB, không SVG/HTML.
-- Auth khách hàng dùng OTP email; chưa có passkey/MFA riêng cho khách. Admin MFA do Access/IdP enforcement. Chưa có KMS tách account hoặc archive audit bất biến ngoài D1.
+- Auth khách hàng dùng mật khẩu, OTP email hoặc xác nhận qua bot Telegram; chưa có passkey/MFA riêng cho khách. Admin MFA do Access/IdP enforcement. Chưa có KMS tách account hoặc archive audit bất biến ngoài D1.
 
 ## Theo dõi và phục hồi
 

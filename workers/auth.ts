@@ -1,8 +1,30 @@
 import { betterAuth } from "better-auth";
-import { emailOTP } from "better-auth/plugins";
+import { emailOTP, username } from "better-auth/plugins";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { Actor, Admin, Env } from "./types";
-import { HttpError } from "./http";
+import { HttpError, readBody } from "./http";
+import { z } from 'zod';
+import { telegramAuth } from './telegram-auth';
+import { APIError } from 'better-auth/api';
+
+export const publicEmail = (email: string) => email.endsWith('@users.invalid') ? '' : email;
+
+export async function register(request: Request, env: Env) {
+  const input = await readBody(request, z.object({
+    username: z.string().trim().min(3).max(30).regex(/^[a-zA-Z0-9_.]+$/),
+    password: z.string().min(8).max(128),
+    email: z.union([z.email(), z.literal('')]).optional(),
+  }));
+  const email = input.email?.trim().toLowerCase();
+  if (email?.endsWith('@users.invalid')) throw new HttpError(400, 'Địa chỉ email không hợp lệ.');
+  try { return await auth(env).api.signUpEmail({
+    body: { name: input.username, username: input.username, password: input.password, email: email || `${crypto.randomUUID()}@users.invalid` },
+    headers: request.headers, asResponse: true,
+  }); } catch (error) {
+    if (error instanceof APIError) throw new HttpError(error.statusCode, error.body?.message || 'Không đăng ký được tài khoản.');
+    throw error;
+  }
+}
 
 export function auth(env: Env) {
   if (!env.BETTER_AUTH_SECRET || env.BETTER_AUTH_SECRET.length < 32)
@@ -12,6 +34,7 @@ export function auth(env: Env) {
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.APP_ORIGIN,
     trustedOrigins: [env.APP_ORIGIN],
+    emailAndPassword: { enabled: true, minPasswordLength: 8, maxPasswordLength: 128, requireEmailVerification: false },
     session: { expiresIn: 60 * 60 * 24 * 7, cookieCache: { enabled: false } },
     rateLimit: { enabled: true, storage: "database", window: 60, max: 20 },
     advanced: {
@@ -20,6 +43,8 @@ export function auth(env: Env) {
       database: { generateId: () => crypto.randomUUID() },
     },
     plugins: [
+      username({ minUsernameLength: 3, maxUsernameLength: 30 }),
+      telegramAuth(env),
       emailOTP({
         storeOTP: "hashed",
         allowedAttempts: 3,
@@ -40,8 +65,8 @@ export function auth(env: Env) {
 }
 export async function customer(request: Request, env: Env): Promise<Actor> {
   const session = await auth(env).api.getSession({ headers: request.headers });
-  if (!session?.user.emailVerified)
-    throw new HttpError(401, "Vui lòng đăng nhập bằng email");
+  if (!session?.user)
+    throw new HttpError(401, "Vui lòng đăng nhập");
   const user = session.user;
   await env.DB.prepare("INSERT OR IGNORE INTO customers(id) VALUES(?)")
     .bind(user.id)
@@ -50,7 +75,7 @@ export async function customer(request: Request, env: Env): Promise<Actor> {
     .bind(user.id)
     .first<{ disabled: number }>();
   if (row?.disabled) throw new HttpError(403, "Tài khoản đã bị khóa");
-  return { id: user.id, email: user.email, name: user.name };
+  return { id: user.id, email: publicEmail(user.email), name: user.name, username: user.username ?? null };
 }
 const keysets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 export async function administrator(

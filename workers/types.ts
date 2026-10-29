@@ -32,6 +32,7 @@ export interface Actor {
   id: string;
   email: string;
   name: string;
+  username?: string | null;
 }
 export interface Admin {
   email: string;

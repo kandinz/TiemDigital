@@ -36,6 +36,8 @@ async function checkContrast(page, screen) {
         if (path === '/api/me') return authenticated ? reply({ id: 'theme-test', name: 'Khách kiểm thử', email: 'theme@example.com' }) : reply({ error: 'Vui lòng đăng nhập' }, 401);
         if (path === '/api/public/config') return reply({ turnstileSiteKey: null });
         if (path === '/api/auth/email-otp/send-verification-otp') return reply({ success: true });
+        if (path === '/api/auth/telegram/start') return reply({ token: 'a'.repeat(32), url: `https://t.me/tiemdigital_bot?start=login_${'a'.repeat(32)}`, expiresAt: Math.floor(Date.now() / 1000) + 300 });
+        if (path === '/api/auth/telegram/complete') { authenticated = true; return reply({ status: 'SIGNED_IN' }); }
         if (path === '/api/auth/sign-in/email-otp') return rejectOtp ? reply({ error: 'Mã đăng nhập không hợp lệ' }, 400) : reply({ success: true });
         if (path === '/api/me/wallet') return reply({ balance: 250000 });
         if (path === '/api/catalog') return reply({ products: [{ id: 1, name: 'Sản phẩm kiểm thử', category: 'Test', selling_price: 49000, description: 'Mô tả sản phẩm.', image_url: null, in_stock: true }], categories: ['Test'] });
@@ -48,6 +50,17 @@ async function checkContrast(page, screen) {
       await page.goto(`${origin}/account`);
       await page.getByRole('heading', { name: 'Đăng nhập', exact: true }).waitFor();
       await checkContrast(page, `login ${width}/${colorScheme}`);
+      await page.getByRole('button', { name: 'Đăng ký', exact: true }).click();
+      await page.getByRole('heading', { name: 'Tạo tài khoản' }).waitFor();
+      assert.equal(await page.getByRole('textbox', { name: 'Email (không bắt buộc)' }).getAttribute('required'), null);
+      await checkContrast(page, `registration ${width}/${colorScheme}`);
+      await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+      await page.getByRole('button', { name: 'Đăng nhập bằng Telegram' }).click();
+      await page.getByRole('link', { name: 'Mở bot để xác nhận đăng nhập' }).waitFor();
+      await page.getByRole('heading', { name: 'Đơn hàng', exact: true }).waitFor();
+      authenticated = false;
+      await page.reload();
+      await page.getByRole('button', { name: 'Dùng mã email' }).click();
       await page.getByRole('textbox', { name: 'Email', exact: true }).fill('theme@example.com');
       await page.getByRole('button', { name: 'Gửi mã đăng nhập' }).click();
       await page.getByRole('textbox', { name: 'Mã gồm 6 số' }).waitFor();

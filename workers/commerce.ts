@@ -4,7 +4,7 @@ import { HttpError, id, readBody, sha256 } from "./http";
 
 export const customerSchema = z.object({
   fullName: z.string().trim().min(1).max(100),
-  email: z.email(),
+  email: z.union([z.email(), z.literal('')]).optional().default(''),
   phone: z.string().max(30).default(""),
   note: z.string().max(500).default(""),
 });

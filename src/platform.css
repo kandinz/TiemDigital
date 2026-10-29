@@ -380,6 +380,13 @@
   border: 1px solid var(--line);
   border-radius: 18px;
 }
+.platform .auth-modes { display: flex; gap: 6px; margin-bottom: 24px; }
+.platform .auth-modes button { flex: 1; background: transparent; color: var(--muted); }
+.platform .auth-modes button[aria-pressed="true"] { background: var(--color-subtle); color: var(--accent); border-color: var(--accent); }
+.platform .auth-card form { margin-top: 24px; }
+.platform .auth-card form .primary { width: 100%; }
+.platform .telegram-login { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 22px; }
+.platform .telegram-login > :is(button:not(.quiet), a) { width: 100%; }
 .platform .code-block {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

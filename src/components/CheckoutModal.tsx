@@ -84,7 +84,7 @@ export function CheckoutModal({
               Đăng nhập để tiếp tục mua {product.name}. Sản phẩm và số lượng bạn chọn sẽ được giữ lại.
             </p>
             <a className="primary" href={`/account?buy=${product.id}&quantity=${quantity}`}>
-              Đăng nhập bằng email
+              Đăng nhập để tiếp tục
             </a>
           </div>
         ) : (
@@ -134,10 +134,10 @@ export function CheckoutModal({
                     onChange={(e) => setName(e.target.value)}
                   />
                 </label>
-                <label>
+                {actor.email && <label>
                   Email nhận hàng
                   <input disabled value={actor.email} />
-                </label>
+                </label>}
                 <label>
                   Điện thoại / Zalo
                   <input

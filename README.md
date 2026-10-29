@@ -5,7 +5,10 @@ Cửa hàng sản phẩm số dùng React, TypeScript, Vite, Tailwind CSS và Cl
 ## Giao diện khách hàng
 
 - `/`: mở thẳng danh mục, tìm kiếm, lọc danh mục, sắp xếp giá, xem chi tiết và mua hàng.
-- Mua trực tiếp từng sản phẩm với số lượng đã chọn; mỗi lần thanh toán tạo một đơn riêng bằng số dư hoặc QR ngân hàng. Đăng nhập email OTP xong sẽ quay lại đúng sản phẩm đang mua.
+- Mua trực tiếp từng sản phẩm với số lượng đã chọn; mỗi lần thanh toán tạo một đơn riêng bằng số dư hoặc QR ngân hàng. Đăng nhập xong sẽ quay lại đúng sản phẩm đang mua.
+- Danh mục nằm ở cột trái trên desktop, chuyển thành ô chọn trên điện thoại. Không hiển thị tiêu đề sản phẩm hoặc footer bản quyền.
+- Đăng ký username/password, email tùy chọn; đăng nhập bằng username hoặc email cùng mật khẩu. Tài khoản cũ vẫn có thể dùng mã email.
+- Đăng nhập bằng tài khoản Telegram đã tạo trong bot: mở bot, bấm xác nhận và quay lại trình duyệt; dùng nguyên tài khoản, đơn hàng và số dư hiện có.
 - Menu tài khoản nằm bên phải, hiển thị số dư ngay khi đăng nhập; nạp tiền và giao dịch mở từ menu này.
 - Header chỉ giữ logo và tài khoản. Trang mặc định hiển thị sản phẩm; nút hỗ trợ cố định góc dưới bên phải mở Telegram @kandinz.
 - `/account#orders`: theo dõi thanh toán và nhận sản phẩm.

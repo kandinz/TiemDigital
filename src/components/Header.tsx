@@ -46,7 +46,7 @@ export function Header({ account, refreshKey = 0 }: HeaderProps) {
             <button disabled={busy} onClick={() => void signOut()}><LogOut size={15} />{busy ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>
             {error && <p role="alert">{error}</p>}
           </div>
-        </details> : <a className="shop-button account-login" href="/account"><UserRound size={17} /><span>Đăng nhập</span></a>}
+        </details> : <a className="shop-button account-login" href="/account" aria-label="Đăng nhập hoặc đăng ký"><UserRound size={17} /><span>Tài khoản</span></a>}
       </div>
     </div>
   </header>;

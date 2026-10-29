@@ -2,8 +2,13 @@
 // requests never change schema or seed production money/accounts.
 // Existing databases may retain legacy currency columns/enum values for history.
 // New orders/settlements are restricted to VND + BANK/WALLET by the guards below.
+export function authColumnUpgrades(columns: string[]) {
+  return columns.length ? ['username', 'displayUsername'].filter((name) => !columns.includes(name)).map((name) => `ALTER TABLE user ADD COLUMN ${name} TEXT`) : [];
+}
+
 export const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, emailVerified INTEGER NOT NULL DEFAULT 0, image TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, emailVerified INTEGER NOT NULL DEFAULT 0, image TEXT, username TEXT, displayUsername TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS user_username ON user(username COLLATE NOCASE) WHERE username IS NOT NULL`,
   `CREATE TABLE IF NOT EXISTS session (id TEXT PRIMARY KEY, expiresAt INTEGER NOT NULL, token TEXT NOT NULL UNIQUE, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, ipAddress TEXT, userAgent TEXT, userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE)`,
   `CREATE INDEX IF NOT EXISTS session_user ON session(userId)`,
   `CREATE TABLE IF NOT EXISTS account (id TEXT PRIMARY KEY, accountId TEXT NOT NULL, providerId TEXT NOT NULL, userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, accessToken TEXT, refreshToken TEXT, idToken TEXT, accessTokenExpiresAt INTEGER, refreshTokenExpiresAt INTEGER, scope TEXT, password TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`,
@@ -37,6 +42,7 @@ export const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS pages (slug TEXT PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES page_versions(id), published_id TEXT REFERENCES page_versions(id))`,
   `CREATE TABLE IF NOT EXISTS telegram_links (user_id TEXT PRIMARY KEY REFERENCES user(id), telegram_id TEXT NOT NULL UNIQUE, chat_id TEXT NOT NULL UNIQUE)`,
   `CREATE TABLE IF NOT EXISTS link_challenges (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id), telegram_id TEXT, chat_id TEXT, expires_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS telegram_logins (id TEXT PRIMARY KEY, browser_hash TEXT NOT NULL, user_id TEXT REFERENCES user(id), telegram_id TEXT, confirmed_at INTEGER, expires_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS reconciliation_runs (id TEXT PRIMARY KEY, status TEXT NOT NULL, detail TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT(unixepoch()))`,
   `CREATE TABLE IF NOT EXISTS reconciliation_state (id TEXT PRIMARY KEY, completed_at INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS inbox_retries (id TEXT PRIMARY KEY REFERENCES inbox(id), attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0)`,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type PageBlock } from '../services/platform';
 import { Header } from '../components/Header';
-import { Footer } from '../components/Footer';
+import { SupportButton } from '../components/SupportButton';
 import '../platform.css';
 
 interface Page { title: string; description: string; blocks: PageBlock[] }
@@ -46,6 +46,6 @@ export function ContentPage({ slug }: { slug: string }) {
           : <p key={index}><a href={block.url} rel="noreferrer">{block.label} ↗</a></p>)}
       </section>}
     </main></div>
-    <Footer />
+    <SupportButton />
   </div>;
 }

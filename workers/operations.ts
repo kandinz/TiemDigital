@@ -18,10 +18,10 @@ export async function processOutbox(env: Env, eventId: string) {
   if (!event) return;
   try {
     const user = await env.DB.prepare(
-      "SELECT email FROM user WHERE id=? AND emailVerified=1",
+      "SELECT email,emailVerified FROM user WHERE id=?",
     )
       .bind(event.user_id)
-      .first<{ email: string }>();
+      .first<{ email: string; emailVerified: number }>();
     const link = await env.DB.prepare(
       "SELECT chat_id FROM telegram_links WHERE user_id=?",
     )
@@ -32,17 +32,16 @@ export async function processOutbox(env: Env, eventId: string) {
       event.kind === "ORDER_DELIVERED"
         ? `Đơn ${orderId} đã được giao. Đăng nhập ${env.APP_ORIGIN}/account để nhận sản phẩm.`
         : `Đơn ${orderId} đã thanh toán, đang chờ giao. Theo dõi tại ${env.APP_ORIGIN}/account.`;
-    if (
-      !user ||
-      (!(env.EMAIL && env.EMAIL_FROM) && !(link && env.TELEGRAM_BOT_TOKEN))
-    )
-      throw new Error("NOTIFICATION_NOT_CONFIGURED");
+    if (!user || (user.emailVerified && !(env.EMAIL && env.EMAIL_FROM) && !(link && env.TELEGRAM_BOT_TOKEN)))
+      throw new Error('NOTIFICATION_NOT_CONFIGURED');
     // Each destination has its own checkpoint. A timeout can still duplicate a
     // notification; it never repeats settlement or creates another product key.
     const emailKey = `notification:${event.id}:email`;
     if (
       env.EMAIL &&
       env.EMAIL_FROM &&
+      user.emailVerified &&
+      !user.email.endsWith('@users.invalid') &&
       !(await env.DB.prepare("SELECT id FROM audit WHERE id=?")
         .bind(emailKey)
         .first())
@@ -61,7 +60,7 @@ export async function processOutbox(env: Env, eventId: string) {
     }
     const telegramKey = `notification:${event.id}:telegram`;
     if (
-      link &&
+      link && env.TELEGRAM_BOT_TOKEN &&
       !(await env.DB.prepare("SELECT id FROM audit WHERE id=?")
         .bind(telegramKey)
         .first())

@@ -1,4 +1,4 @@
-import { SCHEMA_STATEMENTS } from "../workers/schema.ts";
+import { SCHEMA_STATEMENTS, authColumnUpgrades } from "../workers/schema.ts";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,12 @@ if (remote && !environment)
 const directory = await mkdtemp(join(tmpdir(), "tiemdigital-schema-"));
 try {
   const file = join(directory, "schema.sql");
+  const cli = join(process.cwd(), "node_modules/wrangler/bin/wrangler.js");
+  const databaseArgs = [cli, '--config', 'wrangler.worker.jsonc', 'd1', 'execute', 'DB', remote ? '--remote' : '--local', ...(environment ? ['--env', environment] : [])];
+  const structure = spawnSync(process.execPath, [...databaseArgs, '--json', '--command', 'PRAGMA table_info(user)'], { encoding: 'utf8' });
+  if (structure.status !== 0) throw new Error(structure.stderr || structure.stdout || 'Cannot inspect existing user schema');
+  const columns = JSON.parse(structure.stdout).flatMap((result) => result.results || []).map((column) => column.name);
+  const upgrades = authColumnUpgrades(columns);
   const refresh = args.includes("--refresh-triggers")
     ? SCHEMA_STATEMENTS.filter((statement) =>
         statement.startsWith("CREATE TRIGGER IF NOT EXISTS "),
@@ -21,9 +27,8 @@ try {
     : [];
   await writeFile(
     file,
-    [...refresh, ...SCHEMA_STATEMENTS].map((s) => `${s};`).join("\n"),
+    [...upgrades, ...refresh, ...SCHEMA_STATEMENTS].map((s) => `${s};`).join("\n"),
   );
-  const cli = join(process.cwd(), "node_modules/wrangler/bin/wrangler.js");
   const result = spawnSync(
     process.execPath,
     [
