@@ -68,7 +68,7 @@ const customer = { id: 'browser-test', name: 'Khách kiểm thử', email: 'brow
     await page.goto(origin); await page.waitForLoadState('networkidle');
     assert.equal(await page.locator('.product-card').count(), 3);
     assert.equal(await page.getByRole('button', { name: /Giỏ hàng|Thêm .* vào giỏ/ }).count(), 0);
-    assert.equal(await page.getByRole('navigation', { name: 'Điều hướng chính' }).getByRole('link', { name: 'Số dư', exact: true }).count(), 0);
+    assert.equal(await page.locator('.shop-header nav').count(), 0);
     await page.getByRole('button', { name: 'Gemini', exact: true }).click();
     assert.equal(await page.locator('.product-card').count(), 1);
     await page.getByRole('button', { name: 'Tất cả', exact: true }).click();
@@ -104,7 +104,7 @@ const customer = { id: 'browser-test', name: 'Khách kiểm thử', email: 'brow
     await page.getByRole('button', { name: 'Tạo QR nạp tiền' }).click();
     await page.locator('.profile-balance').filter({ hasText: '262.000 ₫' }).waitFor();
     assert.equal(topups, 1);
-    await page.getByRole('navigation', { name: 'Điều hướng chính' }).getByRole('link', { name: 'Sản phẩm' }).click();
+    await page.getByRole('link', { name: 'Tiệm Digital, trang sản phẩm' }).click();
     await page.getByRole('button', { name: 'Xem chi tiết Claude API 50M Tokens 2day' }).click();
     await page.getByRole('spinbutton').fill('2');
     await page.getByRole('dialog').getByRole('button', { name: 'Mua ngay', exact: true }).click();
@@ -116,8 +116,7 @@ const customer = { id: 'browser-test', name: 'Khách kiểm thử', email: 'brow
     await page.getByRole('link', { name: 'Xem đơn hàng', exact: true }).click();
     await page.getByRole('button', { name: 'Nhận sản phẩm' }).last().click();
     await page.getByText('fixture-delivery-value', { exact: true }).waitFor();
-    await page.getByRole('navigation', { name: 'Điều hướng chính' }).getByRole('link', { name: 'Hỗ trợ' }).click();
-    assert.equal(await page.getByRole('link', { name: 'Nhắn @kandinz' }).getAttribute('href'), 'https://t.me/kandinz');
+    assert.equal(await page.getByRole('link', { name: 'Hỗ trợ qua Telegram @kandinz' }).getAttribute('href'), 'https://t.me/kandinz');
     catalogFails = true;
     await page.goto(origin); await page.getByRole('alert').waitFor();
     catalogFails = false;
@@ -139,6 +138,11 @@ const customer = { id: 'browser-test', name: 'Khách kiểm thử', email: 'brow
       const accountBox = await view.locator('.shop-account').boundingBox();
       assert.ok(accountBox.x + accountBox.width / 2 > width / 2, 'Profile must be on the right');
       assert.match(await view.locator('.profile-balance').innerText(), /250\.000/);
+      assert.equal(await view.locator('.shop-header nav').count(), 0);
+      const support = view.getByRole('link', { name: 'Hỗ trợ qua Telegram @kandinz' });
+      const supportBox = await support.boundingBox();
+      assert.equal(await support.evaluate((element) => getComputedStyle(element).position), 'fixed');
+      assert.ok(width - supportBox.x - supportBox.width <= 25 && 900 - supportBox.y - supportBox.height <= 25, 'Support must stay at the bottom right');
       await responsive.close();
     }
     assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);

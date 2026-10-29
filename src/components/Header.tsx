@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, Headphones, LayoutGrid, LogOut, UserRound } from 'lucide-react';
+import { ChevronDown, LogOut, UserRound } from 'lucide-react';
 import { api, amountLabel, type Customer } from '../services/platform';
 
 interface AccountInfo { name: string; email: string; balance: number | null }
@@ -10,7 +10,6 @@ export function Header({ account, refreshKey = 0 }: HeaderProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const user = account === undefined ? loadedAccount : account;
-  const path = window.location.pathname;
 
   useEffect(() => {
     if (account !== undefined) return;
@@ -33,10 +32,6 @@ export function Header({ account, refreshKey = 0 }: HeaderProps) {
   return <header className="shop-header">
     <div className="shop-container shop-header-inner">
       <a href="/" className="shop-wordmark" aria-label="Tiệm Digital, trang sản phẩm">Tiệm<span>Digital</span></a>
-      <nav className="shop-nav" aria-label="Điều hướng chính">
-        <a href="/" aria-current={path === '/' ? 'page' : undefined}><LayoutGrid size={17} />Sản phẩm</a>
-        <a href="/pages/lien-he" aria-current={path === '/pages/lien-he' ? 'page' : undefined}><Headphones size={17} />Hỗ trợ</a>
-      </nav>
       <div className="shop-account">
         {user ? <details className="profile-menu" onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false; }}>
           <summary aria-label="Menu tài khoản">

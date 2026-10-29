@@ -4,7 +4,7 @@ const { chromium } = require('playwright');
 const origin = process.env.STOREFRONT_URL || 'http://localhost:8787';
 
 async function checkContrast(page, screen) {
-  const failures = await page.locator('.platform h1, .platform h2, .platform p, .platform label, .platform input:not(:disabled), .platform button:not(:disabled), .platform a, .platform .danger, .shop-dialog-heading h2, .shop-account a, .profile-name, .profile-balance, .profile-dropdown button').evaluateAll((elements) => {
+  const failures = await page.locator('.platform h1, .platform h2, .platform p, .platform label, .platform input:not(:disabled), .platform button:not(:disabled), .platform a, .platform .danger, .shop-dialog-heading h2, .shop-account a, .profile-name, .profile-balance, .profile-dropdown button, .support-button').evaluateAll((elements) => {
     const rgba = (value) => { const parts = value.match(/[\d.]+/g).map(Number); return [...parts.slice(0, 3), parts[3] ?? 1]; };
     const luminance = (rgb) => rgb.slice(0, 3).map((channel) => { const value = channel / 255; return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
     return elements.filter((element) => element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden').flatMap((element) => {

@@ -7,6 +7,7 @@ Cửa hàng sản phẩm số dùng React, TypeScript, Vite, Tailwind CSS và Cl
 - `/`: mở thẳng danh mục, tìm kiếm, lọc danh mục, sắp xếp giá, xem chi tiết và mua hàng.
 - Mua trực tiếp từng sản phẩm với số lượng đã chọn; mỗi lần thanh toán tạo một đơn riêng bằng số dư hoặc QR ngân hàng. Đăng nhập email OTP xong sẽ quay lại đúng sản phẩm đang mua.
 - Menu tài khoản nằm bên phải, hiển thị số dư ngay khi đăng nhập; nạp tiền và giao dịch mở từ menu này.
+- Header chỉ giữ logo và tài khoản. Trang mặc định hiển thị sản phẩm; nút hỗ trợ cố định góc dưới bên phải mở Telegram @kandinz.
 - `/account#orders`: theo dõi thanh toán và nhận sản phẩm.
 - `/account#wallet`: số dư, nạp tiền qua QR và lịch sử giao dịch.
 - `/account#security`: tên hiển thị và quản lý phiên đăng nhập.
