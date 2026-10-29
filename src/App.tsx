@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { RefreshCw, Search, Package } from 'lucide-react';
+import { RefreshCw, Search, Package, Send } from 'lucide-react';
 import { Header } from './components/Header';
 import { CategoryPills } from './components/CategoryPills';
 import { ProductCard } from './components/ProductCard';
@@ -72,7 +72,7 @@ export default function App() {
     <main id="products" className="shop-container catalog">
       <h1 className="sr-only">Sản phẩm</h1>
       <div className="catalog-layout">
-        <aside className="catalog-sidebar"><CategoryPills categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} /></aside>
+        <aside className="catalog-sidebar"><CategoryPills categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} /><a className="shop-button catalog-bot" href="https://t.me/tiemdigital_bot" target="_blank" rel="noopener noreferrer"><Send size={16} aria-hidden="true" />Mở bot Telegram</a></aside>
         <section className="catalog-content" aria-label="Danh sách sản phẩm">
         <div className="catalog-tools">
           <div className="catalog-search"><Search size={17} aria-hidden="true" /><input type="search" aria-label="Tìm sản phẩm" placeholder="Tìm sản phẩm…" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} /></div>

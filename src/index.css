@@ -62,6 +62,7 @@ a { text-decoration: none; }
 .catalog { padding-block: 28px 96px; flex: 1; }
 .catalog-layout { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 28px; }
 .catalog-sidebar { align-self: start; position: sticky; top: 24px; }
+.catalog-bot { margin-top: 16px; width: 100%; padding-inline: 8px; }
 .catalog-content { min-width: 0; }
 .catalog-tools { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
 .catalog-search { position: relative; width: 280px; }

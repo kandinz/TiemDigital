@@ -30,7 +30,6 @@ const customer = { id: 'browser-test', name: 'Khách kiểm thử', email: 'brow
       if (path === '/api/auth/sign-in/email-otp') { loggedIn = true; return reply({ user: customer }); }
       if (path === '/api/auth/sign-in/username') { assert.equal(request.postDataJSON().username, 'browseruser'); loggedIn = true; return reply({ user: customer }); }
       if (path === '/api/auth/sign-out') { loggedIn = false; return reply({ success: true }); }
-      if (path === '/api/auth/list-sessions') return reply([]);
       if (path === '/api/me') return loggedIn ? reply(customer) : reply({ error: 'Đăng nhập để tiếp tục.' }, 401);
       if (path === '/api/me/wallet') return reply({ balance: wallet });
       if (path === '/api/me/wallet/transactions') return reply({ transactions: [] });

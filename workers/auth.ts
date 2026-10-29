@@ -5,6 +5,7 @@ import type { Actor, Admin, Env } from "./types";
 import { HttpError, readBody } from "./http";
 import { z } from 'zod';
 import { telegramAuth } from './telegram-auth';
+import { profileAuth } from './profile-auth';
 import { APIError } from 'better-auth/api';
 
 export const publicEmail = (email: string) => email.endsWith('@users.invalid') ? '' : email;
@@ -45,6 +46,7 @@ export function auth(env: Env) {
     plugins: [
       username({ minUsernameLength: 3, maxUsernameLength: 30 }),
       telegramAuth(env),
+      profileAuth(),
       emailOTP({
         storeOTP: "hashed",
         allowedAttempts: 3,

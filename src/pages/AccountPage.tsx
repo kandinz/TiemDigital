@@ -11,6 +11,7 @@ import {
 } from "../services/platform";
 import { PaymentQr } from "../components/PaymentQr";
 import { AuthForm } from "../components/AuthForm";
+import { ProfileForm } from "../components/ProfileForm";
 import { Header } from "../components/Header";
 import { SupportButton } from "../components/SupportButton";
 import { readPurchaseRequest } from "../utils/purchase";
@@ -33,10 +34,6 @@ export function AccountPage() {
     orderId: string;
     value: string;
   } | null>(null);
-  const [sessions, setSessions] = useState<
-    { token: string; id: string; userAgent?: string; createdAt: string }[]
-  >([]);
-  const [profileName, setProfileName] = useState("");
   const operationKeys = useRef<Record<string, string>>({});
   function key(scope: string) {
     return (
@@ -47,7 +44,6 @@ export function AccountPage() {
   const refresh = useCallback(async (currentUser?: Customer) => {
     const user = currentUser ?? await api<Customer>("/api/me");
     setActor(user);
-    setProfileName(user.name);
     const [wallet, history, ledger] = await Promise.all([
       api<{ balance: number }>("/api/me/wallet"),
       api<{ orders: PlatformOrder[] }>("/api/me/orders"),
@@ -70,15 +66,6 @@ export function AccountPage() {
     window.addEventListener('hashchange', changeTab);
     return () => window.removeEventListener('hashchange', changeTab);
   }, []);
-  useEffect(() => {
-    if (actor && tab === 'security') {
-      let stopped = false;
-      api<typeof sessions>('/api/auth/list-sessions').then((value) => {
-        if (!stopped) setSessions(value);
-      }).catch((e: Error) => { if (!stopped) setError(e.message); });
-      return () => { stopped = true; };
-    }
-  }, [actor, tab]);
   async function run(task: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -138,7 +125,7 @@ export function AccountPage() {
             ))}
           </nav>
           <main className="content">
-            <div className="panel-heading account-heading"><div><h1>{tab === 'wallet' ? 'Số dư' : tab === 'security' ? 'Hồ sơ & bảo mật' : 'Đơn hàng'}</h1><p className="muted">{actor.username || actor.email || actor.name}</p></div>
+            <div className="panel-heading account-heading"><div><h1>{tab === 'wallet' ? 'Số dư' : tab === 'security' ? 'Hồ sơ & bảo mật' : 'Đơn hàng'}</h1></div>
             </div>
             {error && (
               <p className="notice error" role="alert">
@@ -372,55 +359,7 @@ export function AccountPage() {
                 )}
               </section>
             )}
-            {tab === "security" && (
-              <section className="panel">
-                <h2>Tên hiển thị</h2>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void run(async () => {
-                      await api("/api/auth/update-user", {
-                        body: { name: profileName },
-                      });
-                      await refresh();
-                    });
-                  }}
-                >
-                  <label>
-                    Tên hiển thị
-                    <input
-                      required
-                      maxLength={100}
-                      value={profileName}
-                      placeholder={actor.name}
-                      onChange={(e) => setProfileName(e.target.value)}
-                    />
-                  </label>
-                  <button disabled={busy}>Cập nhật hồ sơ</button>
-                </form>
-                <p className="muted">
-                  Thu hồi phiên trên thiết bị không còn sử dụng.
-                </p>
-                {sessions.map((s) => (
-                  <div className="receipt-lines" key={s.id}>
-                    <p>{s.userAgent || "Thiết bị không xác định"}</p>
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        void run(async () => {
-                          await api("/api/auth/revoke-session", {
-                            body: { token: s.token },
-                          });
-                          setSessions(await api("/api/auth/list-sessions"));
-                        })
-                      }
-                    >
-                      Thu hồi phiên
-                    </button>
-                  </div>
-                ))}
-              </section>
-            )}
+            {tab === "security" && <ProfileForm actor={actor} onSaved={refresh} />}
           </main>
         </div>
       )}

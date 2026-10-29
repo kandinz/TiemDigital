@@ -419,7 +419,6 @@
 .platform .workspace { max-width: 1184px; padding-block: 32px; grid-template-columns: 170px minmax(0, 1fr); }
 .platform .account-heading { margin-bottom: 24px; }
 .platform .panel-heading > div { min-width: 0; }
-.platform .account-heading p { overflow-wrap: anywhere; }
 .platform .account-heading h1 { font-size: 26px; }
 .platform .navigation button { min-height: 42px; }
 .platform .page-body { padding-block: 32px; }

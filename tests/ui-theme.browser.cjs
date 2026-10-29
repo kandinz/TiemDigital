@@ -30,10 +30,21 @@ async function checkContrast(page, screen) {
     for (const width of [390, 1440]) for (const colorScheme of ['dark', 'light']) {
       const context = await browser.newContext({ viewport: { width, height: 900 }, colorScheme });
       let authenticated = false, rejectOtp = false;
+      let user = { id: 'theme-test', name: 'Khách kiểm thử', email: 'theme@example.com', username: 'theme_user', hasPassword: true };
+      let passwordWrites = 0;
       await context.route('**/api/**', (route) => {
         const path = new URL(route.request().url()).pathname;
         const reply = (json, status = 200) => route.fulfill({ json, status });
-        if (path === '/api/me') return authenticated ? reply({ id: 'theme-test', name: 'Khách kiểm thử', email: 'theme@example.com' }) : reply({ error: 'Vui lòng đăng nhập' }, 401);
+        if (path === '/api/me') return authenticated ? reply(user) : reply({ error: 'Vui lòng đăng nhập' }, 401);
+        if (path === '/api/auth/profile') { user = { ...user, ...route.request().postDataJSON() }; return reply({ status: true }); }
+        if (path === '/api/auth/change-password') {
+          passwordWrites++;
+          const data = route.request().postDataJSON();
+          if (data.currentPassword !== 'correct-password') return reply({ error: 'Mật khẩu hiện tại không đúng.' }, 400);
+          assert.equal(data.newPassword, 'updated-password'); assert.equal(data.revokeOtherSessions, true);
+          return reply({ status: true });
+        }
+        if (path === '/api/auth/password/create') { passwordWrites++; user.hasPassword = true; return reply({ status: true }); }
         if (path === '/api/public/config') return reply({ turnstileSiteKey: null });
         if (path === '/api/auth/email-otp/send-verification-otp') return reply({ success: true });
         if (path === '/api/auth/telegram/start') return reply({ token: 'a'.repeat(32), url: `https://t.me/tiemdigital_bot?start=login_${'a'.repeat(32)}`, expiresAt: Math.floor(Date.now() / 1000) + 300 });
@@ -43,7 +54,6 @@ async function checkContrast(page, screen) {
         if (path === '/api/catalog') return reply({ products: [{ id: 1, name: 'Sản phẩm kiểm thử', category: 'Test', selling_price: 49000, description: 'Mô tả sản phẩm.', image_url: null, in_stock: true }], categories: ['Test'] });
         if (path === '/api/me/orders') return reply({ orders: [] });
         if (path === '/api/me/wallet/transactions') return reply({ transactions: [{ id: 'theme-debit', kind: 'PAYMENT', memo: 'Thanh toán đơn kiểm thử', wallet_delta: -49000, created_at: 1800000000 }] });
-        if (path === '/api/auth/list-sessions') return reply([]);
         return reply({ error: `Unexpected API ${path}` }, 500);
       });
       const page = await context.newPage();
@@ -77,13 +87,43 @@ async function checkContrast(page, screen) {
       await checkContrast(page, `wallet ${width}/${colorScheme}`);
       await page.goto(`${origin}/account#security`);
       await page.getByRole('button', { name: 'Cập nhật hồ sơ' }).waitFor();
+      assert.equal(await page.locator('.account-heading p').count(), 0);
+      assert.equal(await page.getByRole('button', { name: 'Thu hồi phiên' }).count(), 0);
       await checkContrast(page, `profile ${width}/${colorScheme}`);
+      await page.getByLabel('Username', { exact: true }).fill('changed_user');
+      await page.getByLabel('Email (không bắt buộc)').fill('changed@example.com');
+      await page.getByRole('button', { name: 'Cập nhật hồ sơ' }).click();
+      await page.getByText('Đã cập nhật hồ sơ.', { exact: true }).waitFor();
+      assert.equal(user.username, 'changed_user'); assert.equal(user.email, 'changed@example.com');
+      await page.getByLabel('Mật khẩu hiện tại', { exact: true }).fill('wrong-password');
+      await page.getByLabel('Mật khẩu mới', { exact: true }).fill('updated-password');
+      await page.getByLabel('Nhập lại mật khẩu mới', { exact: true }).fill('different-password');
+      await page.getByRole('button', { name: 'Đổi mật khẩu', exact: true }).click();
+      await page.getByText('Mật khẩu nhập lại chưa khớp.', { exact: true }).waitFor();
+      assert.equal(passwordWrites, 0);
+      await page.getByLabel('Nhập lại mật khẩu mới', { exact: true }).fill('updated-password');
+      await page.getByRole('button', { name: 'Đổi mật khẩu', exact: true }).click();
+      await page.getByText('Mật khẩu hiện tại không đúng.', { exact: true }).waitFor();
+      await checkContrast(page, `password error ${width}/${colorScheme}`);
+      await page.getByLabel('Mật khẩu hiện tại', { exact: true }).fill('correct-password');
+      await page.getByRole('button', { name: 'Đổi mật khẩu', exact: true }).click();
+      await page.getByText('Đã đổi mật khẩu.', { exact: true }).waitFor();
+      assert.equal(await page.getByLabel('Mật khẩu mới', { exact: true }).inputValue(), '');
+      user.hasPassword = false;
+      await page.reload();
+      await page.getByRole('heading', { name: 'Tạo mật khẩu', exact: true }).waitFor();
+      assert.equal(await page.getByLabel('Mật khẩu hiện tại', { exact: true }).count(), 0);
+      await page.getByLabel('Mật khẩu mới', { exact: true }).fill('first-password');
+      await page.getByLabel('Nhập lại mật khẩu mới', { exact: true }).fill('first-password');
+      await page.getByRole('button', { name: 'Tạo mật khẩu', exact: true }).click();
+      await page.getByText('Đã tạo mật khẩu.', { exact: true }).waitFor();
       await page.goto(`${origin}/pages/lien-he`);
       await page.getByRole('link', { name: 'Nhắn @kandinz' }).waitFor();
       await checkContrast(page, `support ${width}/${colorScheme}`);
       await page.locator('.profile-menu summary').click();
       await checkContrast(page, `profile menu ${width}/${colorScheme}`);
       await page.goto(`${origin}/?buy=1&quantity=1`);
+      assert.equal(await page.getByRole('link', { name: 'Mở bot Telegram' }).getAttribute('href'), 'https://t.me/tiemdigital_bot');
       await page.getByRole('button', { name: 'Tạo đơn và chọn thanh toán' }).waitFor();
       await checkContrast(page, `checkout ${width}/${colorScheme}`);
       await context.close();

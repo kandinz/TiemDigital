@@ -91,7 +91,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
     if (url.pathname.startsWith("/api/auth/")) {
       checkOrigin(request, env);
-      if (request.method === 'POST' && (url.pathname === '/api/auth/register' || url.pathname.startsWith('/api/auth/sign-in/') || url.pathname === '/api/auth/telegram/start')) {
+      const profileWrite = ['/api/auth/profile', '/api/auth/password/create', '/api/auth/change-password', '/api/auth/update-user'].includes(url.pathname.replace(/\/+$/, ''));
+      if (profileWrite) await customer(request, env);
+      if (request.method === 'POST' && (profileWrite || url.pathname === '/api/auth/register' || url.pathname.startsWith('/api/auth/sign-in/') || url.pathname === '/api/auth/telegram/start')) {
         await rateLimit(env, `auth:${request.headers.get('cf-connecting-ip') ?? 'unknown'}`, 12, 60);
       }
       if (url.pathname === '/api/auth/register' && request.method === 'POST') return await register(request, env);
@@ -164,8 +166,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
       const actor = await customer(request, env);
       if (request.method !== "GET")
         await rateLimit(env, `write:${actor.id}`, 30);
-      if (url.pathname === "/api/me" && request.method === "GET")
-        return json(actor);
+      if (url.pathname === "/api/me" && request.method === "GET") {
+        const credential = await env.DB.prepare("SELECT id FROM account WHERE userId=? AND providerId='credential' AND password IS NOT NULL").bind(actor.id).first();
+        return json({ ...actor, hasPassword: !!credential });
+      }
       if (
         url.pathname === "/api/me/telegram-link" &&
         request.method === "GET"

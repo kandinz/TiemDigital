@@ -3,6 +3,7 @@ export interface Customer {
   email: string;
   name: string;
   username?: string | null;
+  hasPassword?: boolean;
 }
 export interface PlatformOrder {
   id: string;

@@ -135,7 +135,7 @@ async function linkedActor(
   telegramId: number,
 ): Promise<Actor | null> {
   const actor = await env.DB.prepare(
-    "SELECT u.id,u.email,u.name FROM telegram_links l JOIN user u ON u.id=l.user_id LEFT JOIN customers c ON c.id=u.id WHERE l.telegram_id=? AND (u.emailVerified=1 OR EXISTS(SELECT 1 FROM account a WHERE a.userId=u.id AND a.providerId='credential') OR (u.id='telegram:' || l.telegram_id AND u.email='telegram-' || l.telegram_id || '@users.invalid')) AND COALESCE(c.disabled,0)=0",
+    "SELECT u.id,u.email,u.name FROM telegram_links l JOIN user u ON u.id=l.user_id LEFT JOIN customers c ON c.id=u.id WHERE l.telegram_id=? AND (u.emailVerified=1 OR EXISTS(SELECT 1 FROM account a WHERE a.userId=u.id AND a.providerId='credential') OR u.id='telegram:' || l.telegram_id) AND COALESCE(c.disabled,0)=0",
   )
     .bind(String(telegramId))
     .first<Actor>();

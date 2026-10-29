@@ -13,7 +13,8 @@ Cửa hàng sản phẩm số dùng React, TypeScript, Vite, Tailwind CSS và Cl
 - Header chỉ giữ logo và tài khoản. Trang mặc định hiển thị sản phẩm; nút hỗ trợ cố định góc dưới bên phải mở Telegram @kandinz.
 - `/account#orders`: theo dõi thanh toán và nhận sản phẩm.
 - `/account#wallet`: số dư, nạp tiền qua QR và lịch sử giao dịch.
-- `/account#security`: tên hiển thị và quản lý phiên đăng nhập.
+- `/account#security`: cập nhật tên hiển thị, username, email tùy chọn và đổi mật khẩu. Tài khoản Telegram chưa có mật khẩu có thể tạo mật khẩu tại đây.
+- Nút **Mở bot Telegram** ở danh mục trang chủ mở [@tiemdigital_bot](https://t.me/tiemdigital_bot).
 - `/pages/lien-he`: hỗ trợ qua [Telegram @kandinz](https://t.me/kandinz).
 
 Giao diện tự chọn sáng/tối theo thiết bị, đồng thời giữ lựa chọn đã lưu từ phiên bản trước. Các trang tài khoản, hỗ trợ và quản trị chỉ tải mã khi được mở.

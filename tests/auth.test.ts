@@ -46,6 +46,60 @@ describe('password and Telegram authentication', () => {
     expect((await request('/api/auth/register', { username: 'cross_origin', password }, '', 'https://attacker.example')).status).toBe(403);
   });
 
+  it('updates profile and login identifiers without changing ownership or trusting the new email', async () => {
+    client++;
+    const signup = await request('/api/auth/register', { username: 'Profile_Before', email: 'profile-before@example.com', password });
+    const cookie = cookies(signup);
+    const before = await (await request('/api/me', undefined, cookie)).json() as { id: string };
+    await env.DB.prepare('UPDATE user SET emailVerified=1 WHERE id=?').bind(before.id).run();
+    const profile = { name: 'Tên mới', username: 'Profile_After', email: 'PROFILE@Example.com' };
+    expect((await request('/api/auth/profile', profile)).status).toBe(401);
+    expect((await request('/api/auth/profile', profile, cookie, 'https://attacker.example')).status).toBe(403);
+    expect((await request('/api/auth/profile', profile, cookie)).status).toBe(200);
+    expect(await (await request('/api/me', undefined, cookie)).json()).toMatchObject({ id: before.id, name: 'Tên mới', username: 'profile_after', email: 'profile@example.com', hasPassword: true });
+    expect(await env.DB.prepare('SELECT emailVerified FROM user WHERE id=?').bind(before.id).first()).toMatchObject({ emailVerified: 0 });
+    expect((await request('/api/auth/sign-in/username', { username: 'Profile_After', password })).status).toBe(200);
+    expect((await request('/api/auth/sign-in/email', { email: 'profile@example.com', password })).status).toBe(200);
+    expect((await request('/api/auth/sign-in/username', { username: 'Profile_Before', password })).status).toBe(401);
+    expect((await request('/api/auth/profile', { ...profile, email: '' }, cookie)).status).toBe(200);
+    expect(await (await request('/api/me', undefined, cookie)).json()).toMatchObject({ id: before.id, email: '' });
+    expect((await request('/api/auth/sign-in/username', { username: 'profile_after', password })).status).toBe(200);
+    await env.DB.prepare('UPDATE session SET createdAt=0 WHERE userId=?').bind(before.id).run();
+    expect((await request('/api/auth/profile', profile, cookie)).status).toBe(403);
+  });
+
+  it('rejects duplicate and invalid profile fields without partially saving other fields', async () => {
+    client++;
+    await request('/api/auth/register', { username: 'Profile_Taken', email: 'taken-profile@example.com', password });
+    const signup = await request('/api/auth/register', { username: 'Profile_Owner', password });
+    const cookie = cookies(signup);
+    const profile = { name: 'Must not save', username: 'profile_owner', email: '' };
+    expect((await request('/api/auth/profile', { ...profile, username: 'PROFILE_TAKEN' }, cookie)).status).toBe(400);
+    expect((await request('/api/auth/profile', { ...profile, email: 'taken-profile@example.com' }, cookie)).status).toBe(400);
+    expect((await request('/api/auth/profile', { ...profile, email: 'fake@users.invalid' }, cookie)).status).toBe(400);
+    expect((await request('/api/auth/profile', { ...profile, username: 'ab' }, cookie)).status).toBe(400);
+    expect(await (await request('/api/me', undefined, cookie)).json()).toMatchObject({ name: 'Profile_Owner', username: 'profile_owner', email: '' });
+  });
+
+  it('requires the current password and replaces it while keeping the same account and rejecting old sessions', async () => {
+    client++;
+    const signup = await request('/api/auth/register', { username: 'Password_Change', password });
+    const cookie = cookies(signup);
+    const before = await (await request('/api/me', undefined, cookie)).json() as { id: string };
+    const newPassword = 'Updated-password-42';
+    expect((await request('/api/auth/change-password', { currentPassword: 'wrong-password', newPassword }, cookie)).status).toBe(400);
+    expect((await request('/api/auth/change-password', { currentPassword: password, newPassword: 'short' }, cookie)).status).toBe(400);
+    expect((await request('/api/auth/password/create', { newPassword }, cookie)).status).toBe(400);
+    const changed = await request('/api/auth/change-password', { currentPassword: password, newPassword, revokeOtherSessions: true }, cookie);
+    expect(changed.status).toBe(200);
+    expect((await request('/api/me', undefined, cookie)).status).toBe(401);
+    expect(await (await request('/api/me', undefined, cookies(changed))).json()).toMatchObject({ id: before.id });
+    expect((await request('/api/auth/sign-in/username', { username: 'password_change', password })).status).toBe(401);
+    const login = await request('/api/auth/sign-in/username', { username: 'password_change', password: newPassword });
+    expect(login.status).toBe(200);
+    expect(await (await request('/api/me', undefined, cookies(login))).json()).toMatchObject({ id: before.id, hasPassword: true });
+  });
+
   it('logs in to the existing bot account only after explicit Telegram confirmation, without merging its wallet', async () => {
     client++;
     const telegramId = '87654321';
@@ -89,6 +143,18 @@ describe('password and Telegram authentication', () => {
       expect(await (await request('/api/me/wallet', undefined, cookie)).json()).toMatchObject({ balance: 50000 });
       expect((await request('/api/auth/telegram/complete', { token: challenge.token }, startCookie)).status).toBe(400);
       expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM telegram_links WHERE telegram_id=?').bind(telegramId).first()).toMatchObject({ count: 1 });
+      expect((await request('/api/auth/profile', { name: 'Bot customer', username: 'Bot_Web', email: 'bot-web@example.com' }, cookie)).status).toBe(200);
+      expect(await (await request('/api/me', undefined, cookie)).json()).toMatchObject({ id: userId, username: 'bot_web', hasPassword: false });
+      const again = await request('/api/auth/telegram/start', {});
+      const next = await again.json() as { token: string };
+      await update(`/start login_${next.token}`);
+      await update(`web-login:${next.token}`, true);
+      expect((await request('/api/auth/telegram/complete', { token: next.token }, cookies(again))).status).toBe(200);
+      expect((await request('/api/auth/password/create', { newPassword: password }, cookie)).status).toBe(200);
+      expect((await request('/api/auth/password/create', { newPassword: password }, cookie)).status).toBe(400);
+      const passwordLogin = await request('/api/auth/sign-in/username', { username: 'bot_web', password });
+      expect(passwordLogin.status).toBe(200);
+      expect(await (await request('/api/me/wallet', undefined, cookies(passwordLogin))).json()).toMatchObject({ balance: 50000 });
       const blockedStart = await request('/api/auth/telegram/start', {});
       const blocked = await blockedStart.json() as { token: string };
       await env.DB.prepare('UPDATE telegram_logins SET user_id=?,telegram_id=?,confirmed_at=? WHERE id=?').bind(userId, telegramId, now(), await sha256(blocked.token)).run();
@@ -96,6 +162,9 @@ describe('password and Telegram authentication', () => {
       try {
         expect((await request('/api/auth/telegram/complete', { token: blocked.token }, cookies(blockedStart))).status).toBe(403);
         expect((await request('/api/me/wallet', undefined, cookie)).status).toBe(403);
+        expect((await request('/api/auth/profile', { name: 'Blocked', username: 'blocked_bot', email: '' }, cookie)).status).toBe(403);
+        expect((await request('/api/auth/profile/', { name: 'Blocked', username: 'blocked_bot', email: '' }, cookie)).status).toBe(403);
+        expect((await request('/api/auth/change-password', { currentPassword: password, newPassword: 'Changed-password-42' }, cookie)).status).toBe(403);
       } finally { await env.DB.prepare('UPDATE customers SET disabled=0 WHERE id=?').bind(userId).run(); }
     } finally { fetchMock.mockRestore(); }
   });
