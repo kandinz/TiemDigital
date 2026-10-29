@@ -120,6 +120,7 @@ export function AccountPage() {
             {(
               [
                 ["orders", "Đơn hàng"],
+                ["wallet", "Nạp tiền & giao dịch"],
                 ["security", "Hồ sơ & bảo mật"],
               ] as [Tab, string][]
             ).map(([id, label]) => (
