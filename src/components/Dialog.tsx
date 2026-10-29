@@ -1,11 +1,10 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
-export function Dialog({ title, onClose, children, drawer = false }: {
+export function Dialog({ title, onClose, children }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
-  drawer?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -18,7 +17,7 @@ export function Dialog({ title, onClose, children, drawer = false }: {
       document.body.style.overflow = overflow;
     };
   }, []);
-  return <dialog ref={ref} className={`shop-dialog${drawer ? ' shop-drawer' : ''}`} aria-label={title}
+  return <dialog ref={ref} className="shop-dialog" aria-label={title}
     onCancel={(event) => { event.preventDefault(); onClose(); }}
     onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div className="shop-dialog-inner">

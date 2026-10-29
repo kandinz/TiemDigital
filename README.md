@@ -5,7 +5,8 @@ Cửa hàng sản phẩm số dùng React, TypeScript, Vite, Tailwind CSS và Cl
 ## Giao diện khách hàng
 
 - `/`: mở thẳng danh mục, tìm kiếm, lọc danh mục, sắp xếp giá, xem chi tiết và mua hàng.
-- Giỏ hàng lưu trên trình duyệt; thanh toán bằng số dư hoặc QR ngân hàng sau khi đăng nhập email OTP.
+- Mua trực tiếp từng sản phẩm với số lượng đã chọn; mỗi lần thanh toán tạo một đơn riêng bằng số dư hoặc QR ngân hàng. Đăng nhập email OTP xong sẽ quay lại đúng sản phẩm đang mua.
+- Menu tài khoản nằm bên phải, hiển thị số dư ngay khi đăng nhập; nạp tiền và giao dịch mở từ menu này.
 - `/account#orders`: theo dõi thanh toán và nhận sản phẩm.
 - `/account#wallet`: số dư, nạp tiền qua QR và lịch sử giao dịch.
 - `/account#security`: tên hiển thị và quản lý phiên đăng nhập.
@@ -33,10 +34,11 @@ npm run build
 npm run check:pages
 ```
 
-`tests/storefront.browser.cjs` kiểm tra giao diện trên Chromium với API giả lập, gồm giỏ hàng, đăng nhập, nạp tiền, mua hàng, nhận sản phẩm, hỗ trợ, trạng thái lỗi/trống và responsive. Cần Playwright có sẵn và server local đang chạy:
+`tests/storefront.browser.cjs` kiểm tra giao diện trên Chromium với API giả lập, gồm mua trực tiếp, đăng nhập, nạp tiền, tách riêng các đơn mua, nhận sản phẩm, menu tài khoản, hỗ trợ và responsive. `tests/ui-theme.browser.cjs` đo tương phản chữ ở đăng nhập, OTP, lỗi, ví, hồ sơ và hỗ trợ trong cả hai chế độ sáng/tối. Cần Playwright có sẵn và server local đang chạy:
 
 ```sh
 node tests/storefront.browser.cjs
+node tests/ui-theme.browser.cjs
 ```
 
 Nếu Playwright nằm ngoài `node_modules` của dự án, đặt `NODE_PATH` tới thư mục package tương ứng. Có thể đặt `STOREFRONT_URL` để kiểm tra một địa chỉ local khác. Bài kiểm tra chặn API bằng fixture và không gửi giao dịch thật.

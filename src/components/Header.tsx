@@ -1,29 +1,58 @@
-import { Headphones, LayoutGrid, ShoppingBag, UserRound, Wallet } from 'lucide-react';
-import type { CartItem } from '../types';
+import { useEffect, useState } from 'react';
+import { ChevronDown, Headphones, LayoutGrid, LogOut, UserRound } from 'lucide-react';
+import { api, amountLabel, type Customer } from '../services/platform';
 
-interface HeaderProps {
-  cartItems?: CartItem[];
-  onOpenCart?: () => void;
-}
+interface AccountInfo { name: string; email: string; balance: number | null }
+interface HeaderProps { account?: AccountInfo | null; refreshKey?: number }
 
-export function Header({ cartItems = [], onOpenCart }: HeaderProps) {
-  const count = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+export function Header({ account, refreshKey = 0 }: HeaderProps) {
+  const [loadedAccount, setLoadedAccount] = useState<AccountInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const user = account === undefined ? loadedAccount : account;
   const path = window.location.pathname;
-  const wallet = path === '/account' && window.location.hash === '#wallet';
-  return (
-    <header className="shop-header">
-      <div className="shop-container shop-header-inner">
-        <a href="/" className="shop-wordmark" aria-label="Tiệm Digital, trang sản phẩm">Tiệm<span>Digital</span></a>
-        <nav className="shop-nav" aria-label="Điều hướng chính">
-          <a href="/" aria-current={path === '/' ? 'page' : undefined}><LayoutGrid size={17} />Sản phẩm</a>
-          <a href="/account" aria-current={path === '/account' && !wallet ? 'page' : undefined}><UserRound size={17} />Tài khoản</a>
-          <a href="/account#wallet" aria-current={wallet ? 'page' : undefined}><Wallet size={17} />Số dư</a>
-          <a href="/pages/lien-he" aria-current={path === '/pages/lien-he' ? 'page' : undefined}><Headphones size={17} />Hỗ trợ</a>
-        </nav>
-        {onOpenCart && <button className="shop-button primary shop-cart" onClick={onOpenCart} aria-label={`Giỏ hàng, ${count} sản phẩm`}>
-          <ShoppingBag size={17} /><span>Giỏ hàng</span>{count > 0 && <span className="cart-count">{count}</span>}
-        </button>}
+
+  useEffect(() => {
+    if (account !== undefined) return;
+    let stopped = false;
+    api<Customer>('/api/me').then(async (customer) => {
+      let balance: number | null = null;
+      try { balance = (await api<{ balance: number }>('/api/me/wallet')).balance; } catch { /* Keep the account link available when the balance cannot be loaded. */ }
+      if (!stopped) setLoadedAccount({ ...customer, balance });
+    }).catch(() => { if (!stopped) setLoadedAccount(null); });
+    return () => { stopped = true; };
+  }, [account, refreshKey]);
+
+  async function signOut() {
+    setBusy(true);
+    setError('');
+    try { await api('/api/auth/sign-out', { body: {} }); window.location.assign('/'); }
+    catch { setError('Chưa đăng xuất được. Vui lòng thử lại.'); setBusy(false); }
+  }
+
+  return <header className="shop-header">
+    <div className="shop-container shop-header-inner">
+      <a href="/" className="shop-wordmark" aria-label="Tiệm Digital, trang sản phẩm">Tiệm<span>Digital</span></a>
+      <nav className="shop-nav" aria-label="Điều hướng chính">
+        <a href="/" aria-current={path === '/' ? 'page' : undefined}><LayoutGrid size={17} />Sản phẩm</a>
+        <a href="/pages/lien-he" aria-current={path === '/pages/lien-he' ? 'page' : undefined}><Headphones size={17} />Hỗ trợ</a>
+      </nav>
+      <div className="shop-account">
+        {user ? <details className="profile-menu" onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false; }}>
+          <summary aria-label="Menu tài khoản">
+            <span className="profile-avatar"><UserRound size={18} /></span>
+            <span className="profile-info"><span className="profile-name">{user.name || user.email.split('@')[0]}</span><span className="profile-balance" aria-label="Số dư khả dụng">{user.balance === null ? 'Chưa tải được số dư' : amountLabel(user.balance)}</span></span>
+            <ChevronDown size={15} />
+          </summary>
+          <div className="profile-dropdown" onClick={(event) => { if ((event.target as HTMLElement).closest('a')) event.currentTarget.closest('details')?.removeAttribute('open'); }}>
+            <a href="/account">Đơn hàng của tôi</a>
+            <a href="/account#security">Hồ sơ & bảo mật</a>
+            <a href="/account#wallet">Nạp tiền & giao dịch</a>
+            <button disabled={busy} onClick={() => void signOut()}><LogOut size={15} />{busy ? 'Đang đăng xuất…' : 'Đăng xuất'}</button>
+            {error && <p role="alert">{error}</p>}
+          </div>
+        </details> : <a className="shop-button account-login" href="/account"><UserRound size={17} /><span>Đăng nhập</span></a>}
       </div>
-    </header>
-  );
+    </div>
+  </header>;
 }

@@ -3,10 +3,9 @@ import type { Product } from '../types';
 import { formatVND } from '../utils/formatters';
 import { Dialog } from './Dialog';
 
-export function ProductDetailModal({ product, onClose, onAddToCart, onBuyNow }: {
+export function ProductDetailModal({ product, onClose, onBuyNow }: {
   product: Product;
   onClose: () => void;
-  onAddToCart: (product: Product, quantity: number) => void;
   onBuyNow: (product: Product, quantity: number) => void;
 }) {
   const [quantity, setQuantity] = useState(1);
@@ -19,7 +18,6 @@ export function ProductDetailModal({ product, onClose, onAddToCart, onBuyNow }: 
       <strong>{formatVND(product.selling_price * quantity)}</strong>
     </div>
     <div className="product-actions">
-      <button className="shop-button" disabled={!product.in_stock} onClick={() => { onAddToCart(product, quantity); onClose(); }}>Thêm vào giỏ</button>
       <button className="shop-button primary" disabled={!product.in_stock} onClick={() => { onBuyNow(product, quantity); onClose(); }}>Mua ngay</button>
     </div>
   </Dialog>;

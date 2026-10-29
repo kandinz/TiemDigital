@@ -12,6 +12,7 @@ import {
 import { PaymentQr } from "../components/PaymentQr";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
+import { readPurchaseRequest } from "../utils/purchase";
 import "../platform.css";
 
 declare global {
@@ -154,7 +155,7 @@ export function AccountPage() {
   const [actor, setActor] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>(currentTab);
-  const [balance, setBalance] = useState(0);
+  const [balance, setBalance] = useState<number | null>(null);
   const [orders, setOrders] = useState<PlatformOrder[]>([]);
   const [journals, setJournals] = useState<Journal[]>([]);
   const [error, setError] = useState("");
@@ -234,21 +235,24 @@ export function AccountPage() {
   }, [refresh]);
   return (
     <div className="shop-shell">
-      <Header />
+      <Header account={actor ? { ...actor, balance } : null} />
       <div className="platform platform-shell account-shell">
       {loading ? (
         <div className="auth-card">Đang tải tài khoản…</div>
       ) : !actor && error ? (
         <main className="auth-card"><p className="notice error" role="alert">{error}</p><button onClick={() => void run(async () => { try { await refresh(); } catch (e) { if ((e as { status?: number }).status !== 401) throw e; } })}>Thử lại</button></main>
       ) : !actor ? (
-        <Login onLogin={() => void run(refresh)} />
+        <Login onLogin={() => void run(async () => {
+          await refresh();
+          const purchase = readPurchaseRequest(window.location.search);
+          if (purchase) window.location.assign(`/?buy=${purchase.productId}&quantity=${purchase.quantity}`);
+        })} />
       ) : (
         <div className="workspace">
           <nav className="navigation" aria-label="Tài khoản">
             {(
               [
                 ["orders", "Đơn hàng"],
-                ["wallet", "Số dư"],
                 ["security", "Hồ sơ & bảo mật"],
               ] as [Tab, string][]
             ).map(([id, label]) => (
@@ -267,10 +271,6 @@ export function AccountPage() {
           </nav>
           <main className="content">
             <div className="panel-heading account-heading"><div><h1>{tab === 'wallet' ? 'Số dư' : tab === 'security' ? 'Hồ sơ & bảo mật' : 'Đơn hàng'}</h1><p className="muted">{actor.email}</p></div>
-              <button className="quiet" disabled={busy} onClick={() => void run(async () => {
-                await api('/api/auth/sign-out', { body: {} });
-                setActor(null); setBalance(0); setOrders([]); setJournals([]); setDelivery(null); setIntent(null); setSessions([]);
-              })}>Đăng xuất</button>
             </div>
             {error && (
               <p className="notice error" role="alert">
@@ -282,7 +282,7 @@ export function AccountPage() {
                 <div className="balance-card">
                   <div>
                     <span className="eyebrow">Số dư khả dụng</span>
-                    <div className="balance-value">{amountLabel(balance)}</div>
+                    <div className="balance-value">{balance === null ? 'Đang tải…' : amountLabel(balance)}</div>
                   </div>
                 </div>
                 <section className="panel">

@@ -13,7 +13,7 @@ export interface Product {
   updated_at: string;
 }
 
-export interface CartItem {
+export interface Purchase {
   product: Product;
   quantity: number;
 }
