@@ -11,6 +11,7 @@
     "typecheck": "tsc -b && tsc -p tsconfig.worker.json",
     "test": "vitest run",
     "dev:worker": "wrangler dev --config wrangler.worker.jsonc",
+    "precheck:pages": "node -e \"require('node:fs').mkdirSync('.wrangler', { recursive: true })\"",
     "check:pages": "wrangler pages functions build-env . --outfile .wrangler/pages-build-env.json && wrangler pages functions build --build-output-directory dist --outdir .wrangler/pages-build",
     "schema:local": "node scripts/schema.mjs",
     "deploy": "node scripts/deploy.mjs"
