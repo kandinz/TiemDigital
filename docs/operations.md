@@ -2,10 +2,10 @@
 
 ## Phạm vi bản triển khai
 
-- Website: Better Auth email OTP, tài khoản/phiên đăng nhập, danh mục giá server, đơn hàng riêng tư, ví VND, nạp QR TPBank, trả bằng ví hoặc QR, nhận sản phẩm đã mã hóa.
+- Website: Better Auth email OTP, tài khoản/phiên đăng nhập, danh mục giá server, đơn hàng riêng tư, ví VND, nạp QR ngân hàng, trả bằng ví hoặc QR, nhận sản phẩm đã mã hóa.
 - Admin: JWT Cloudflare Access + vai trò D1, khách hàng/khóa phiên, sản phẩm giá VND dùng chung, đơn và giao hàng thủ công, CMS page và trang chủ, lịch sử phiên bản, phê duyệt hai người, sổ cái, audit, đối soát.
-- Ngân hàng: SePay API Banking liên kết tài khoản TPBank. Webhook HMAC + timestamp; cron truy vấn SePay User API v2. Không phải API TPBank trực tiếp.
-- Telegram: catalog VND, mua hàng bằng số dư tài khoản hoặc QR TPBank, nạp số dư bằng QR, `/balance`, `/orders`, `/support`; liên kết tài khoản hai bước. User, số dư, giá, đơn hàng, webhook ngân hàng và sổ cái dùng chung với website.
+- Ngân hàng: SePay API Banking liên kết tài khoản ACB. Webhook HMAC + timestamp; cron truy vấn SePay User API v2. Không phải API ACB trực tiếp.
+- Telegram: catalog VND, mua hàng bằng số dư tài khoản hoặc QR ngân hàng, nạp số dư bằng QR, `/balance`, `/orders`, `/support`; liên kết tài khoản hai bước. User, số dư, giá, đơn hàng, webhook ngân hàng và sổ cái dùng chung với website.
 - Runtime hiện tại là một Worker phân module (API, auth, commerce, payment, admin, bot, operations); không có service binding/core worker độc lập. Các endpoint admin vẫn xác thực JWT và role ngay trong Worker.
 - Giao hàng thủ công có mã hóa là luồng đang hoạt động. Catalog được quản lý trong D1 bởi Owner; không tự dùng giá fallback cũ hoặc gọi GumTool để giao key khi chưa có contract supplier.
 
@@ -17,7 +17,7 @@
 4. `npm run dev` — build Vite rồi chạy Wrangler tại `http://localhost:8787`. Sau khi sửa frontend chạy lại build. `npm run preview` chỉ xem assets, không có backend.
 5. `npm run typecheck`, `npm run lint`, `npm test`.
 
-Ứng dụng mặc định không có sản phẩm, tài khoản admin hay số dư mẫu. Thanh toán TPBank mặc định tắt. Test HTTP chạy trên Workers/D1 thật trong Miniflare, email và JWKS Access được thay bằng dịch vụ ngoài giả lập ở ranh giới test; không có bypass đăng nhập/admin trong runtime ứng dụng.
+Ứng dụng mặc định không có sản phẩm, tài khoản admin hay số dư mẫu. Thanh toán ngân hàng mặc định tắt. Test HTTP chạy trên Workers/D1 thật trong Miniflare, email và JWKS Access được thay bằng dịch vụ ngoài giả lập ở ranh giới test; không có bypass đăng nhập/admin trong runtime ứng dụng.
 
 Đăng nhập thật cần Email Service hoạt động với domain đã onboard. Local Wrangler không tự gửi email tới khách khi chưa có binding tương ứng. Test suite kiểm chứng OTP mà không gửi email thật. Để dùng admin cần Cloudflare Access/JWKS hợp lệ kể cả khi chạy local; không có mật khẩu admin mặc định.
 
@@ -34,12 +34,12 @@
 
 Không có deployment, liên kết ngân hàng hay tạo bot nào được tự thực hiện trong lúc triển khai mã nguồn này; cần credentials/domain thật của chủ dự án.
 
-## Kích hoạt TPBank qua SePay
+## Kích hoạt ACB qua SePay
 
-1. Liên kết TPBank theo hướng dẫn chính thức của SePay. Website này không thu thập tài khoản/mật khẩu/OTP Internet Banking.
+1. Liên kết ACB theo hướng dẫn chính thức của SePay. Website này không thu thập tài khoản/mật khẩu/OTP Internet Banking.
 2. Webhook nhận POST `https://<shop-domain>/webhooks/bank/sepay`, chỉ tiền vào, HMAC-SHA256; secret khớp Workers Secret. Giữ nguyên raw body/timestamp. Không đặt Access login hoặc browser challenge trước webhook.
-3. Mã giao dịch ứng dụng có dạng `TD` + 20 ký tự hex; nhận diện chính xác từ nội dung. Kiểm tra TPBank giữ nguyên toàn bộ mã. Không phụ thuộc bộ lọc mã của provider; không bật “bỏ giao dịch không có mã” nếu muốn nhìn thấy khoản chuyển sai nội dung.
-4. Owner nhập TPBank BIN 970423, số tài khoản/chủ tài khoản và hạn mức, tạo yêu cầu bật thanh toán; Owner khác duyệt. Cần có cả webhook secret và API token đối soát.
+3. Mã giao dịch ứng dụng có dạng `TD` + 20 ký tự hex; nhận diện chính xác từ nội dung. Kiểm tra ACB giữ nguyên toàn bộ mã. Không phụ thuộc bộ lọc mã của provider; không bật “bỏ giao dịch không có mã” nếu muốn nhìn thấy khoản chuyển sai nội dung.
+4. Owner chọn ACB (BIN 970416), số tài khoản/chủ tài khoản và hạn mức, tạo yêu cầu bật thanh toán; Owner khác duyệt. Cần có cả webhook secret và API token đối soát.
 5. Chuyển một khoản nhỏ có kiểm soát: nạp ví; xác minh sổ cái; trả đơn ví; trả đơn QR trực tiếp; thử webhook lặp; đối chiếu sao kê. Chỉ mở nhận tiền rộng sau khi pilot đạt.
 
 Số dư chỉ dùng trong cửa hàng, chưa có chuyển tiền ngang hàng hoặc rút tiền tự động. Hoàn ví chỉ áp dụng đơn vốn trả bằng ví, cần hai người duyệt. Hoàn chuyển khoản hiện được xử lý theo quy trình hỗ trợ/ngân hàng bên ngoài; giao diện không tự đánh dấu đã hoàn khi ngân hàng chưa xác nhận.
@@ -50,7 +50,7 @@ Tạo bot bằng BotFather thuộc chủ cửa hàng. Cấu hình token/username
 
 Khách tạo liên kết trong `/account`, mở bot với token một lần, bot trả Telegram ID để khách xác nhận lại trên website. Username không dùng làm căn cứ sở hữu. Sau liên kết, bot map Telegram ID sang cùng user ID đã xác minh email; không tạo ví riêng hoặc thu thập mật khẩu trong chat.
 
-Luồng mua: `/products` → chọn sản phẩm → tạo đơn VND → chọn **Thanh toán bằng số dư** hoặc **QR TPBank**. Luồng nạp: `/topup 100000` hoặc chọn mức nạp → QR TPBank → webhook ngân hàng xác nhận → số dư chung được cộng. `/balance` đọc đúng số dư website; `/orders` hiển thị đơn từ cả hai kênh. Nút kiểm tra giao dịch chỉ đọc trạng thái server, không tự đánh dấu đã trả. Bot cũng có thể thanh toán đơn web còn chờ của chính khách; web có thể thanh toán đơn bot.
+Luồng mua: `/products` → chọn sản phẩm → tạo đơn VND → chọn **Thanh toán bằng số dư** hoặc **QR ngân hàng**. Luồng nạp: `/topup 100000` hoặc chọn mức nạp → QR ngân hàng → webhook ngân hàng xác nhận → số dư chung được cộng. `/balance` đọc đúng số dư website; `/orders` hiển thị đơn từ cả hai kênh. Nút kiểm tra giao dịch chỉ đọc trạng thái server, không tự đánh dấu đã trả. Bot cũng có thể thanh toán đơn web còn chờ của chính khách; web có thể thanh toán đơn bot.
 
 Bot gọi cùng service createOrder/payWallet/createIntent/intentFor với HTTP API website trong cùng Worker. Tất cả thao tác tiền có idempotency key và kiểm ownership; phiên Telegram bị hủy liên kết hoặc tài khoản bị khóa không thể tiếp tục trả tiền. Không còn sendInvoice, pre-checkout, hay handler ghi nhận Stars. Các trường XTR/STARS cũ trên database đã có được giữ để bảo toàn lịch sử; schema mới chỉ có VND và BANK/WALLET, guard cũng chặn loại thanh toán cũ trên database hiện hữu. Database có sẵn phải apply schema với `--refresh-triggers` khi dừng ghi. Giao key qua trang tài khoản; bot chỉ gửi thông báo để hạn chế lộ key trong lịch sử chat.
 
@@ -79,4 +79,8 @@ Khi lộ secret: tắt ingress theo provider, xoay secret và webhook, kiểm tr
 
 ## Các gate còn phụ thuộc tài khoản ngoài
 
-Cloudflare account/resources/domains/Email Service, Access IdP MFA và hai Owner, TPBank account liên kết SePay, provider credentials và bot token. Các gate này chưa được xác minh bằng giao dịch thật. Build/typecheck/test local không chứng minh production đã nhận tiền hay gửi email thành công.
+Cloudflare account/resources/domains/Email Service, Access IdP MFA và hai Owner, ACB account liên kết SePay, provider credentials và bot token. Các gate này chưa được xác minh bằng giao dịch thật. Build/typecheck/test local không chứng minh production đã nhận tiền hay gửi email thành công.
+
+Lưu ý triển khai: `tiemdigital.pages.dev` hiện chỉ proxy catalog; các API tài khoản/thanh toán chưa được định tuyến tới Worker. Không bật nhận tiền trước khi cấu hình và kiểm tra định tuyến cùng origin, xác thực và webhook. Nếu database đã có, cần dừng ghi tiền và refresh trigger theo hướng dẫn provisioning để sổ cái ghi đúng ngân hàng theo từng intent.
+
+Cấu hình chuẩn bị cho Pages: `wrangler.pages.jsonc` khai báo service binding `PLATFORM` tới Worker `tiemdigital-production`; `wrangler.worker.jsonc` đặt APP_ORIGIN cho Pages. Các Pages Functions chuyển `/api/*` và `/webhooks/*` qua binding, giữ nguyên URL và body. Cần cấu hình Pages Git build dùng đúng file cấu hình Pages, cấu hình Access/Turnstile/email, secrets và kiểm thử staging trước khi triển khai. Các file này chưa chứng minh cấu hình production đã được cập nhật.

@@ -115,15 +115,15 @@ describe("public Worker API", () => {
       currency: "VND",
     });
   });
-  it("credits a TPBank top-up once and prevents concurrent overspending", async () => {
+  it("credits a ACB top-up once and prevents concurrent overspending", async () => {
     const cookie = await login("buyer@example.com");
     await env.DB.prepare(`UPDATE settings SET body=? WHERE id='payment'`)
       .bind(
         JSON.stringify({
           enabled: true,
           provider: "sepay",
-          bankBin: "970423",
-          bankName: "TPBank",
+          bankBin: "970416",
+          bankName: "ACB",
           accountNumber: "123456789",
           accountHolder: "TIEM DIGITAL",
           minTopup: 10000,
@@ -141,7 +141,7 @@ describe("public Worker API", () => {
     const topup = (await topupResponse.json()) as { id: string };
     const transaction = {
       id: 9001,
-      gateway: "TPBank",
+      gateway: "ACB",
       accountNumber: "123456789",
       transferType: "in",
       transferAmount: 100000,
@@ -408,14 +408,14 @@ describe("public Worker API", () => {
       providerRows = [
         {
           id: "provider-reconcile-9001",
-          bank_brand_name: "TPBank",
+          bank_brand_name: "ACB",
           account_number: "123456789",
           transfer_type: "in",
           amount_in: 10000,
           amount_out: 0,
           transaction_content: topup.id,
           transaction_date: new Date().toISOString(),
-          reference_number: "TPBANK-REFERENCE-9001",
+          reference_number: "ACB-REFERENCE-9001",
         },
       ];
       expect(
@@ -505,7 +505,7 @@ describe("public Worker API", () => {
       providerRows = [
         {
           id: "old-outage-transaction",
-          bank_brand_name: "TPBank",
+          bank_brand_name: "ACB",
           account_number: "123456789",
           transfer_type: "in",
           amount_in: 10000,
@@ -609,6 +609,31 @@ describe("public Worker API", () => {
       ).toBe(false);
     } finally {
       mock.mockRestore();
+    }
+  });
+  it("accepts ACB top-ups and rejects a different bank", async () => {
+    const cookie = await login("acb-buyer@example.com");
+    const previous = await env.DB.prepare("SELECT body FROM settings WHERE id='payment'").first<{ body: string }>();
+    await env.DB.prepare("UPDATE settings SET body=? WHERE id='payment'").bind(JSON.stringify({
+      enabled: true, provider: "sepay", bankBin: "970416", bankName: "ACB",
+      accountNumber: "7669977", accountHolder: "TEST ACCOUNT", minTopup: 10000,
+      maxTopup: 5000000, intentTtl: 900,
+    })).run();
+    try {
+      const response = await request("/api/me/topups", { amount: 20000 }, cookie);
+      expect(response.status).toBe(201);
+      const intent = await response.json() as { id: string; bankBin: string; bankName: string };
+      expect(intent).toMatchObject({ bankBin: "970416", bankName: "ACB" });
+      const tx = { accountNumber: "7669977", transferType: "in", transferAmount: 20000,
+        content: intent.id, transactionDate: new Date().toISOString() };
+      expect((await bankWebhook({ ...tx, id: 19801, gateway: "TPBank" })).status).toBe(200);
+      expect(await (await request("/api/me/wallet", undefined, cookie)).json()).toMatchObject({ balance: 0 });
+      expect((await bankWebhook({ ...tx, id: 19802, gateway: "ACB" })).status).toBe(200);
+      expect((await bankWebhook({ ...tx, id: 19802, gateway: "ACB" })).status).toBe(200);
+      expect(await (await request("/api/me/wallet", undefined, cookie)).json()).toMatchObject({ balance: 20000 });
+      expect(await env.DB.prepare("SELECT debit_account FROM journals WHERE id='sepay:19802'").first()).toMatchObject({ debit_account: "bank:ACB" });
+    } finally {
+      await env.DB.prepare("UPDATE settings SET body=? WHERE id='payment'").bind(previous!.body).run();
     }
   });
   it("shares one VND account between Telegram and web for QR, top-ups and wallet payments", async () => {
@@ -720,10 +745,63 @@ describe("public Worker API", () => {
       expect(
         (await message("/products", false, 12345, "forged")).response.status,
       ).toBe(401);
+      expect((await message("/start", false, 987654)).response.status).toBe(200);
+      expect((await message("/start", false, 987654)).response.status).toBe(200);
+      const botUser = await env.DB.prepare(
+        "SELECT u.id,u.emailVerified FROM telegram_links l JOIN user u ON u.id=l.user_id WHERE l.telegram_id=?",
+      ).bind("987654").first<{ id: string; emailVerified: number }>();
+      expect(botUser).toMatchObject({ id: "telegram:987654", emailVerified: 0 });
+      expect((await message("profile", true, 987654)).response.status).toBe(200);
+      expect(String(sent.at(-1)?.body.text)).toContain("Telegram ID: 987654");
+      expect(String(sent.at(-1)?.body.text)).toContain("Số dư khả dụng: 0");
+      expect((await message("topup", true, 987654)).response.status).toBe(200);
+      expect(String(sent.at(-1)?.body.text)).toContain("liên kết Telegram");
+      const newWebCookie = await login("new-telegram-link@example.com");
+      testEnv.TELEGRAM_BOT_USERNAME = "tiemdigital_bot";
+      const link = await (await request("/api/me/telegram-link", {}, newWebCookie)).json() as { token: string };
+      await message(`/start ${link.token}`, false, 987654);
+      expect((await request("/api/me/telegram-link/confirm", { token: link.token, telegramId: "987654" }, newWebCookie)).status).toBe(200);
+      const newWebUser = await (await request("/api/me", undefined, newWebCookie)).json() as { id: string };
+      expect(await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_id=?").bind("987654").first()).toMatchObject({ user_id: newWebUser.id });
+      await message("/start");
+      expect(await env.DB.prepare("SELECT user_id FROM telegram_links WHERE telegram_id=?").bind("12345").first()).toMatchObject({ user_id: user.id });
+      expect(sent.at(-1)?.body.reply_markup.inline_keyboard.flat()).toContainEqual({ text: "👤 Profile", callback_data: "profile" });
       expect((await message("/products")).response.status).toBe(200);
-      expect(JSON.stringify(sent.at(-1)?.body)).toContain("20.000");
-      const bought = await message("buy:9003", true);
+      expect(String(sent.at(-1)?.body.text)).toContain("Chọn danh mục");
+      expect(
+        sent
+          .at(-1)
+          ?.body.reply_markup.inline_keyboard.flat()
+          .some((button: { text: string }) => button.text.startsWith("📁")),
+      ).toBe(true);
+      expect((await message("balance", true)).response.status).toBe(200);
+      expect(String(sent.at(-1)?.body.text)).toContain("Số dư khả dụng");
+      expect(sent.at(-1)?.body.reply_markup.inline_keyboard[0][0]).toMatchObject({
+        text: "💳 Nạp tiền",
+        callback_data: "topup",
+      });
+      expect((await message("topup", true)).response.status).toBe(200);
+      expect(String(sent.at(-1)?.body.text)).toContain("Chọn số tiền nạp");
+      expect((await message("category:Khác", true)).response.status).toBe(200);
+      expect(String(sent.at(-1)?.body.text)).toContain("Khác");
+      expect(
+        sent.at(-1)?.body.reply_markup.inline_keyboard[0][0],
+      ).toMatchObject({ callback_data: "product:9003" });
+      expect((await message("product:9003", true)).response.status).toBe(200);
+      expect(String(sent.at(-1)?.body.text)).toContain("Shared VND product");
+      expect(
+        sent.at(-1)?.body.reply_markup.inline_keyboard[0][0],
+      ).toMatchObject({ text: "🛒 Mua ngay", callback_data: "buy:9003" });
+      expect((await message("buy:9003", true)).response.status).toBe(200);
+      expect(sent.at(-1)?.body.reply_markup.inline_keyboard[0]).toEqual(
+        [1, 2, 3, 4, 5].map((quantity) => ({ text: String(quantity), callback_data: `quantity:9003:${quantity}` })),
+      );
+      const bought = await message("quantity:9003:1", true);
       expect(bought.response.status).toBe(200);
+      expect(sent.at(-1)?.body.reply_markup.inline_keyboard[0]).toEqual([
+        { text: "💰 Thanh toán bằng số dư", callback_data: expect.stringMatching(/^wallet:/) },
+        { text: "🏦 QR ngân hàng", callback_data: expect.stringMatching(/^qr:/) },
+      ]);
       expect((await bought.retry()).status).toBe(200);
       const order = await latestOrder();
       expect(order).toMatchObject({
@@ -734,12 +812,12 @@ describe("public Worker API", () => {
       });
       expect((await message(`qr:${order.id}`, true)).response.status).toBe(200);
       const qrIntent = photoIntent();
-      expect(lastPhoto().photo).toContain("970423-123456789");
+      expect(lastPhoto().photo).toContain("970416-123456789");
       expect(
         (
           await bankWebhook({
             id: 71001,
-            gateway: "TPBank",
+            gateway: "ACB",
             accountNumber: "123456789",
             transferType: "in",
             transferAmount: 20000,
@@ -760,7 +838,7 @@ describe("public Worker API", () => {
       const topup = photoIntent();
       await bankWebhook({
         id: 71002,
-        gateway: "TPBank",
+        gateway: "ACB",
         accountNumber: "123456789",
         transferType: "in",
         transferAmount: 50000,
@@ -771,6 +849,7 @@ describe("public Worker API", () => {
         await (await request("/api/me/wallet", undefined, cookie)).json(),
       ).toMatchObject({ balance: 50000 });
       await message("buy:9003", true);
+      await message("quantity:9003:1", true);
       const walletOrder = await latestOrder();
       failStatusForOrder = walletOrder.id;
       const lostStatus = await message(`wallet:${walletOrder.id}`, true);
@@ -812,6 +891,12 @@ describe("public Worker API", () => {
       ).toMatchObject({ balance: 10000 });
       await message("/balance");
       expect(String(sent.at(-1)?.body.text)).toContain("10.000");
+      await message("quantity:9003:5", true);
+      const quantityOrder = await latestOrder();
+      expect(quantityOrder.total).toBe(100000);
+      expect(quantityOrder.items[0].quantity).toBe(5);
+      await message("quantity:9003:6", true);
+      expect(String(sent.at(-1)?.body.text)).toContain("Lệnh không hợp lệ");
       const strangerCookie = await login("telegram-stranger@example.com");
       const stranger = (await (
         await request("/api/me", undefined, strangerCookie)
@@ -878,7 +963,7 @@ describe("public Worker API", () => {
     ).json()) as { id: string };
     const tx = {
       id: 9002,
-      gateway: "TPBank",
+      gateway: "ACB",
       accountNumber: "123456789",
       transferType: "in",
       transferAmount: 60000,
@@ -927,7 +1012,7 @@ describe("public Worker API", () => {
       await request("/api/me/topups", { amount: 20000 }, cookie)
     ).json()) as { id: string };
     const base = {
-      gateway: "TPBank",
+      gateway: "ACB",
       accountNumber: "123456789",
       transferType: "in",
       transferAmount: 20000,

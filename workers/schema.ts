@@ -17,7 +17,7 @@ export const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id), channel TEXT NOT NULL CHECK(channel IN('web','telegram')), currency TEXT NOT NULL CHECK(currency='VND'), total INTEGER NOT NULL CHECK(typeof(total)='integer' AND total>0), items TEXT NOT NULL CHECK(json_valid(items)), customer TEXT NOT NULL CHECK(json_valid(customer)), payment_status TEXT NOT NULL DEFAULT 'UNPAID' CHECK(payment_status IN('UNPAID','PAID','REFUNDED')), fulfillment_status TEXT NOT NULL DEFAULT 'NOT_READY' CHECK(fulfillment_status IN('NOT_READY','QUEUED','DELIVERED')), delivery TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch()))`,
   `CREATE INDEX IF NOT EXISTS orders_owner ON orders(user_id,created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY CHECK(id='payment'), version INTEGER NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)), updated_at INTEGER NOT NULL DEFAULT (unixepoch()))`,
-  `INSERT OR IGNORE INTO settings(id,version,body) VALUES('payment',1,'{"enabled":false,"provider":"sepay","bankBin":"970423","bankName":"TPBank","accountNumber":"","accountHolder":"","minTopup":10000,"maxTopup":5000000,"intentTtl":900}')`,
+  `INSERT OR IGNORE INTO settings(id,version,body) VALUES('payment',1,'{"enabled":false,"provider":"sepay","bankBin":"970416","bankName":"ACB","accountNumber":"","accountHolder":"","minTopup":10000,"maxTopup":5000000,"intentTtl":900}')`,
   `CREATE TABLE IF NOT EXISTS intents (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id), purpose TEXT NOT NULL CHECK(purpose IN('ORDER','TOPUP')), order_id TEXT REFERENCES orders(id), amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount>0), account_number TEXT NOT NULL, config TEXT NOT NULL CHECK(json_valid(config)), status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN('PENDING','SUCCEEDED','EXPIRED')), created_at INTEGER NOT NULL DEFAULT(unixepoch()), expires_at INTEGER NOT NULL, CHECK((purpose='ORDER' AND order_id IS NOT NULL) OR (purpose='TOPUP' AND order_id IS NULL)))`,
   `CREATE INDEX IF NOT EXISTS intents_owner ON intents(user_id,created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS inbox (id TEXT PRIMARY KEY, provider TEXT NOT NULL CHECK(provider IN('sepay','telegram')), payload TEXT NOT NULL CHECK(json_valid(payload)), status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN('PENDING','DONE','REVIEW')), error TEXT, created_at INTEGER NOT NULL DEFAULT(unixepoch()))`,
@@ -70,7 +70,7 @@ export const SCHEMA_STATEMENTS = [
   END`,
   `CREATE TRIGGER IF NOT EXISTS allocation_apply AFTER INSERT ON allocations BEGIN
     INSERT INTO settlements(id,order_id,source,external_id) SELECT NEW.transaction_id,order_id,'BANK',NEW.transaction_id FROM intents WHERE id=NEW.intent_id AND purpose='ORDER';
-    INSERT INTO journals(id,source,user_id,kind,amount,wallet_delta,debit_account,credit_account,memo) SELECT NEW.transaction_id,'bank:'||NEW.transaction_id,user_id,'TOPUP',amount,amount,'bank:TPBank','wallet:'||user_id,id FROM intents WHERE id=NEW.intent_id AND purpose='TOPUP';
+    INSERT INTO journals(id,source,user_id,kind,amount,wallet_delta,debit_account,credit_account,memo) SELECT NEW.transaction_id,'bank:'||NEW.transaction_id,user_id,'TOPUP',amount,amount,'bank:'||json_extract(config,'$.bankName'),'wallet:'||user_id,id FROM intents WHERE id=NEW.intent_id AND purpose='TOPUP';
     UPDATE intents SET status='SUCCEEDED' WHERE id=NEW.intent_id;
     UPDATE bank_transactions SET status='ALLOCATED' WHERE id=NEW.transaction_id;
   END`,

@@ -51,7 +51,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {theme.brandName}
         </span>
         <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-          {specs.tokens || specs.duration || 'Bản Quyền Chính Hãng'}
+          {specs.tokens || specs.duration || product.category}
         </span>
       </div>
     );
@@ -74,7 +74,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               </span>
             )}
             <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-              <Zap className="w-2.5 h-2.5 fill-current" /> Sẵn hàng
+              <Zap className="w-2.5 h-2.5 fill-current" /> {product.in_stock ? "Sẵn hàng" : "Hết hàng"}
             </span>
           </div>
         </div>
@@ -94,9 +94,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               ⏱ {specs.duration}
             </span>
           )}
-          <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-            🛡 {specs.warranty}
-          </span>
         </div>
 
         {/* Title */}
@@ -154,6 +151,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {/* Add to Cart Button */}
           <button
             onClick={() => onAddToCart(product)}
+            disabled={!product.in_stock}
             className="col-span-1 py-2 rounded-xl bg-slate-100 hover:bg-emerald-500/10 dark:bg-slate-800 hover:dark:bg-emerald-500/20 text-slate-700 hover:text-emerald-600 dark:text-slate-200 hover:dark:text-emerald-400 flex items-center justify-center border border-transparent hover:border-emerald-500/30 transition-all"
             title="Thêm vào giỏ hàng"
             aria-label="Thêm vào giỏ"
@@ -164,10 +162,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {/* Buy Now Button */}
           <button
             onClick={() => onBuyNow(product)}
+            disabled={!product.in_stock}
             className="col-span-3 py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs shadow-md shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-1.5"
           >
             <Zap className="w-3.5 h-3.5 fill-white" />
-            <span>Mua Ngay</span>
+            <span>{product.in_stock ? "Mua ngay" : "Hết hàng"}</span>
           </button>
 
         </div>

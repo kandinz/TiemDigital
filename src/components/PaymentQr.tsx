@@ -75,7 +75,7 @@ export function PaymentQr({
           src={intent.qrUrl}
           width="256"
           height="256"
-          alt={`QR chuyển ${amountLabel(intent.amount)} tới TPBank`}
+          alt={`QR chuyển ${amountLabel(intent.amount)} tới ${intent.bankName}`}
           onError={() =>
             setError("Chưa tải được QR. Dùng thông tin chuyển khoản bên dưới.")
           }

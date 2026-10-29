@@ -5,7 +5,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
-import { Hero } from './components/Hero';
 import { CategoryPills } from './components/CategoryPills';
 import { ProductCard } from './components/ProductCard';
 import { ProductDetailModal } from './components/ProductDetailModal';
@@ -13,15 +12,10 @@ import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal } from './components/CheckoutModal';
 import { OrderSuccessModal } from './components/OrderSuccessModal';
 import { OrderTrackerModal } from './components/OrderTrackerModal';
-import { TrustBadges } from './components/TrustBadges';
-import { FaqSection } from './components/FaqSection';
-import { ReviewsSection } from './components/ReviewsSection';
 import { Footer } from './components/Footer';
-import { FloatingSupport } from './components/FloatingSupport';
 import type { CartItem, Order, Product, PromoCode } from './types';
 import { fetchProducts } from './services/api';
-import { api, type PageBlock } from './services/platform';
-import { ShoppingBag, Check, Sparkles } from 'lucide-react';
+import { ShoppingBag, Check } from 'lucide-react';
 
 const CART_STORAGE_KEY = 'tiem_digital_cart';
 const THEME_STORAGE_KEY = 'tiem_digital_theme';
@@ -37,8 +31,6 @@ export const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isLiveApi, setIsLiveApi] = useState<boolean>(false);
-  const [homePage, setHomePage] = useState<{title:string;description:string;blocks:PageBlock[]}|null>(null);
   const [catalogError,setCatalogError]=useState('');
 
   // Filter & Search State
@@ -91,7 +83,6 @@ export const App: React.FC = () => {
       const data = await fetchProducts();
       setProducts(data.products);
       setCategories(data.categories);
-      setIsLiveApi(!data.fromCache);
     } catch (e) {
       console.error('Lỗi nạp sản phẩm', e);
       setCatalogError('Chưa tải được danh mục. Vui lòng thử cập nhật lại.');
@@ -102,7 +93,6 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     loadCatalog();
-    api<{title:string;description:string;blocks:PageBlock[]}>('/api/pages/trang-chu').then(setHomePage).catch(()=>{});
   }, []);
 
   // Hiển thị thông báo Toast nhanh
@@ -113,6 +103,7 @@ export const App: React.FC = () => {
 
   // Thêm vào giỏ hàng
   const handleAddToCart = (product: Product, quantity: number = 1) => {
+    if (!product.in_stock) { showToast("Sản phẩm hiện đã hết hàng."); return; }
     setCart((prev) => {
       const existing = prev.find((i) => i.product.id === product.id);
       if (existing) {
@@ -127,6 +118,7 @@ export const App: React.FC = () => {
 
   // Mua ngay (Thêm vào giỏ & mở Modal thanh toán)
   const handleBuyNow = (product: Product, quantity: number = 1) => {
+    if (!product.in_stock) { showToast("Sản phẩm hiện đã hết hàng."); return; }
     handleAddToCart(product, quantity);
     setIsCartOpen(false);
     setIsCheckoutOpen(true);
@@ -238,40 +230,16 @@ export const App: React.FC = () => {
         onNavigateSection={handleNavigateSection}
       />
 
-      {/* Hero Banner */}
-      <Hero
-        content={homePage}
-        onExploreClick={() => handleNavigateSection('products')}
-        onTagClick={(tag) => {
-          setSearchQuery(tag);
-          handleNavigateSection('products');
-        }}
-        totalProducts={products.length}
-        isLiveApi={isLiveApi}
-      />
-
-      {homePage?.blocks.length ? <section className="max-w-7xl mx-auto px-4 py-8 space-y-6">{homePage.blocks.map((block,index)=>block.type==='text'?<article key={index}><h2 className="text-2xl font-bold">{block.heading}</h2><p className="whitespace-pre-wrap text-slate-500 mt-2">{block.text}</p></article>:block.type==='image'?<img key={index} src={block.url} alt={block.alt??''} className="rounded-xl max-w-full"/>:<a key={index} href={block.url} className="text-emerald-500">{block.label} →</a>)}</section> : null}
-
       {/* Products Section */}
-      <main id="products" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16">
+      <main id="products" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         
-        {/* Section Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-8">
           <div>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase tracking-wider mb-2 border border-emerald-500/20">
-              <Sparkles className="w-3.5 h-3.5" /> Bảng Giá Trực Tuyến
-            </div>
-            <h2 className="text-2xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight font-['Plus_Jakarta_Sans']">
-              Danh Mục <span className="text-emerald-500">Sản Phẩm & Token</span>
-            </h2>
-            <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Dữ liệu đồng bộ trực tiếp từ hệ thống phân phối. Chọn gói phù hợp và thanh toán quét mã QR tự động.
-            </p>
+            <p className="text-xs font-semibold tracking-[0.2em] uppercase text-emerald-600 dark:text-emerald-400 mb-2">Tiệm Digital / Cửa hàng</p>
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Sản phẩm số</h1>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Chọn sản phẩm phù hợp với nhu cầu của bạn.</p>
           </div>
-
-          <div className="text-xs font-medium text-slate-400">
-            Hiển thị <strong>{filteredProducts.length}</strong> / {products.length} sản phẩm
-          </div>
+          <p className="text-sm text-slate-500" aria-live="polite">{filteredProducts.length} sản phẩm</p>
         </div>
 
         {/* Filter & Sort Controls */}
@@ -343,20 +311,7 @@ export const App: React.FC = () => {
 
       </main>
 
-      {/* Trust & Guarantee Section */}
-      <TrustBadges />
-
-      {/* Reviews Section */}
-      <ReviewsSection />
-
-      {/* FAQ Section */}
-      <FaqSection />
-
-      {/* Footer */}
       <Footer />
-
-      {/* Floating Support Button */}
-      <FloatingSupport />
 
       {/* Modals & Drawers */}
       <ProductDetailModal

@@ -30,6 +30,21 @@ export async function telegramCall(env: Env, method: string, body: unknown) {
 async function sendText(env: Env, chatId: string, text: string, extra = {}) {
   return telegramCall(env, "sendMessage", { chat_id: chatId, text, ...extra });
 }
+function mainMenu() {
+  return {
+    inline_keyboard: [
+      [
+        { text: "🛍️ Sản phẩm", callback_data: "products" },
+        { text: "👤 Profile", callback_data: "profile" },
+      ],
+      [
+        { text: "📦 Đơn hàng", callback_data: "orders" },
+        { text: "💳 Nạp tiền", callback_data: "topup" },
+      ],
+      [{ text: "🆘 Hỗ trợ", callback_data: "support" }],
+    ],
+  };
+}
 export async function createLink(env: Env, actor: Actor) {
   if (
     !env.TELEGRAM_BOT_USERNAME ||
@@ -48,7 +63,7 @@ export async function createLink(env: Env, actor: Actor) {
     expiresAt: now() + 300,
   };
 }
-const tgUser = z.object({ id: z.number().int().positive() });
+const tgUser = z.object({ id: z.number().int().positive(), first_name: z.string().max(256).optional(), last_name: z.string().max(256).optional(), username: z.string().max(256).optional() });
 const chatSchema = z.object({ id: z.number().int(), type: z.string() });
 const telegramUpdateSchema = z.object({
   update_id: z.number().int().nonnegative(),
@@ -119,7 +134,7 @@ async function linkedActor(
   telegramId: number,
 ): Promise<Actor | null> {
   return env.DB.prepare(
-    "SELECT u.id,u.email,u.name FROM telegram_links l JOIN user u ON u.id=l.user_id LEFT JOIN customers c ON c.id=u.id WHERE l.telegram_id=? AND u.emailVerified=1 AND COALESCE(c.disabled,0)=0",
+    "SELECT u.id,u.email,u.name FROM telegram_links l JOIN user u ON u.id=l.user_id LEFT JOIN customers c ON c.id=u.id WHERE l.telegram_id=? AND (u.emailVerified=1 OR (u.id='telegram:' || l.telegram_id AND u.email='telegram-' || l.telegram_id || '@users.invalid')) AND COALESCE(c.disabled,0)=0",
   )
     .bind(String(telegramId))
     .first<Actor>();
@@ -153,17 +168,18 @@ async function showOrder(
             ? [
                 [
                   {
-                    text: "Thanh toán bằng số dư",
+                    text: "💰 Thanh toán bằng số dư",
                     callback_data: `wallet:${order.id}`,
                   },
-                  { text: "QR TPBank", callback_data: `qr:${order.id}` },
+                  { text: "🏦 QR ngân hàng", callback_data: `qr:${order.id}` },
                 ],
               ]
             : []),
           [
-            { text: "Cập nhật đơn", callback_data: `status:${order.id}` },
-            { text: "Mở tài khoản", url: `${env.APP_ORIGIN}/account` },
+            { text: "🔄 Cập nhật đơn", callback_data: `status:${order.id}` },
+            { text: "👤 Mở tài khoản", url: `${env.APP_ORIGIN}/account` },
           ],
+          [{ text: "🏠 Menu chính", callback_data: "menu" }],
         ],
       },
     },
@@ -187,13 +203,110 @@ async function showQr(
   await telegramCall(env, "sendPhoto", {
     chat_id: chatId,
     photo: qrImageUrl(intent).toString(),
-    caption: `${intent.purpose === "TOPUP" ? "Nạp số dư tài khoản chung" : "Thanh toán đơn hàng"}\nSố tiền: ${money(intent.amount)}\nTPBank: ${intent.accountNumber}\nChủ tài khoản: ${intent.accountHolder}\nNội dung: ${intent.memo}\nHiệu lực đến ${new Date(intent.expiresAt * 1000).toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" })}\nChuyển đúng số tiền và nội dung. Hệ thống tự xác nhận khi nhận tiền.`,
+    caption: `${intent.purpose === "TOPUP" ? "Nạp số dư tài khoản chung" : "Thanh toán đơn hàng"}\nSố tiền: ${money(intent.amount)}\n${intent.bankName}: ${intent.accountNumber}\nChủ tài khoản: ${intent.accountHolder}\nNội dung: ${intent.memo}\nHiệu lực đến ${new Date(intent.expiresAt * 1000).toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" })}\nChuyển đúng số tiền và nội dung. Hệ thống tự xác nhận khi nhận tiền.`,
     reply_markup: {
       inline_keyboard: [
         [{ text: "Kiểm tra giao dịch", callback_data: `intent:${intent.id}` }],
       ],
     },
   });
+}
+
+async function showProductDetail(env: Env, chatId: string, productId: number) {
+  const product = await env.DB.prepare(
+    "SELECT id,name,description,selling_price,in_stock FROM products WHERE id=?",
+  )
+    .bind(productId)
+    .first<{
+      id: number;
+      name: string;
+      description: string;
+      selling_price: number;
+      in_stock: number;
+    }>();
+  if (!product) {
+    await sendText(env, chatId, "Không tìm thấy sản phẩm.", {
+      reply_markup: mainMenu(),
+    });
+    return;
+  }
+  const description = product.description.trim() || "Chưa có mô tả sản phẩm.";
+  await sendText(
+    env,
+    chatId,
+    `🛍️ ${product.name}\n\n💰 Giá: ${money(product.selling_price)}\n📦 Tồn kho: ${product.in_stock ? "Còn hàng" : "Hết hàng"}\n\n${description}`.slice(
+      0,
+      3900,
+    ),
+    {
+      reply_markup: {
+        inline_keyboard: [
+          ...(product.in_stock
+            ? [[{ text: "🛒 Mua ngay", callback_data: `buy:${product.id}` }]]
+            : []),
+          [{ text: "🔙 Danh sách sản phẩm", callback_data: "products" }],
+          [{ text: "🏠 Menu chính", callback_data: "menu" }],
+        ],
+      },
+    },
+  );
+}
+
+async function showCategories(env: Env, chatId: string) {
+  const { results } = await env.DB.prepare(
+    "SELECT category,COUNT(*) AS count FROM products WHERE in_stock=1 GROUP BY category ORDER BY category",
+  ).all<{ category: string; count: number }>();
+  await sendText(
+    env,
+    chatId,
+    results.length ? "📁 Chọn danh mục sản phẩm:" : "Chưa có danh mục sản phẩm.",
+    {
+      reply_markup: {
+        inline_keyboard: [
+          ...results.map((item) => [
+            {
+              text: `📁 ${item.category} (${item.count})`,
+              callback_data: `category:${item.category}`,
+            },
+          ]),
+          [{ text: "🏠 Menu chính", callback_data: "menu" }],
+        ],
+      },
+    },
+  );
+}
+
+async function showCategoryProducts(
+  env: Env,
+  chatId: string,
+  category: string,
+) {
+  const { results } = await env.DB.prepare(
+    "SELECT id,name,selling_price FROM products WHERE category=? AND in_stock=1 ORDER BY name",
+  )
+    .bind(category)
+    .all<{ id: number; name: string; selling_price: number }>();
+  await sendText(
+    env,
+    chatId,
+    results.length
+      ? `🗂️ ${category}\nChọn tên sản phẩm để xem chi tiết:`
+      : "Danh mục này hiện chưa có sản phẩm.",
+    {
+      reply_markup: {
+        inline_keyboard: [
+          ...results.map((product) => [
+            {
+              text: `🛍️ ${product.name} · ${money(product.selling_price)}`,
+              callback_data: `product:${product.id}`,
+            },
+          ]),
+          [{ text: "🔙 Danh mục", callback_data: "products" }],
+          [{ text: "🏠 Menu chính", callback_data: "menu" }],
+        ],
+      },
+    },
+  );
 }
 
 export async function processTelegramInbox(env: Env, inboxId: string) {
@@ -258,31 +371,26 @@ export async function processTelegramInbox(env: Env, inboxId: string) {
           ? `Đã nhận yêu cầu liên kết. Telegram ID: ${sender.id}. Quay lại website, nhập ID này và xác nhận.`
           : "Mã liên kết đã hết hạn hoặc đã sử dụng. Tạo mã mới trên website.",
       );
+    } else if (text === "/start" || /^\/start@[a-zA-Z0-9_]+$/.test(text)) {
+      const telegramId = String(sender.id);
+      const userId = `telegram:${telegramId}`;
+      const timestamp = Date.now();
+      const name = [sender.first_name, sender.last_name].filter(Boolean).join(" ") || sender.username || "Khách hàng";
+      await env.DB.batch([
+        env.DB.prepare("INSERT OR IGNORE INTO user(id,name,email,emailVerified,createdAt,updatedAt) SELECT ?,?,?,0,?,? WHERE NOT EXISTS (SELECT 1 FROM telegram_links WHERE telegram_id=?)")
+          .bind(userId, name, `telegram-${telegramId}@users.invalid`, timestamp, timestamp, telegramId),
+        env.DB.prepare("INSERT OR IGNORE INTO telegram_links(user_id,telegram_id,chat_id) SELECT id,?,? FROM user WHERE id=?")
+          .bind(telegramId, chatId, userId),
+      ]);
+      await sendText(env, chatId, "Chào bạn! Chọn sản phẩm để bắt đầu.", { reply_markup: mainMenu() });
     } else if (text === "/products" || text === "products") {
-      const { results } = await env.DB.prepare(
-        "SELECT id,name,selling_price FROM products WHERE in_stock=1 LIMIT 20",
-      ).all<{ id: number; name: string; selling_price: number }>();
-      await sendText(
-        env,
-        chatId,
-        results.length
-          ? "Chọn sản phẩm. Thanh toán bằng số dư chung hoặc QR TPBank."
-          : "Chưa có sản phẩm mở bán.",
-        {
-          reply_markup: {
-            inline_keyboard: results.map((p) => [
-              {
-                text: `${p.name} · ${money(p.selling_price)}`,
-                callback_data: `buy:${p.id}`,
-              },
-            ]),
-          },
-        },
-      );
+      await showCategories(env, chatId);
+    } else if (/^category:.+$/.test(text)) {
+      await showCategoryProducts(env, chatId, text.slice("category:".length));
+    } else if (/^product:\d+$/.test(text)) {
+      await showProductDetail(env, chatId, Number(text.slice("product:".length)));
     } else if (
-      /^(buy:|wallet:|qr:|status:|intent:|topup:|\/topup|\/balance|\/orders)/.test(
-        text,
-      )
+      /^(buy:|quantity:|wallet:|qr:|status:|intent:|topup:|topup$|\/topup|\/balance|balance|\/profile|profile|\/orders|orders)/.test(text)
     ) {
       const actor = await linkedActor(env, sender.id);
       if (!actor)
@@ -290,13 +398,29 @@ export async function processTelegramInbox(env: Env, inboxId: string) {
           401,
           `Hãy đăng nhập và liên kết tài khoản Telegram tại ${env.APP_ORIGIN}/account. Tài khoản bị khóa không thể thanh toán.`,
         );
+      if (actor.id.startsWith("telegram:") && /^(quantity:|topup:|\/topup|topup$)/.test(text))
+        throw new HttpError(409, `Để mua hàng và nhận sản phẩm, hãy liên kết Telegram với tài khoản tại ${env.APP_ORIGIN}/account.`);
       const eventKey = `telegram-${String(update.update_id).padStart(12, "0")}`;
-      if (/^(buy:|wallet:|qr:|topup:|\/topup\s)/.test(text))
+      if (/^(quantity:|wallet:|qr:|topup:|\/topup\s)/.test(text))
         await rateLimit(env, `write:${actor.id}`, 30);
       if (/^buy:\d+$/.test(text)) {
+        const productId = text.slice(4);
+        await sendText(env, chatId, "Chọn số lượng:", {
+          reply_markup: {
+            inline_keyboard: [
+              [1, 2, 3, 4, 5].map((quantity) => ({
+                text: String(quantity),
+                callback_data: `quantity:${productId}:${quantity}`,
+              })),
+              [{ text: "🔙 Sản phẩm", callback_data: `product:${productId}` }],
+            ],
+          },
+        });
+      } else if (/^quantity:\d+:[1-5]$/.test(text)) {
+        const [, productId, quantity] = text.split(":");
         const order = await createOrder(
           paymentRequest(env, eventKey, {
-            items: [{ productId: Number(text.slice(4)), quantity: 1 }],
+            items: [{ productId: Number(productId), quantity: Number(quantity) }],
             customer: {
               fullName: actor.name || "Khách hàng",
               email: actor.email,
@@ -357,7 +481,7 @@ export async function processTelegramInbox(env: Env, inboxId: string) {
             actor,
           ),
         );
-      } else if (text === "/topup")
+      } else if (text === "/topup" || text === "topup")
         await sendText(
           env,
           chatId,
@@ -370,13 +494,21 @@ export async function processTelegramInbox(env: Env, inboxId: string) {
             },
           },
         );
-      else if (text === "/balance")
+      else if (text === "/balance" || text === "balance" || text === "/profile" || text === "profile")
         await sendText(
           env,
           chatId,
-          `Số dư khả dụng: ${money((await walletFor(env, actor)).balance)}\nĐây là cùng số dư trên tài khoản website.`,
+          `👤 Profile\nTên: ${actor.name}\nTelegram ID: ${sender.id}\nSố dư khả dụng: ${money((await walletFor(env, actor)).balance)}`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "💳 Nạp tiền", callback_data: "topup" }],
+                [{ text: "🏠 Menu chính", callback_data: "menu" }],
+              ],
+            },
+          },
         );
-      else if (text === "/orders") {
+      else if (text === "/orders" || text === "orders") {
         const { results } = await env.DB.prepare(
           "SELECT id FROM orders WHERE user_id=? ORDER BY created_at DESC,id DESC LIMIT 10",
         )
@@ -390,9 +522,12 @@ export async function processTelegramInbox(env: Env, inboxId: string) {
             : "Bạn chưa có đơn hàng.",
           {
             reply_markup: {
-              inline_keyboard: results.map((order) => [
-                { text: order.id, callback_data: `status:${order.id}` },
-              ]),
+              inline_keyboard: [
+                ...results.map((order) => [
+                  { text: `🧾 ${order.id}`, callback_data: `status:${order.id}` },
+                ]),
+                [{ text: "🏠 Menu chính", callback_data: "menu" }],
+              ],
             },
           },
         );
@@ -401,7 +536,11 @@ export async function processTelegramInbox(env: Env, inboxId: string) {
           400,
           "Lệnh không hợp lệ. Dùng /products, /balance, /topup hoặc /orders.",
         );
-    } else if (text === "/paysupport" || text === "/support")
+    } else if (
+      text === "/paysupport" ||
+      text === "/support" ||
+      text === "support"
+    )
       await sendText(
         env,
         chatId,
@@ -411,13 +550,9 @@ export async function processTelegramInbox(env: Env, inboxId: string) {
       await sendText(
         env,
         chatId,
-        "Tiệm Digital\n/products — Mua hàng\n/balance — Số dư chung\n/topup — Nạp tiền bằng QR TPBank\n/orders — Đơn của tôi\n/support — Hỗ trợ\nLiên kết tài khoản trong mục Tài khoản trên website.",
+        "Tiệm Digital\n/products — Mua hàng\n/profile — Profile\n/topup — Nạp tiền bằng QR ngân hàng\n/orders — Đơn của tôi\n/support — Hỗ trợ\nNhấn /start để tạo tài khoản bot.",
         {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "Xem sản phẩm", callback_data: "products" }],
-            ],
-          },
+          reply_markup: mainMenu(),
         },
       );
   } catch (error) {

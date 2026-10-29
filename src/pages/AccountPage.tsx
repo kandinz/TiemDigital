@@ -294,7 +294,7 @@ export function AccountPage() {
                     </p>
                   </div>
                   <button onClick={() => setTab("wallet")}>
-                    Nạp tiền qua TPBank ↗
+                    Nạp tiền qua ngân hàng ↗
                   </button>
                 </div>
                 {tab === "overview" ? (
@@ -303,7 +303,7 @@ export function AccountPage() {
                     <p>
                       Theo dõi trạng thái thanh toán và nhận sản phẩm ngay tại
                       đây. Website và Telegram dùng chung tài khoản, số dư và
-                      thanh toán bằng QR TPBank.
+                      thanh toán bằng QR ngân hàng.
                     </p>
                     <button onClick={() => setTab("orders")}>
                       Xem {orders.length} đơn hàng →
@@ -314,7 +314,7 @@ export function AccountPage() {
                     <section className="panel">
                       <h2>Nạp số dư</h2>
                       <p className="muted">
-                        Tiền chỉ được cộng sau khi xác nhận giao dịch TPBank.
+                        Tiền chỉ được cộng sau khi xác nhận giao dịch ngân hàng.
                         Nạp tiền không tự thanh toán đơn hàng.
                       </p>
                       <form
@@ -556,7 +556,7 @@ export function AccountPage() {
                 ) : (
                   <>
                     <p>
-                      Liên kết để mua hàng, thanh toán QR TPBank hoặc sử dụng
+                      Liên kết để mua hàng, thanh toán QR ngân hàng hoặc sử dụng
                       cùng số dư tài khoản ngay trong bot.
                     </p>
                     <button

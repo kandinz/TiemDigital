@@ -1,6 +1,6 @@
 export interface Env {
   DB: D1Database;
-  ASSETS: Fetcher;
+  SITE_ASSETS: Fetcher;
   EVENTS?: Queue<{ id: string }>;
   MEDIA?: R2Bucket;
   EMAIL?: {

@@ -65,7 +65,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return await adminApi(request, env);
     if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
       await administrator(request, env);
-      return env.ASSETS.fetch(request);
+      return env.SITE_ASSETS.fetch(request);
     }
     if (url.pathname === "/webhooks/bank/sepay" && request.method === "POST")
       return await bankWebhook(request, env);
@@ -196,14 +196,19 @@ async function handle(request: Request, env: Env): Promise<Response> {
             409,
             "Hãy mở bot với mã liên kết còn hạn rồi xác nhận đúng ID",
           );
-        await env.DB.batch([
-          env.DB.prepare(
-            "INSERT INTO telegram_links(user_id,telegram_id,chat_id) SELECT user_id,telegram_id,chat_id FROM link_challenges WHERE id=? AND expires_at>?",
-          ).bind(challengeId, now()),
-          env.DB.prepare("DELETE FROM link_challenges WHERE user_id=?").bind(
-            actor.id,
-          ),
-        ]);
+        const linked = await env.DB.prepare(`
+          INSERT INTO telegram_links(user_id,telegram_id,chat_id)
+          SELECT user_id,telegram_id,chat_id FROM link_challenges WHERE id=? AND expires_at>?
+          ON CONFLICT(telegram_id) DO UPDATE SET user_id=excluded.user_id,chat_id=excluded.chat_id
+          WHERE telegram_links.user_id='telegram:' || telegram_links.telegram_id
+            AND NOT EXISTS (SELECT 1 FROM orders WHERE user_id=telegram_links.user_id)
+            AND NOT EXISTS (SELECT 1 FROM intents WHERE user_id=telegram_links.user_id)
+            AND NOT EXISTS (SELECT 1 FROM journals WHERE user_id=telegram_links.user_id)
+            AND NOT EXISTS (SELECT 1 FROM wallets WHERE user_id=telegram_links.user_id AND balance<>0)
+          RETURNING user_id
+        `).bind(challengeId, now()).first();
+        if (!linked) throw new HttpError(409, "Tài khoản Telegram đã có giao dịch hoặc đã liên kết. Vui lòng liên hệ hỗ trợ.");
+        await env.DB.prepare("DELETE FROM link_challenges WHERE user_id=?").bind(actor.id).run();
         return json({ ok: true });
       }
       if (
@@ -295,7 +300,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
     if (url.pathname.startsWith("/webhooks/"))
       return json({ error: "Không tìm thấy" }, 404);
-    return env.ASSETS.fetch(request);
+    return env.SITE_ASSETS.fetch(request);
   } catch (error) {
     if (!(error instanceof HttpError))
       console.error(

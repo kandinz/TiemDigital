@@ -28,7 +28,6 @@ export const CategoryPills: React.FC<CategoryPillsProps> = ({
   onPriceFilterChange,
   onRefresh,
   isLoading,
-  totalFiltered,
 }) => {
   return (
     <div className="space-y-4 mb-6">
@@ -46,7 +45,7 @@ export const CategoryPills: React.FC<CategoryPillsProps> = ({
                 : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500/50'
             }`}
           >
-            Tất Cả ({totalFiltered})
+            Tất cả
           </button>
 
           {categories.map((cat) => (
@@ -69,10 +68,10 @@ export const CategoryPills: React.FC<CategoryPillsProps> = ({
           onClick={onRefresh}
           disabled={isLoading}
           className="p-2 sm:px-3 sm:py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-emerald-500 dark:hover:text-emerald-400 hover:border-emerald-500/50 text-xs font-bold flex items-center gap-1.5 transition-all shrink-0"
-          title="Làm mới danh sách từ Swagger API"
+          title="Làm mới danh sách sản phẩm"
         >
           <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-emerald-500' : ''}`} />
-          <span className="hidden sm:inline">Cập nhật Live</span>
+          <span className="hidden sm:inline">Làm mới</span>
         </button>
 
       </div>
@@ -107,7 +106,7 @@ export const CategoryPills: React.FC<CategoryPillsProps> = ({
             onChange={(e) => onSortChange(e.target.value)}
             className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
           >
-            <option value="default">Phổ biến nhất</option>
+            <option value="default">Mặc định</option>
             <option value="price-asc">Giá: Thấp đến Cao</option>
             <option value="price-desc">Giá: Cao đến Thấp</option>
             <option value="name">Tên A - Z</option>

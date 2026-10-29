@@ -16,8 +16,8 @@ interface Admin {
 interface Config {
   enabled: boolean;
   provider: "sepay";
-  bankBin: "970423";
-  bankName: "TPBank";
+  bankBin: "970416";
+  bankName: "ACB";
   accountNumber: string;
   accountHolder: string;
   minTopup: number;
@@ -90,7 +90,7 @@ const labels: [Tab, string][] = [
   ["customers", "Khách hàng"],
   ["orders", "Đơn & giao hàng"],
   ["finance", "Sổ cái & phê duyệt"],
-  ["payment", "Thanh toán TPBank"],
+  ["payment", "Thanh toán ngân hàng"],
   ["products", "Sản phẩm"],
   ["pages", "Nội dung website"],
   ["telegram", "Telegram & hệ thống"],
@@ -268,7 +268,7 @@ function PaymentSettings({ run }: { run: Run }) {
   return (
     <>
       <section className="panel">
-        <h2>Tài khoản nhận tiền TPBank</h2>
+        <h2>Tài khoản nhận tiền</h2>
         <p className="muted">
           Thay đổi tạo yêu cầu chờ một Owner khác phê duyệt. QR đã phát hành giữ
           nguyên thông tin ban đầu.
@@ -282,7 +282,7 @@ function PaymentSettings({ run }: { run: Run }) {
                 await submit("/api/admin/approvals", {
                   body: {
                     kind: "PAYMENT_CONFIG",
-                    config: body,
+                    config: { ...body, bankName: "ACB", bankBin: "970416" },
                     expectedVersion: version,
                   },
                 });
@@ -300,8 +300,9 @@ function PaymentSettings({ run }: { run: Run }) {
               Bật nhận tiền
             </label>
             <div className="form-grid">
+              <p>Ngân hàng: ACB</p>
               <label>
-                Số tài khoản TPBank
+                Số tài khoản
                 <input
                   required
                   pattern="[0-9]{6,19}"
@@ -1167,7 +1168,7 @@ function Overview({ run }: { run: Run }) {
         </p>
         <p className="muted">
           Website và Telegram dùng chung tài khoản, giá VND và số dư. Cả hai
-          kênh nhận thanh toán bằng số dư hoặc QR TPBank.
+          kênh nhận thanh toán bằng số dư hoặc QR ngân hàng.
         </p>
       </section>
     </>

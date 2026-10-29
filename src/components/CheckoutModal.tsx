@@ -208,7 +208,7 @@ export function CheckoutModal({
                       )
                     }
                   >
-                    Quét QR TPBank
+                    Quét QR ngân hàng
                   </button>
                 </div>
                 {intent && (

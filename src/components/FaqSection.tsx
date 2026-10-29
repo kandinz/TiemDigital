@@ -17,7 +17,7 @@ export const FaqSection: React.FC = () => {
     {
       question: 'Sau khi chuyển khoản, tôi sẽ nhận tài khoản/token thế nào?',
       answer:
-        'Sau khi hệ thống xác nhận tiền vào TPBank hoặc trừ số dư thành công, đơn được chuyển sang chờ giao. Bạn đăng nhập mục Tài khoản để theo dõi và nhận thông tin sản phẩm khi cửa hàng giao hoàn tất.',
+        'Sau khi hệ thống xác nhận tiền vào ngân hàng hoặc trừ số dư thành công, đơn được chuyển sang chờ giao. Bạn đăng nhập mục Tài khoản để theo dõi và nhận thông tin sản phẩm khi cửa hàng giao hoàn tất.',
     },
     {
       question: 'Token API Claude có dùng được cho Cursor, VS Code và Claude Dev không?',

@@ -7,8 +7,8 @@ export const configSchema = z
   .object({
     enabled: z.boolean(),
     provider: z.literal("sepay"),
-    bankBin: z.literal("970423"),
-    bankName: z.literal("TPBank"),
+    bankBin: z.literal("970416"),
+    bankName: z.literal("ACB"),
     accountNumber: z.string().regex(/^\d{6,19}$/),
     accountHolder: z
       .string()
@@ -50,7 +50,7 @@ export async function createIntent(
   if (cmd.previous) return intentFor(env, cmd.previous, actor);
   const config = await paymentConfig(env);
   if (!config.enabled || !config.accountNumber || !env.SEPAY_WEBHOOK_SECRET)
-    throw new HttpError(503, "Thanh toán TPBank chưa được kích hoạt");
+    throw new HttpError(503, "Thanh toán ngân hàng chưa được kích hoạt");
   let amount = "amount" in input ? (input.amount as number) : 0;
   if (orderId) {
     const order = await orderFor(env, orderId, actor);
@@ -262,7 +262,8 @@ export async function processBankInbox(env: Env, inboxId: string) {
       .run();
     return;
   }
-  if (!intent || !/^(TPBank|TPB)$/i.test(tx.gateway)) {
+  const bankName = intent ? (JSON.parse(intent.config) as PaymentConfig).bankName : null;
+  if (!intent || !(bankName === "ACB" ? /^ACB$/i.test(tx.gateway) : bankName === "TPBank" && /^(TPBank|TPB)$/i.test(tx.gateway))) {
     await env.DB.prepare(
       "UPDATE inbox SET status='REVIEW',error='Không khớp mã hoặc ngân hàng' WHERE id=?",
     )

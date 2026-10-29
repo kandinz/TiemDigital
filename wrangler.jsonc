@@ -6,9 +6,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
+  "pages_build_output_dir": "./dist",
   "assets": {
     "directory": "./dist",
-    "binding": "ASSETS",
+    "binding": "SITE_ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": true,
   },
@@ -28,19 +29,18 @@
   "observability": { "enabled": true },
   "env": {
     "production": {
+      "workers_dev": true,
       "vars": {
         "ENVIRONMENT": "production",
-        "APP_ORIGIN": "https://shop.example.com",
-        "ADMIN_ORIGIN": "https://admin.example.com",
-        "ACCESS_ISSUER": "https://your-team.cloudflareaccess.com",
-        "ACCESS_AUD": "replace-with-access-application-audience",
-        "TURNSTILE_SITE_KEY": "replace-with-turnstile-site-key",
+        "APP_ORIGIN": "https://tiemdigital-production.kandin-cs.workers.dev",
+        "ADMIN_ORIGIN": "https://tiemdigital-production.kandin-cs.workers.dev",
+        "TELEGRAM_BOT_USERNAME": "tiemdigital_bot"
       },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "tiemdigital-production",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "497025ab-e9fa-4efb-b4e1-f197d151f490"
         },
       ],
       "queues": {
@@ -53,10 +53,6 @@
           },
         ],
       },
-      "r2_buckets": [
-        { "binding": "MEDIA", "bucket_name": "tiemdigital-private" },
-      ],
-      "send_email": [{ "name": "EMAIL" }],
     },
     "staging": {
       "vars": {
