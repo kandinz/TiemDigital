@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { CartItem, Order, PromoCode } from "../types";
+import type { CartItem } from "../types";
 import {
   api,
   amountLabel,
@@ -8,23 +8,23 @@ import {
   type PaymentIntent,
 } from "../services/platform";
 import { PaymentQr } from "./PaymentQr";
+import { Dialog } from "./Dialog";
 import "../platform.css";
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   items: CartItem[];
-  promo?: PromoCode;
-  discountAmount?: number;
-  onOrderSuccess: (order: Order) => void;
+  onOrderSuccess: (order: PlatformOrder) => void;
 }
 export function CheckoutModal({
   isOpen,
   onClose,
   items,
-  promo,
   onOrderSuccess,
 }: Props) {
   const [actor, setActor] = useState<Customer | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [authVersion, setAuthVersion] = useState(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
@@ -37,27 +37,24 @@ export function CheckoutModal({
   const completed = useRef(false);
   useEffect(() => {
     if (!isOpen) return;
+    let stopped = false;
     api<Customer>("/api/me")
       .then((user) => {
+        if (stopped) return;
         setActor(user);
         setName(user.name);
       })
-      .catch(() => setActor(null));
-  }, [isOpen]);
+      .catch((e: Error & { status?: number }) => {
+        if (stopped) return;
+        if (e.status !== 401) setError(e.message);
+        setActor(null);
+      }).finally(() => { if (!stopped) setLoading(false); });
+    return () => { stopped = true; };
+  }, [isOpen, authVersion]);
   function finish(value: PlatformOrder) {
     if (value.payment_status !== "PAID" || completed.current) return;
     completed.current = true;
-    onOrderSuccess({
-      orderId: value.id,
-      createdAt: new Date(value.created_at * 1000).toISOString(),
-      customer: value.customer,
-      items,
-      subtotal: value.total,
-      discountAmount: 0,
-      total: value.total,
-      paymentMethod: "vietqr",
-      status: "processing",
-    });
+    onOrderSuccess(value);
     onClose();
   }
   async function run(task: () => Promise<void>) {
@@ -73,28 +70,16 @@ export function CheckoutModal({
   }
   if (!isOpen) return null;
   return (
-    <div
-      className="platform modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="checkout-title"
-    >
-      <section className="dialog-card">
-        <div className="panel-heading">
-          <div>
-            <span className="eyebrow">Tiệm Digital · Thanh toán</span>
-            <h2 id="checkout-title">Hoàn tất đơn hàng</h2>
-          </div>
-          <button className="quiet" onClick={onClose} aria-label="Đóng">
-            ✕
-          </button>
-        </div>
+    <Dialog title="Thanh toán" onClose={onClose}>
+      <div className="platform">
         {error && (
           <p className="notice error" role="alert">
             {error}
           </p>
         )}
-        {!actor ? (
+        {loading ? <p role="status">Đang tải tài khoản…</p> : !actor && error ? (
+          <button onClick={() => { setLoading(true); setError(''); setAuthVersion((value) => value + 1); }}>Thử lại</button>
+        ) : !actor ? (
           <div className="empty-state">
             <h3>Đăng nhập để mua hàng</h3>
             <p>
@@ -137,7 +122,6 @@ export function CheckoutModal({
                             email: actor.email,
                             phone,
                           },
-                          ...(promo ? { promoCode: promo.code } : {}),
                         },
                       }),
                     ),
@@ -232,7 +216,7 @@ export function CheckoutModal({
             )}
           </>
         )}
-      </section>
-    </div>
+      </div>
+    </Dialog>
   );
 }

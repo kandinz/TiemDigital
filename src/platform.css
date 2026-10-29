@@ -1,17 +1,17 @@
 .platform {
-  --ink: #152b3c;
-  --muted: #64748b;
-  --line: #dbe4ea;
-  --accent: #047857;
-  --paper: #fff;
+  --ink: var(--color-text-base);
+  --muted: var(--color-text-muted);
+  --line: var(--color-border);
+  --accent: var(--color-accent);
+  --paper: var(--color-card-base);
   color: var(--ink);
-  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.6;
 }
 .platform-shell {
   min-height: 100vh;
-  background: #f1f5f7;
+  background: var(--color-bg-base);
 }
 .platform .topbar {
   display: flex;
@@ -58,8 +58,8 @@
   color: var(--muted);
 }
 .platform .navigation button.active {
-  background: #dff1e9;
-  color: #065f46;
+  background: var(--color-subtle);
+  color: var(--accent);
   font-weight: 800;
 }
 .platform .content {
@@ -99,7 +99,7 @@
   padding: 24px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 12px;
   margin-bottom: 20px;
 }
 .platform .panel-heading {
@@ -127,18 +127,18 @@
   justify-content: center;
   gap: 8px;
   cursor: pointer;
-  border: 1px solid #cad7df;
+  border: 1px solid var(--line);
   border-radius: 9px;
   padding: 9px 15px;
   font-size: 13px;
   font-weight: 700;
-  background: #fff;
+  background: var(--paper);
   text-decoration: none;
   color: var(--ink);
   line-height: 1.5;
 }
 .platform button:hover {
-  background: #edf5f2;
+  background: var(--color-subtle);
 }
 .platform button:disabled {
   opacity: 0.5;
@@ -149,6 +149,7 @@
   color: #fff !important;
   border-color: var(--accent) !important;
 }
+.dark .platform .primary { color: #10231a !important; }
 .platform .quiet {
   border: 0;
   background: transparent;
@@ -168,8 +169,8 @@
 .platform input,
 .platform textarea,
 .platform select {
-  background: #f8fafb;
-  border: 1px solid #cbd5df;
+  background: var(--color-subtle);
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 11px 12px;
   font: inherit;
@@ -208,10 +209,11 @@
   border-color: #f2c7bc;
 }
 .platform .balance-card {
-  background: #173a37;
-  border-radius: 16px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
   padding: 28px 32px;
-  color: #eafff6;
+  color: var(--ink);
   margin: 24px 0;
   display: flex;
   justify-content: space-between;
@@ -219,7 +221,7 @@
   gap: 24px;
 }
 .platform .balance-card .eyebrow {
-  color: #a6c8bc;
+  color: var(--muted);
 }
 .platform .balance-value {
   font-size: 38px;
@@ -231,7 +233,7 @@
   display: flex;
   justify-content: space-between;
   padding: 16px;
-  background: #edf5f2;
+  background: var(--color-subtle);
   border-radius: 10px;
   gap: 16px;
   flex-wrap: wrap;
@@ -269,7 +271,7 @@
 }
 .platform td {
   padding: 14px 12px;
-  border-bottom: 1px solid #edf1f4;
+  border-bottom: 1px solid var(--line);
   vertical-align: top;
 }
 .platform .mono {
@@ -299,7 +301,7 @@
 }
 .platform .metric {
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--paper);
   border-radius: 12px;
   padding: 20px;
 }
@@ -329,7 +331,7 @@
   padding: 20px;
 }
 .platform .dialog-card {
-  background: #fff;
+  background: var(--paper);
   padding: 28px;
   border-radius: 18px;
   max-width: 640px;
@@ -345,7 +347,7 @@
 }
 .platform .qr-panel img {
   border-radius: 8px;
-  background: white;
+  background: var(--paper);
   object-fit: contain;
 }
 .platform dl {
@@ -381,7 +383,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   padding: 18px;
-  background: #f1f5f7;
+  background: var(--color-subtle);
   border-radius: 8px;
   font-family: ui-monospace, monospace;
   font-size: 13px;
@@ -402,8 +404,22 @@
   color: #a43b25;
 }
 .platform .positive {
-  color: #047857;
+  color: var(--accent);
 }
+.account-shell { flex: 1; min-height: 0; }
+.platform .workspace { max-width: 1184px; padding-block: 32px; grid-template-columns: 170px minmax(0, 1fr); }
+.platform .account-heading { margin-bottom: 24px; }
+.platform .panel-heading > div { min-width: 0; }
+.platform .account-heading p { overflow-wrap: anywhere; }
+.platform .account-heading h1 { font-size: 26px; }
+.platform .navigation button { min-height: 42px; }
+.platform .page-body { padding-block: 32px; }
+.support-options { display: grid; gap: 12px; margin-block: 24px; }
+.support-options a { display: grid; gap: 5px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.support-options a:hover { border-color: var(--accent); }
+.support-options span { color: var(--muted); font-size: 13px; }
+.support-contact > div { margin-block: 18px; }
+.support-image { width: 100%; height: auto; border-radius: 8px; }
 .platform .small {
   font-size: 11px;
 }

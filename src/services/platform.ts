@@ -67,12 +67,12 @@ export async function api<T>(
   });
   const value = await response.json();
   if (!response.ok)
-    throw new Error(
+    throw Object.assign(new Error(
       value.error?.message ??
         value.error ??
         value.message ??
         `Yêu cầu thất bại (${response.status})`,
-    );
+    ), { status: response.status });
   return value as T;
 }
 export const amountLabel = (amount: number, currency = "VND") =>

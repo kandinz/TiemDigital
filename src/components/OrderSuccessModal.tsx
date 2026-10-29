@@ -1,42 +1,13 @@
-import type { Order } from "../types";
-import { amountLabel } from "../services/platform";
-export function OrderSuccessModal({
-  order,
-  onClose,
-  onTrackOrder,
-}: {
-  order: Order | null;
-  onClose: () => void;
-  onTrackOrder: (code: string) => void;
-}) {
-  if (!order) return null;
-  return (
-    <div
-      className="platform modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Thanh toán thành công"
-    >
-      <section className="dialog-card stack">
-        <span className="status good">Đã thanh toán</span>
-        <h2>Đã nhận {amountLabel(order.total)}</h2>
-        <p>
-          Đơn <strong>{order.orderId}</strong> đang được chuẩn bị. Sản phẩm sẽ
-          xuất hiện trong tài khoản khi giao hoàn tất.
-        </p>
-        <a className="primary" href="/account">
-          Mở tài khoản để nhận hàng
-        </a>
-        <button
-          onClick={() => {
-            onTrackOrder(order.orderId);
-            onClose();
-          }}
-        >
-          Theo dõi đơn
-        </button>
-        <button onClick={onClose}>Tiếp tục mua sắm</button>
-      </section>
+import { amountLabel, type PlatformOrder } from '../services/platform';
+import { Dialog } from './Dialog';
+
+export function OrderSuccessModal({ order, onClose }: { order: PlatformOrder; onClose: () => void }) {
+  return <Dialog title="Thanh toán thành công" onClose={onClose}>
+    <div className="platform stack">
+      <p>Đã thanh toán <strong>{amountLabel(order.total)}</strong> cho đơn <strong>{order.id}</strong>.</p>
+      <p className="muted">Theo dõi và nhận sản phẩm trong đơn hàng của bạn.</p>
+      <a className="primary" href="/account#orders">Xem đơn hàng</a>
+      <button onClick={onClose}>Tiếp tục mua hàng</button>
     </div>
-  );
+  </Dialog>;
 }
