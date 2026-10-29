@@ -10,19 +10,19 @@
     "directory": "./dist",
     "binding": "SITE_ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": true,
+    "run_worker_first": true
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "tiemdigital",
-      "database_id": "00000000-0000-0000-0000-000000000000",
-    },
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
   ],
   "vars": {
     "ENVIRONMENT": "local",
     "APP_ORIGIN": "http://localhost:8787",
-    "ADMIN_ORIGIN": "http://localhost:8787",
+    "ADMIN_ORIGIN": "http://localhost:8787"
   },
   "triggers": { "crons": ["*/5 * * * *"] },
   "observability": { "enabled": true },
@@ -32,7 +32,7 @@
       "vars": {
         "ENVIRONMENT": "production",
         "APP_ORIGIN": "https://tiemdigital.pages.dev",
-        "ADMIN_ORIGIN": "https://tiemdigital.pages.dev",
+        "ADMIN_ORIGIN": "https://tiemdigital-production.kandin-cs.workers.dev",
         "TELEGRAM_BOT_USERNAME": "tiemdigital_bot"
       },
       "d1_databases": [
@@ -40,7 +40,7 @@
           "binding": "DB",
           "database_name": "tiemdigital-production",
           "database_id": "497025ab-e9fa-4efb-b4e1-f197d151f490"
-        },
+        }
       ],
       "queues": {
         "producers": [{ "binding": "EVENTS", "queue": "tiemdigital-events" }],
@@ -48,10 +48,10 @@
           {
             "queue": "tiemdigital-events",
             "dead_letter_queue": "tiemdigital-dlq",
-            "max_retries": 5,
-          },
-        ],
-      },
+            "max_retries": 5
+          }
+        ]
+      }
     },
     "staging": {
       "vars": {
@@ -60,16 +60,16 @@
         "ADMIN_ORIGIN": "https://admin-staging.example.com",
         "ACCESS_ISSUER": "https://your-team.cloudflareaccess.com",
         "ACCESS_AUD": "replace-with-staging-access-audience",
-        "TURNSTILE_SITE_KEY": "replace-with-turnstile-site-key",
+        "TURNSTILE_SITE_KEY": "replace-with-turnstile-site-key"
       },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "tiemdigital-staging",
-          "database_id": "00000000-0000-0000-0000-000000000000",
-        },
+          "database_id": "00000000-0000-0000-0000-000000000000"
+        }
       ],
-      "send_email": [{ "name": "EMAIL" }],
-    },
-  },
+      "send_email": [{ "name": "EMAIL" }]
+    }
+  }
 }

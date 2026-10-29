@@ -4,13 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npm run build && wrangler dev",
+    "dev": "npm run build && wrangler dev --config wrangler.worker.jsonc",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
     "typecheck": "tsc -b && tsc -p tsconfig.worker.json",
     "test": "vitest run",
-    "dev:worker": "wrangler dev",
+    "dev:worker": "wrangler dev --config wrangler.worker.jsonc",
+    "check:pages": "wrangler pages functions build-env . --outfile .wrangler/pages-build-env.json && wrangler pages functions build --build-output-directory dist --outdir .wrangler/pages-build",
     "schema:local": "node scripts/schema.mjs",
     "deploy": "node scripts/deploy.mjs"
   },

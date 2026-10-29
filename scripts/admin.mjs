@@ -23,6 +23,8 @@ const result = spawnSync(
   process.execPath,
   [
     join(process.cwd(), "node_modules/wrangler/bin/wrangler.js"),
+    "--config",
+    "wrangler.worker.jsonc",
     "d1",
     "execute",
     "DB",

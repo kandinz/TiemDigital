@@ -30,6 +30,7 @@ npm run typecheck
 npm run lint
 npm test
 npm run build
+npm run check:pages
 ```
 
 `tests/storefront.browser.cjs` kiểm tra giao diện trên Chromium với API giả lập, gồm giỏ hàng, đăng nhập, nạp tiền, mua hàng, nhận sản phẩm, hỗ trợ, trạng thái lỗi/trống và responsive. Cần Playwright có sẵn và server local đang chạy:
@@ -43,3 +44,5 @@ Nếu Playwright nằm ngoài `node_modules` của dự án, đặt `NODE_PATH` 
 ## Vận hành
 
 `/admin` dành cho quản trị theo quyền; cấu hình và quy trình triển khai nằm trong [docs/operations.md](docs/operations.md). Trang nội dung đã xuất bản vẫn được phục vụ tại `/pages/:slug`.
+
+Cloudflare Pages tự đọc `wrangler.jsonc` để build/deploy frontend và Pages Functions. Backend, database, môi trường local/staging/production dùng riêng `wrangler.worker.jsonc`; các lệnh Worker phải truyền `--config wrangler.worker.jsonc`. CI kiểm tra cấu hình Pages bằng chính bước `build-env` trước khi xác nhận bản build hợp lệ.

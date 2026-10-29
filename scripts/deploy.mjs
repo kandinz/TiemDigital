@@ -5,7 +5,7 @@ const environment = process.argv.find((a) => a.startsWith("--env="))?.slice(6);
 if (!["staging", "production"].includes(environment))
   throw new Error("Specify --env=staging or --env=production");
 const config = JSON.parse(
-  await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+  await readFile(new URL("../wrangler.worker.jsonc", import.meta.url), "utf8"),
 );
 const target = config.env?.[environment];
 if (
@@ -29,7 +29,7 @@ if (/replace-with|your-team/.test(JSON.stringify(target.vars)))
 const cli = join(process.cwd(), "node_modules/wrangler/bin/wrangler.js");
 const secrets = spawnSync(
   process.execPath,
-  [cli, "secret", "list", "--env", environment],
+  [cli, "--config", "wrangler.worker.jsonc", "secret", "list", "--env", environment],
   { encoding: "utf8" },
 );
 if (secrets.status !== 0) throw new Error("Cannot verify configured secrets");
@@ -48,7 +48,7 @@ for (const args of [
   ["node_modules/typescript/bin/tsc", "-b"],
   ["node_modules/typescript/bin/tsc", "-p", "tsconfig.worker.json"],
   ["node_modules/vite/bin/vite.js", "build"],
-  [cli, "deploy", "--env", environment],
+  [cli, "--config", "wrangler.worker.jsonc", "deploy", "--env", environment],
 ]) {
   const result = spawnSync(process.execPath, args, { stdio: "inherit" });
   if (result.status !== 0) {

@@ -29,7 +29,7 @@ try {
   const cli = join(process.cwd(), "node_modules/wrangler/bin/wrangler.js");
   const result = spawnSync(
     process.execPath,
-    [cli, "d1", "execute", "DB", "--remote", "--env", environment, "--file", file],
+    [cli, "--config", "wrangler.worker.jsonc", "d1", "execute", "DB", "--remote", "--env", environment, "--file", file],
     { stdio: "inherit" },
   );
   if (result.status !== 0) process.exitCode = result.status ?? 1;

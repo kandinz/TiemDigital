@@ -28,6 +28,8 @@ try {
     process.execPath,
     [
       cli,
+      "--config",
+      "wrangler.worker.jsonc",
       "d1",
       "execute",
       "DB",
