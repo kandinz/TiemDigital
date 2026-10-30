@@ -128,18 +128,21 @@ export async function pricedItems(
   for (const [productId, quantity] of merged) {
     if (quantity > 20) throw new HttpError(400, "Số lượng vượt giới hạn");
     const product = await env.DB.prepare(
-      "SELECT * FROM products WHERE id=? AND in_stock=1",
+      "SELECT p.*,COALESCE(s.source,'stock') AS source,s.provider_id,s.provider_product_id FROM products p LEFT JOIN product_sources s ON s.product_id=p.id WHERE p.id=? AND p.in_stock=1 AND COALESCE(s.active,1)=1",
     )
       .bind(productId)
       .first<{
         id: number;
         name: string;
         selling_price: number;
+        source: string;
+        provider_id: string | null;
+        provider_product_id: string | null;
       }>();
     const price = product?.selling_price;
     if (!product || !price)
       throw new HttpError(409, "Sản phẩm chưa sẵn sàng để bán trên kênh này");
-    result.push({ productId, name: product.name, price, quantity });
+    result.push({ productId, name: product.name, price, quantity, source: product.source, providerId: product.provider_id, providerProductId: product.provider_product_id });
   }
   return result;
 }

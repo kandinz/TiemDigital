@@ -47,6 +47,8 @@ describe("MMO routes via HTTP seam", () => {
         name: "Storebat",
         base_url: "https://storebat.example",
         is_active: true,
+        auth_type: "header",
+        auth_key_name: "Authorization",
         sort_order: 1,
         bot_url: "https://t.me/storebat_bot",
         avatar_url: null,

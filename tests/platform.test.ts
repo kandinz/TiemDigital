@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { SignJWT, generateKeyPair, exportJWK } from "jose";
 import worker from "../workers/index";
 import type { Env } from "../workers/types";
+import { encryptDelivery } from '../workers/delivery';
 declare module "cloudflare:test" {
   interface ProvidedEnv {
     DB: D1Database;
@@ -663,7 +664,11 @@ describe("public Worker API", () => {
       ...testEnv,
       TELEGRAM_WEBHOOK_SECRET: "test-telegram-secret",
       TELEGRAM_BOT_TOKEN: "test-bot-token",
+      DELIVERY_KEY: btoa('t'.repeat(32)),
     };
+    await env.DB.prepare('INSERT INTO product_inventory(id,product_id,payload) VALUES(?,?,?)')
+      .bind('telegram-shared-fixture', 9003, await encryptDelivery(botEnv, 'telegram-shared-fixture', 'telegram-fixture-key'))
+      .run();
     const sent: { method: string; body: Record<string, any> }[] = [];
     const answeredCallbacks = new Set<string>();
     let failStatusForOrder = "";

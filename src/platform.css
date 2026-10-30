@@ -482,7 +482,8 @@
   }
 }
 
-.mmo-frame { display: block; width: 100%; height: calc(100dvh - 190px); min-height: 640px; border: 1px solid var(--line); border-radius: 12px; background: transparent; }
-@media (max-width: 700px) { .mmo-frame { min-height: 680px; height: calc(100dvh - 180px); } }
-
-@media (min-width: 900px) { .platform .workspace.mmo-workspace { max-width: 1760px; } }
+.platform .admin-section-nav { margin-bottom: 24px; flex-wrap: wrap; }
+.platform .admin-detail { padding: 16px; margin: 16px 0; border: 1px solid var(--line); }
+.platform .admin-block { display: block; }
+.platform .action-row { flex-wrap: wrap; }
+.platform input[type="checkbox"] { width: auto; }

@@ -3,6 +3,7 @@ import {
   api,
   amountLabel,
   paymentLabel,
+  fulfillmentLabel,
   timeLabel,
   type Customer,
   type Journal,
@@ -276,6 +277,8 @@ export function AccountPage() {
                         >
                           {paymentLabel(o.payment_status)}
                         </span>
+                        <span className="status">{fulfillmentLabel(o.fulfillment_status)}</span>
+                        {o.fulfillments?.map(f => <p key={f.product_id} className="muted">{f.name}: {f.delivered_quantity}/{f.quantity} đã giao · {fulfillmentLabel(f.status)}</p>)}
                         <div className="action-row">
                           {o.currency === "VND" &&
                             o.payment_status === "UNPAID" && (

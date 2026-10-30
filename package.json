@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "npm run build && wrangler dev --config wrangler.worker.jsonc",
-    "build": "tsc -b && vite build && npm run build:mmo",
+    "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "typecheck": "tsc -b && tsc -p tsconfig.worker.json && npm run typecheck:mmo",
+    "typecheck": "tsc -b && tsc -p tsconfig.worker.json",
     "test": "vitest run",
     "dev:worker": "wrangler dev --config wrangler.worker.jsonc",
     "precheck:pages": "node -e \"require('node:fs').mkdirSync('.wrangler', { recursive: true })\"",

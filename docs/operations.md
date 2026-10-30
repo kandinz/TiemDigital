@@ -3,7 +3,7 @@
 ## Phạm vi bản triển khai
 
 - Website: Better Auth username/password, email/password, OTP email và xác nhận qua bot Telegram; tài khoản/phiên đăng nhập, danh mục giá server, đơn hàng riêng tư, ví VND, nạp QR ngân hàng, trả bằng ví hoặc QR, nhận sản phẩm đã mã hóa.
-- Admin: phiên TiệmDigital + quyền theo ID tài khoản trong D1 (production/local), hoặc JWT Cloudflare Access khi chọn chế độ Access; khách hàng/khóa phiên, sản phẩm giá VND dùng chung, đơn và giao hàng thủ công, CMS page và trang chủ, lịch sử phiên bản, phê duyệt hai người, sổ cái, audit, đối soát.
+- Admin: phiên TiệmDigital + quyền theo ID tài khoản trong D1 (production/local), hoặc JWT Cloudflare Access khi chọn chế độ Access; khách hàng/khóa phiên, danh mục giá VND dùng chung, tự mua NCC hoặc xuất kho sau thanh toán, giao một phần và chuyển ngoại lệ cho admin, CMS page và trang chủ, lịch sử phiên bản, phê duyệt hai người, sổ cái, audit, đối soát. Các chức năng NCC nằm trong admin chung; xem [vận hành danh mục và giao hàng](mmo-migration.md).
 - Ngân hàng: SePay API Banking liên kết tài khoản ACB. Webhook HMAC + timestamp; cron truy vấn SePay User API v2. Không phải API ACB trực tiếp.
 - Telegram: catalog VND, mua hàng bằng số dư tài khoản hoặc QR ngân hàng, nạp số dư bằng QR, `/balance`, `/orders`, `/support`; liên kết tài khoản hai bước. User, số dư, giá, đơn hàng, webhook ngân hàng và sổ cái dùng chung với website.
 - Runtime hiện tại là một Worker phân module (API, auth, commerce, payment, admin, bot, operations); không có service binding/core worker độc lập. Các endpoint admin xác thực phiên TiệmDigital/quyền theo ID hoặc JWT Access/quyền theo email tùy `ADMIN_AUTH_MODE`, ngay trong Worker. Xem [Admin và MMO](mmo-migration.md).

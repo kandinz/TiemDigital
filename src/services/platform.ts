@@ -15,6 +15,7 @@ export interface PlatformOrder {
   customer: { fullName: string; email: string; phone: string; note?: string };
   payment_status: string;
   fulfillment_status: string;
+  fulfillments?: { product_id: number; name: string; quantity: number; status: string; reason: string | null; delivered_quantity: number }[];
   created_at: number;
 }
 export interface PaymentIntent {
@@ -92,3 +93,4 @@ export const paymentLabel = (value: string) =>
     SUCCEEDED: "Thành công",
     EXPIRED: "Hết hạn",
   })[value] ?? value;
+export const fulfillmentLabel = (value: string) => ({ NOT_READY: 'Chờ thanh toán', QUEUED: 'Chờ giao', PROCESSING: 'Đang xử lý', DELIVERED: 'Đã giao', PARTIAL: 'Giao một phần', REVIEW: 'Admin đang xử lý', AWAITING: 'Chờ đối soát / giao hàng' })[value] ?? value;

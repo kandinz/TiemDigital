@@ -2,6 +2,8 @@ import type { Env } from "./types";
 import { now } from "./http";
 import { processBankInbox, reconcile } from "./payments";
 import { processTelegramInbox, telegramCall } from "./telegram";
+import { fulfillPaidOrders } from './fulfillment';
+import { catalogConfig, syncCatalog } from './catalog';
 
 export async function processOutbox(env: Env, eventId: string) {
   const event = await env.DB.prepare(
@@ -17,6 +19,15 @@ export async function processOutbox(env: Env, eventId: string) {
     }>();
   if (!event) return;
   try {
+    if (event.kind === 'ORDER_PAID') await fulfillPaidOrders(env);
+    if (event.kind === 'ADMIN_ALERT') {
+      const config = await catalogConfig(env);
+      const { orderId, reason } = JSON.parse(event.body) as { orderId: string; reason: string };
+      if (!config.telegramChatId || !env.TELEGRAM_BOT_TOKEN) throw new Error('ADMIN_TELEGRAM_NOT_CONFIGURED');
+      await telegramCall(env, 'sendMessage', { chat_id: config.telegramChatId, text: `TiệmDigital · Đơn ${orderId} cần xử lý: ${reason}. Kiểm tra tại ${env.APP_ORIGIN}/admin/orders` });
+      await env.DB.prepare("UPDATE outbox SET status='DONE',error=NULL WHERE id=?").bind(event.id).run();
+      return;
+    }
     const user = await env.DB.prepare(
       "SELECT email,emailVerified FROM user WHERE id=?",
     )
@@ -29,7 +40,7 @@ export async function processOutbox(env: Env, eventId: string) {
       .first<{ chat_id: string }>();
     const { orderId } = JSON.parse(event.body) as { orderId: string };
     const text =
-      event.kind === "ORDER_DELIVERED"
+      event.kind === "ORDER_DELIVERED" || event.kind === 'ORDER_PARTIAL'
         ? `Đơn ${orderId} đã được giao. Đăng nhập ${env.APP_ORIGIN}/account để nhận sản phẩm.`
         : `Đơn ${orderId} đã thanh toán, đang chờ giao. Theo dõi tại ${env.APP_ORIGIN}/account.`;
     if (!user || (user.emailVerified && !(env.EMAIL && env.EMAIL_FROM) && !(link && env.TELEGRAM_BOT_TOKEN)))
@@ -115,8 +126,9 @@ export async function sweep(env: Env) {
       console.error(JSON.stringify({ event: "inbox_retry", id: event.id }));
     }
   }
+  await fulfillPaidOrders(env);
   const { results } = await env.DB.prepare(
-    "SELECT id FROM outbox WHERE status<>'DONE' AND attempts<10 AND next_attempt<=? ORDER BY created_at LIMIT 50",
+    "SELECT id FROM outbox WHERE status<>'DONE' AND attempts<10 AND next_attempt<=? ORDER BY created_at,rowid LIMIT 50",
   )
     .bind(now())
     .all<{ id: string }>();
@@ -135,6 +147,7 @@ export async function sweep(env: Env) {
     .run();
 }
 export async function scheduled(env: Env) {
+  await syncCatalog(env);
   await sweep(env);
   await reconcile(env);
 }

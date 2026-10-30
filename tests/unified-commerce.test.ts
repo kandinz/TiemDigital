@@ -1,0 +1,622 @@
+import { env } from "cloudflare:test";
+import { beforeAll, expect, it, vi } from "vitest";
+import worker from "../workers/index";
+import type { Env } from "../workers/types";
+import { COMMERCE_SCHEMA_STATEMENTS } from "../workers/commerceSchema";
+
+const origin = "http://localhost:8787";
+const runtime = {
+  ...env,
+  APP_ORIGIN: origin,
+  ADMIN_ORIGIN: origin,
+  ADMIN_AUTH_MODE: "session",
+  ENVIRONMENT: "local",
+  BETTER_AUTH_SECRET: "test-secret-with-at-least-thirty-two-characters",
+  DELIVERY_KEY: btoa("x".repeat(32)),
+  TELEGRAM_BOT_TOKEN: undefined,
+  EMAIL: undefined,
+} as Env;
+let owner = "";
+let buyer = "";
+let buyerId = "";
+async function account(username: string) {
+  const response = await call("/api/auth/register", "", {
+    username,
+    password: "Strong-password-42",
+  });
+  expect(response.status).toBe(200);
+  const cookie = response.headers
+    .getSetCookie()
+    .map((v) => v.split(";")[0])
+    .join("; ");
+  const me = (await (await call("/api/me", cookie)).json()) as { id: string };
+  return { cookie, id: me.id };
+}
+function call(
+  path: string,
+  cookie = owner,
+  body?: unknown,
+  method = body === undefined ? "GET" : "POST",
+) {
+  return worker.fetch(
+    new Request(`${origin}${path}`, {
+      method,
+      headers: {
+        cookie,
+        origin,
+        "content-type": "application/json",
+        "idempotency-key": crypto.randomUUID(),
+        "cf-connecting-ip": "192.0.2.178",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
+    runtime,
+  );
+}
+async function body(
+  path: string,
+  cookie = owner,
+  input?: unknown,
+  method?: string,
+) {
+  const response = await call(path, cookie, input, method);
+  const result = (await response.json()) as any;
+  expect(response.status, JSON.stringify(result)).toBeLessThan(300);
+  return result;
+}
+beforeAll(async () => {
+  const admin = await account("unified_owner");
+  owner = admin.cookie;
+  await env.DB.prepare(
+    "INSERT INTO admin_accounts(user_id,role) VALUES(?,'owner')",
+  )
+    .bind(admin.id)
+    .run();
+  const customer = await account("unified_buyer");
+  buyer = customer.cookie;
+  buyerId = customer.id;
+  await env.DB.prepare(
+    "INSERT INTO journals(id,source,user_id,kind,amount,wallet_delta,debit_account,credit_account,memo) VALUES('unified-credit','unified-credit',?,'ADJUSTMENT',5000000,5000000,'adjustments',?,'test')",
+  )
+    .bind(buyerId, `wallet:${buyerId}`)
+    .run();
+});
+
+it("uses the configured markup and raises manual sale prices proportionally, once, without lowering them on supplier discounts", async () => {
+  await body("/api/admin/mmo/settings", owner, { usd_rate: 10000 }, "PUT");
+  await body("/api/admin/mmo/providers", owner, {
+    id: "prodseller",
+    name: "Supplier",
+    base_url: "https://supplier.test",
+    api_key: "fixture-secret",
+    auth_type: "header",
+    auth_key_name: "Authorization",
+  });
+  let price = 10;
+  const mock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+    Response.json({
+      products: [{ id: "sku", name: "Supplier name", price, inStock: true }],
+    }),
+  );
+  try {
+    await body("/api/admin/products", owner, {
+      id: 88003,
+      name: "My edited title",
+      source: "provider",
+      provider_id: "prodseller",
+      provider_product_id: "sku",
+      markup_percent: 30,
+    });
+    let catalog = await body("/api/catalog", buyer);
+    expect(
+      catalog.products.find((p: any) => p.id === 88003).selling_price,
+    ).toBe(130000);
+    await body("/api/admin/products", owner, {
+      id: 88003,
+      name: "My edited title",
+      source: "provider",
+      provider_id: "prodseller",
+      provider_product_id: "sku",
+      selling_price: 150000,
+    });
+    price = 11;
+    await Promise.all([
+      body("/api/admin/products/sync", owner, {}),
+      body("/api/admin/products/sync", owner, {}),
+    ]);
+    catalog = await body("/api/catalog", buyer);
+    expect(catalog.products.find((p: any) => p.id === 88003)).toMatchObject({
+      name: "My edited title",
+      selling_price: 165000,
+    });
+    price = 10;
+    await body("/api/admin/products/sync", owner, {});
+    expect(
+      (await body("/api/catalog", buyer)).products.find(
+        (p: any) => p.id === 88003,
+      ).selling_price,
+    ).toBe(165000);
+  } finally {
+    mock.mockRestore();
+  }
+});
+
+it("publishes locally configured stock products without exposing stored keys", async () => {
+  await body(
+    "/api/admin/catalog-config",
+    owner,
+    { markupPercent: 20, telegramChatId: "12345" },
+    "PUT",
+  );
+  const saved = await body("/api/admin/products", owner, {
+    id: 88001,
+    name: "Local key",
+    description: "Configured here",
+    category: "Keys",
+    selling_price: 120000,
+    in_stock: true,
+    source: "stock",
+  });
+  expect(saved.ok).toBe(true);
+  await body("/api/admin/products/88001/inventory", owner, {
+    values: ["private-key-one"],
+  });
+  const catalog = await body("/api/catalog", buyer);
+  expect(catalog.products.find((p: any) => p.id === 88001)).toMatchObject({
+    name: "Local key",
+    selling_price: 120000,
+    in_stock: true,
+  });
+  expect(JSON.stringify(catalog)).not.toContain("private-key-one");
+  expect((await call("/api/admin/catalog-config", buyer)).status).toBe(403);
+});
+
+it("gives the last key to the first successful payment, delivers partial orders, and never refunds or delivers twice", async () => {
+  await body("/api/admin/products", owner, {
+    id: 88002,
+    name: "Empty stock",
+    selling_price: 10000,
+    source: "stock",
+    in_stock: true,
+  });
+  const input = {
+    items: [
+      { productId: 88001, quantity: 1 },
+      { productId: 88002, quantity: 1 },
+    ],
+    customer: { fullName: "Buyer", phone: "" },
+  };
+  const a = await body("/api/orders", buyer, input);
+  const b = await body("/api/orders", buyer, {
+    ...input,
+    items: [{ productId: 88001, quantity: 1 }],
+  });
+  expect((await call(`/api/orders/${a.id}/delivery`, buyer)).status).toBe(409);
+  await body(`/api/orders/${b.id}/payments/wallet`, buyer, {});
+  await body(`/api/orders/${a.id}/payments/wallet`, buyer, {});
+  await body("/api/admin/maintenance", owner, {});
+  expect((await body(`/api/orders/${b.id}/delivery`, buyer)).value).toContain(
+    "private-key-one",
+  );
+  expect((await body(`/api/orders/${a.id}`, buyer)).fulfillment_status).toBe(
+    "REVIEW",
+  );
+  expect((await call(`/api/orders/${a.id}/delivery`, buyer)).status).toBe(409);
+  await body("/api/admin/maintenance", owner, {});
+  const alerts = await body("/api/admin/fulfillment-alerts");
+  expect(alerts.alerts.filter((v: any) => v.order_id === a.id)).toHaveLength(2);
+  const history = await body("/api/me/wallet/transactions", buyer);
+  expect(history.transactions.some((v: any) => v.kind === "REFUND")).toBe(
+    false,
+  );
+  expect((await body(`/api/orders/${b.id}/delivery`, buyer)).value).toContain(
+    "private-key-one",
+  );
+});
+
+it("buys supplier goods only after payment, delivers a mixed order partially, and sends one admin alert through Telegram", async () => {
+  await body("/api/admin/products", owner, {
+    id: 88004,
+    name: "Local delivered half",
+    selling_price: 20000,
+    source: "stock",
+    in_stock: true,
+  });
+  await body("/api/admin/products/88004/inventory", owner, {
+    values: ["partial-local-key"],
+  });
+  const mock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("api.telegram.org"))
+        return Response.json({ ok: true, result: {} });
+      if (url.endsWith("/products"))
+        return Response.json({
+          products: [
+            { id: "sku", name: "Supplier title", price: 10, inStock: true },
+          ],
+        });
+      if (init?.method === "POST")
+        throw new DOMException("Timed out", "TimeoutError");
+      throw new Error(`Unexpected outgoing request: ${url}`);
+    });
+  runtime.TELEGRAM_BOT_TOKEN = "test-token";
+  try {
+    const order = await body("/api/orders", buyer, {
+      items: [
+        { productId: 88003, quantity: 1 },
+        { productId: 88004, quantity: 1 },
+      ],
+      customer: { fullName: "Buyer", phone: "" },
+    });
+    expect(mock).not.toHaveBeenCalled();
+    await body(`/api/orders/${order.id}/payments/wallet`, buyer, {});
+    await body("/api/admin/maintenance", owner, {});
+    expect(
+      (await body(`/api/orders/${order.id}`, buyer)).fulfillment_status,
+    ).toBe("PARTIAL");
+    expect(
+      (await body(`/api/orders/${order.id}/delivery`, buyer)).value,
+    ).toContain("partial-local-key");
+    expect(
+      mock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/orders") && init?.method === "POST",
+      ),
+    ).toHaveLength(1);
+    const alerts = (await body("/api/admin/fulfillment-alerts")).alerts;
+    const alert = alerts.find((v: any) => v.order_id === order.id);
+    expect(alert.reason).toBe("NCC_RESULT_UNCERTAIN");
+    expect(
+      mock.mock.calls.some(
+        ([url, init]) =>
+          String(url).includes("api.telegram.org") &&
+          String(init?.body).includes(order.id),
+      ),
+    ).toBe(true);
+    await body("/api/admin/maintenance", owner, {});
+    expect(
+      mock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/orders") && init?.method === "POST",
+      ),
+    ).toHaveLength(1);
+    expect(
+      (
+        await call(
+          `/api/admin/fulfillments/${encodeURIComponent(alert.fulfillment_id)}/retry`,
+          owner,
+          { reason: "Not verified" },
+        )
+      ).status,
+    ).toBe(400);
+    await body(
+      `/api/admin/fulfillments/${encodeURIComponent(alert.fulfillment_id)}/resolve`,
+      owner,
+      {
+        values: ["confirmed-supplier-key"],
+        reason: "Đã đối soát NCC thành công",
+        expectedAttempt: alert.attempts,
+      },
+    );
+    expect(
+      (await body(`/api/orders/${order.id}`, buyer)).fulfillment_status,
+    ).toBe("DELIVERED");
+    expect(
+      (await body(`/api/orders/${order.id}/delivery`, buyer)).value,
+    ).toContain("confirmed-supplier-key");
+  } finally {
+    mock.mockRestore();
+    runtime.TELEGRAM_BOT_TOKEN = undefined;
+  }
+});
+
+it("keeps paid order prices unchanged and stops a losing purchase while repricing only future orders", async () => {
+  const order = await body("/api/orders", buyer, {
+    items: [{ productId: 88003, quantity: 1 }],
+    customer: { fullName: "Buyer" },
+  });
+  const originalPrice = order.total;
+  const mock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (_input, init) => {
+      if (init?.method === "POST")
+        throw new Error("Must not purchase a losing order");
+      return Response.json({
+        products: [
+          { id: "sku", name: "Supplier name", price: 20, inStock: true },
+        ],
+      });
+    });
+  try {
+    await body(`/api/orders/${order.id}/payments/wallet`, buyer, {});
+    await body("/api/admin/maintenance", owner, {});
+    expect((await body(`/api/orders/${order.id}`, buyer)).total).toBe(
+      originalPrice,
+    );
+    expect(
+      (await body("/api/admin/fulfillment-alerts")).alerts.find(
+        (a: any) => a.order_id === order.id,
+      ).reason,
+    ).toBe("COST_EXCEEDS_PAID_PRICE");
+    expect(mock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+      false,
+    );
+    expect(
+      (await body("/api/catalog", buyer)).products.find(
+        (p: any) => p.id === 88003,
+      ).selling_price,
+    ).toBe(330000);
+  } finally {
+    mock.mockRestore();
+  }
+});
+
+it("automatically purchases and delivers a successful supplier order exactly once", async () => {
+  const mock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/products"))
+        return Response.json({
+          products: [
+            { id: "sku", name: "Supplier name", price: 20, inStock: true },
+          ],
+        });
+      if (init?.method === "POST")
+        return Response.json({
+          order_id: "supplier-complete",
+          status: "completed",
+          keys: ["auto-supplier-key"],
+        });
+      throw new Error("Unexpected outgoing request");
+    });
+  try {
+    const order = await body("/api/orders", buyer, {
+      items: [{ productId: 88003, quantity: 1 }],
+      customer: { fullName: "Buyer" },
+    });
+    await body(`/api/orders/${order.id}/payments/wallet`, buyer, {});
+    await Promise.all([
+      body("/api/admin/maintenance", owner, {}),
+      body("/api/admin/maintenance", owner, {}),
+    ]);
+    expect(
+      (await body(`/api/orders/${order.id}/delivery`, buyer)).value,
+    ).toContain("auto-supplier-key");
+    expect(
+      (await body(`/api/orders/${order.id}`, buyer)).fulfillment_status,
+    ).toBe("DELIVERED");
+    await body("/api/admin/maintenance", owner, {});
+    expect(
+      mock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/orders") && init?.method === "POST",
+      ),
+    ).toHaveLength(1);
+  } finally {
+    mock.mockRestore();
+  }
+});
+
+it("creates concurrent new products without overwriting either one", async () => {
+  const [a, b] = await Promise.all(
+    ["Concurrent A", "Concurrent B"].map((name) =>
+      body("/api/admin/products", owner, {
+        name,
+        selling_price: 10000,
+        source: "stock",
+      }),
+    ),
+  );
+  expect(a.id).not.toBe(b.id);
+  const { products } = await body("/api/admin/products");
+  expect(products.find((p: any) => p.id === a.id).name).toBe("Concurrent A");
+  expect(products.find((p: any) => p.id === b.id).name).toBe("Concurrent B");
+});
+
+it("rejects stale retry confirmation after a new supplier attempt has timed out", async () => {
+  const mock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (_input, init) => {
+      if (init?.method === "POST")
+        throw new DOMException("timeout", "TimeoutError");
+      return Response.json({
+        products: [
+          { id: "sku", name: "Supplier name", price: 20, inStock: true },
+        ],
+      });
+    });
+  try {
+    const order = await body("/api/orders", buyer, {
+      items: [{ productId: 88003, quantity: 1 }],
+      customer: { fullName: "Buyer" },
+    });
+    await body(`/api/orders/${order.id}/payments/wallet`, buyer, {});
+    await body("/api/admin/maintenance", owner, {});
+    const alert = (await body("/api/admin/fulfillment-alerts")).alerts.find(
+      (a: any) => a.order_id === order.id,
+    );
+    const input = {
+      confirmedNoPurchase: true,
+      expectedAttempt: alert.attempts,
+      reason: "Đã kiểm tra chưa có đơn NCC",
+    };
+    const path = `/api/admin/fulfillments/${encodeURIComponent(alert.fulfillment_id)}/retry`;
+    await body(path, owner, input);
+    expect((await call(path, owner, input)).status).toBe(409);
+    expect(
+      mock.mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(2);
+  } finally {
+    mock.mockRestore();
+  }
+});
+
+it("recovers the same allocated stock after a delivery failure without consuming another key", async () => {
+  const saved = await body("/api/admin/products", owner, {
+    name: "Recoverable stock",
+    selling_price: 10000,
+    source: "stock",
+  });
+  await body(`/api/admin/products/${saved.id}/inventory`, owner, {
+    values: ["first-recoverable-key"],
+  });
+  const order = await body("/api/orders", buyer, {
+    items: [{ productId: saved.id, quantity: 1 }],
+    customer: { fullName: "Buyer" },
+  });
+  await body(`/api/orders/${order.id}/payments/wallet`, buyer, {});
+  const validKey = runtime.DELIVERY_KEY;
+  runtime.DELIVERY_KEY = btoa("y".repeat(32));
+  try {
+    await body("/api/admin/maintenance", owner, {});
+  } finally {
+    runtime.DELIVERY_KEY = validKey;
+  }
+  const alert = (await body("/api/admin/fulfillment-alerts")).alerts.find(
+    (a: any) => a.order_id === order.id,
+  );
+  expect(alert.reason).toBe("STOCK_DELIVERY_REVIEW");
+  await body(`/api/admin/products/${saved.id}/inventory`, owner, {
+    values: ["second-unused-key"],
+  });
+  await body(
+    `/api/admin/fulfillments/${encodeURIComponent(alert.fulfillment_id)}/retry`,
+    owner,
+    {
+      confirmedNoPurchase: true,
+      expectedAttempt: alert.attempts,
+      reason: "Khóa mã hóa đã được khôi phục",
+    },
+  );
+  expect(
+    (await body(`/api/orders/${order.id}/delivery`, buyer)).value,
+  ).toContain("first-recoverable-key");
+  expect(
+    (await body("/api/admin/products")).products.find(
+      (p: any) => p.id === saved.id,
+    ).available,
+  ).toBe(1);
+});
+
+it("edits and disables a provider through the actual D1 route", async () => {
+  await body(
+    "/api/admin/mmo/providers/prodseller",
+    owner,
+    { name: "Edited supplier", is_active: false },
+    "PUT",
+  );
+  expect(
+    (await body("/api/admin/mmo/providers")).providers.find(
+      (p: any) => p.id === "prodseller",
+    ).is_active,
+  ).toBe(false);
+  await body(
+    "/api/admin/mmo/providers/prodseller",
+    owner,
+    { is_active: true },
+    "PUT",
+  );
+});
+
+it("imports legacy retail products idempotently without ID collisions or duplicating an already linked supplier product", async () => {
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO products(id,name,selling_price,updated_at) VALUES(5,'Preserved existing product',10000,'2026-10-29'),(6,'Preserved supplier product',20000,'2026-10-29')",
+    ),
+    env.DB.prepare(
+      "INSERT INTO product_sources(product_id,source,provider_id,provider_product_id) VALUES(6,'provider','legacy-vendor','already-linked')",
+    ),
+    env.DB.prepare(
+      "INSERT INTO mmo_retail_products(id,provider_id,provider_product_id,name,original_name,selling_price,created_at,updated_at) VALUES(5,'legacy-vendor','new-sku','Imported legacy product','Imported legacy product',30000,'2026-10-29','2026-10-29'),(6,'legacy-vendor','already-linked','Duplicate alias must not be created','Original supplier title',40000,'2026-10-29','2026-10-29')",
+    ),
+  ]);
+  for (const statement of COMMERCE_SCHEMA_STATEMENTS)
+    await env.DB.prepare(statement).run();
+  let catalog = (await body("/api/admin/products")).products;
+  expect(catalog.find((p: any) => p.id === 5).name).toBe(
+    "Preserved existing product",
+  );
+  expect(catalog.find((p: any) => p.id === 6).name).toBe(
+    "Preserved supplier product",
+  );
+  const imported = catalog.find(
+    (p: any) => p.name === "Imported legacy product",
+  );
+  expect(imported.id).not.toBe(5);
+  expect(imported.source).toBe("provider");
+  expect(
+    catalog.some((p: any) => p.name === "Duplicate alias must not be created"),
+  ).toBe(false);
+  for (const statement of COMMERCE_SCHEMA_STATEMENTS)
+    await env.DB.prepare(statement).run();
+  catalog = (await body("/api/admin/products")).products;
+  expect(
+    catalog.filter((p: any) => p.name === "Imported legacy product"),
+  ).toHaveLength(1);
+  expect(
+    catalog.find((p: any) => p.name === "Imported legacy product").id,
+  ).toBe(imported.id);
+});
+
+it("keeps successful supplier delivery when its ledger write fails and lets admin acknowledge the alert without buying again", async () => {
+  await env.DB.prepare(
+    "CREATE TRIGGER fixture_supplier_ledger_failure BEFORE INSERT ON mmo_orders WHEN NEW.provider_order_id='fixture-ledger-failure' BEGIN SELECT RAISE(ABORT,'fixture write failure'); END",
+  ).run();
+  const mock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/products"))
+        return Response.json({
+          products: [
+            { id: "sku", name: "Supplier name", price: 20, inStock: true },
+          ],
+        });
+      if (init?.method === "POST")
+        return Response.json({
+          order_id: "fixture-ledger-failure",
+          status: "completed",
+          keys: ["durable-delivery-key"],
+        });
+      throw new Error("Unexpected request");
+    });
+  try {
+    const order = await body("/api/orders", buyer, {
+      items: [{ productId: 88003, quantity: 1 }],
+      customer: { fullName: "Buyer" },
+    });
+    await body(`/api/orders/${order.id}/payments/wallet`, buyer, {});
+    await body("/api/admin/maintenance", owner, {});
+    expect(
+      (await body(`/api/orders/${order.id}/delivery`, buyer)).value,
+    ).toContain("durable-delivery-key");
+    const alert = (await body("/api/admin/fulfillment-alerts")).alerts.find(
+      (a: any) => a.order_id === order.id,
+    );
+    expect(alert).toMatchObject({
+      reason: "NCC_LEDGER_REVIEW",
+      status: "DELIVERED",
+    });
+    await body(
+      `/api/admin/fulfillment-alerts/${encodeURIComponent(alert.id)}/acknowledge`,
+      owner,
+      { reason: "Đã đối soát bản ghi đơn NCC" },
+    );
+    expect(
+      (await body("/api/admin/fulfillment-alerts")).alerts.some(
+        (a: any) => a.order_id === order.id,
+      ),
+    ).toBe(false);
+    await body("/api/admin/maintenance", owner, {});
+    expect(
+      mock.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/orders") && init?.method === "POST",
+      ),
+    ).toHaveLength(1);
+  } finally {
+    mock.mockRestore();
+    await env.DB.prepare("DROP TRIGGER fixture_supplier_ledger_failure").run();
+  }
+});

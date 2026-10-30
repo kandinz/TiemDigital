@@ -4,11 +4,13 @@ import {
   amountLabel,
   timeLabel,
   paymentLabel,
+  fulfillmentLabel,
   type PageBlock,
   type PlatformOrder,
 } from "../services/platform";
 import "../platform.css";
 import { AuthForm } from '../components/AuthForm';
+import { CatalogProducts, ReadOnlyProducts, Providers, PurchaseOrders, FulfillmentAlerts, BusinessFinance } from '../components/admin/CommerceAdmin';
 
 interface Admin {
   userId?: string;
@@ -44,15 +46,6 @@ interface Page {
   draft_id: string;
   published_id: string | null;
 }
-interface Product {
-  id: number;
-  name: string;
-  description: string;
-  category: string;
-  image_url: string | null;
-  selling_price: number;
-  in_stock: boolean | number;
-}
 interface Customer {
   id: string;
   email: string;
@@ -70,7 +63,7 @@ type Tab =
   | "pages"
   | "telegram"
   | "audit"
-  | "mmo";
+  | "providers";
 type Run = (task: () => Promise<void>) => Promise<void>;
 function useAdminCommand() {
   const pending = useRef(new Map<string, string>());
@@ -99,7 +92,7 @@ const labels: [Tab, string][] = [
   ["pages", "Nội dung website"],
   ["telegram", "Telegram & hệ thống"],
   ["audit", "Nhật ký quản trị"],
-  ["mmo", "MMO"],
+  ["providers", "Nhà cung cấp"],
 ];
 
 function Orders({ run }: { run: Run }) {
@@ -148,13 +141,14 @@ function Orders({ run }: { run: Run }) {
                 <td>{o.customer.email || o.user_id}</td>
                 <td>{amountLabel(o.total, o.currency)}</td>
                 <td>{paymentLabel(o.payment_status)}</td>
-                <td>{o.fulfillment_status}</td>
+                <td>{fulfillmentLabel(o.fulfillment_status)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {selected && (
+      {selected && <div className="admin-detail">{orders.find(o => o.id === selected)?.fulfillments?.map(f => <p key={f.product_id}>{f.name}: {f.delivered_quantity}/{f.quantity} đã giao · {fulfillmentLabel(f.status)}</p>)}</div>}
+      {selected && !orders.find(o => o.id === selected)?.fulfillments?.length && (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -629,150 +623,6 @@ function Finance({ admin, run }: { admin: Admin; run: Run }) {
     </>
   );
 }
-function Products({ run }: { run: Run }) {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [product, setProduct] = useState<Product>({
-    id: 1,
-    name: "",
-    description: "",
-    category: "Khác",
-    image_url: "",
-    selling_price: 10000,
-    in_stock: false,
-  });
-  async function load() {
-    setProducts(
-      (await api<{ products: Product[] }>("/api/admin/products")).products,
-    );
-  }
-  useEffect(() => {
-    void run(load);
-  }, [run]);
-  return (
-    <>
-      <section className="panel">
-        <h2>Danh mục sản phẩm</h2>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Sản phẩm</th>
-                <th>Giá VND (website & Telegram)</th>
-                <th>Mở bán</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <button onClick={() => setProduct(p)}>{p.name}</button>
-                  </td>
-                  <td>{amountLabel(p.selling_price)}</td>
-                  <td>{p.in_stock ? "Có" : "Không"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <section className="panel">
-        <h2>Thêm / sửa sản phẩm</h2>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              await api("/api/admin/products", {
-                body: {
-                  ...product,
-                  in_stock: !!product.in_stock,
-                  image_url: product.image_url ?? "",
-                },
-              });
-              await load();
-            });
-          }}
-        >
-          <div className="form-grid">
-            <label>
-              ID
-              <input
-                required
-                type="number"
-                min={1}
-                value={product.id}
-                onChange={(e) =>
-                  setProduct({ ...product, id: Number(e.target.value) })
-                }
-              />
-            </label>
-            <label>
-              Tên sản phẩm
-              <input
-                required
-                value={product.name}
-                onChange={(e) =>
-                  setProduct({ ...product, name: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              Giá VND
-              <input
-                type="number"
-                min={1000}
-                value={product.selling_price}
-                onChange={(e) =>
-                  setProduct({
-                    ...product,
-                    selling_price: Number(e.target.value),
-                  })
-                }
-              />
-            </label>
-            <label>
-              Danh mục
-              <input
-                value={product.category}
-                onChange={(e) =>
-                  setProduct({ ...product, category: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              URL ảnh HTTPS
-              <input
-                value={product.image_url ?? ""}
-                onChange={(e) =>
-                  setProduct({ ...product, image_url: e.target.value })
-                }
-              />
-            </label>
-          </div>
-          <label>
-            Mô tả
-            <textarea
-              value={product.description}
-              onChange={(e) =>
-                setProduct({ ...product, description: e.target.value })
-              }
-            />
-          </label>
-          <label className="check-label">
-            <input
-              type="checkbox"
-              checked={!!product.in_stock}
-              onChange={(e) =>
-                setProduct({ ...product, in_stock: e.target.checked })
-              }
-            />
-            Mở bán (giao hàng thủ công)
-          </label>
-          <button className="primary">Lưu sản phẩm</button>
-        </form>
-      </section>
-    </>
-  );
-}
 function Pages({ run }: { run: Run }) {
   const [pages, setPages] = useState<Page[]>([]);
   const [slug, setSlug] = useState("trang-chu");
@@ -1181,7 +1031,8 @@ function Overview({ run }: { run: Run }) {
 }
 export function AdminPage() {
   const [admin, setAdmin] = useState<Admin | null>(null);
-  const [tab, setTab] = useState<Tab>(window.location.pathname.startsWith("/admin/mmo") ? "mmo" : "overview");
+  const [tab, setTab] = useState<Tab>(() => { const path = window.location.pathname.split('/')[2]; return path === 'mmo' ? 'products' : labels.some(([id]) => id === path) ? path as Tab : 'overview'; });
+  const [orderSection, setOrderSection] = useState<'customers' | 'purchases' | 'warranty'>('customers');
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState("session");
   const [adminUrl, setAdminUrl] = useState("/admin");
@@ -1230,15 +1081,15 @@ export function AdminPage() {
           {error && <p className="notice error">{error}</p>}
         </div>
       ) : (
-        <div className={`workspace ${tab === 'mmo' ? 'mmo-workspace' : ''}`}>
+        <div className="workspace">
           <nav className="navigation" aria-label="Quản trị">
-            {labels.filter(([id]) => id !== "mmo" || admin.role === "owner").map(([id, label]) => (
+            {labels.filter(([id]) => id !== "providers" || admin.role === "owner").map(([id, label]) => (
               <button
                 key={id}
                 className={tab === id ? "active" : ""}
                 onClick={() => {
                   setTab(id);
-                  window.history.replaceState(null, "", id === "mmo" ? "/admin/mmo" : "/admin");
+                  window.history.replaceState(null, "", `/admin/${id}`);
                   setError("");
                   setMessage("");
                 }}
@@ -1267,14 +1118,19 @@ export function AdminPage() {
             )}
             {tab === "overview" && <Overview run={run} />}{" "}
             {tab === "customers" && <Customers run={run} />}{" "}
-            {tab === "orders" && <Orders run={run} />}{" "}
-            {tab === "finance" && <Finance admin={admin} run={run} />}{" "}
+            {tab === "orders" && <>
+              {admin.role === 'owner' && <div className="action-row admin-section-nav" aria-label="Các loại đơn hàng">{([['customers', 'Đơn khách & giao hàng'], ['purchases', 'Đơn nhập NCC'], ['warranty', 'Bảo hành']] as const).map(([id, label]) => <button key={id} className={orderSection === id ? 'primary' : ''} onClick={() => setOrderSection(id)}>{label}</button>)}</div>}
+              {(admin.role !== 'owner' || orderSection === 'customers') && <>{['owner', 'support', 'auditor'].includes(admin.role) && <FulfillmentAlerts run={run} canResolve={admin.role === 'owner'} />}<Orders run={run} /></>}
+              {admin.role === 'owner' && orderSection === 'purchases' && <PurchaseOrders run={run} />}
+              {admin.role === 'owner' && orderSection === 'warranty' && <BusinessFinance run={run} warrantyOnly />}
+            </>}{" "}
+            {tab === "finance" && <><Finance admin={admin} run={run} />{admin.role === 'owner' && <BusinessFinance run={run} />}</>}{" "}
             {tab === "payment" && <PaymentSettings run={run} />}{" "}
-            {tab === "products" && <Products run={run} />}{" "}
+            {tab === "products" && (admin.role === 'owner' ? <CatalogProducts run={run} /> : <ReadOnlyProducts run={run} />)}{" "}
             {tab === "pages" && <Pages run={run} />}{" "}
             {tab === "telegram" && <ReadonlyPanel path="status" run={run} />}{" "}
             {tab === "audit" && <ReadonlyPanel path="audit" run={run} />}
-            {tab === 'mmo' && admin.role === 'owner' && <iframe title="MMO Marketplace" className="mmo-frame" src="/admin/mmo-ui" allow="clipboard-write" />}
+            {tab === 'providers' && admin.role === 'owner' && <Providers run={run} />}
           </main>
         </div>
       )}

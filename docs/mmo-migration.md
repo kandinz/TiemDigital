@@ -1,4 +1,4 @@
-# Admin và MMO
+# Admin chung và dữ liệu nhà cung cấp
 
 Production và local dùng `ADMIN_AUTH_MODE=session`: mở `/admin` trên cùng origin với website, đăng nhập bằng tài khoản TiệmDigital. `admin_accounts.user_id` gắn quyền với ID cố định của tài khoản Better Auth. Email và username trong hồ sơ có thể đổi mà không làm mất hoặc phát sinh quyền. Tài khoản bị khóa hoặc hết phiên không truy cập được API admin. Chế độ `access` vẫn được giữ cho môi trường cấu hình Cloudflare Access riêng.
 
@@ -12,18 +12,29 @@ node scripts/admin.mjs --username=khanhdq --role=owner --remote --env=production
 
 Local bỏ `--remote --env=production`. Script báo lỗi nếu username không tồn tại. `--email` chỉ dành cho danh tính Cloudflare Access trong `admin_roles`; quyền của chế độ session luôn đọc `admin_accounts`. Không tự cấp Owner cho người đăng ký đầu tiên và không dùng email chưa xác minh để quyết định quyền.
 
-MMO chỉ mở cho Owner tại `/admin/mmo`. API nằm dưới `/api/admin/mmo/*`, bao gồm cả danh mục, cấu hình và tài liệu API. Các API ghi kiểm tra origin trước khi gọi module; danh tính của Gum Tool/JWT Bearer không được dùng. Audit ghi ID cố định của admin và đường dẫn thao tác, không ghi API key hoặc dữ liệu giao hàng.
+Các chức năng NCC dùng chung admin React: `/admin/products`, `/admin/providers`, `/admin/orders` và `/admin/finance`. Không có tab MMO hoặc iframe riêng. Đường dẫn iframe cũ chuyển hướng về mục Sản phẩm; `/admin/mmo` mở mục Sản phẩm trong admin chung. Quyền Owner của các thao tác NCC được giữ nguyên. Backend adapter/đơn nhập/giao dịch cũ vẫn dùng namespace `/api/admin/mmo/*` để bảo toàn tích hợp và lịch sử. Các API ghi kiểm tra origin; danh tính Gum Tool/JWT Bearer không được dùng. Audit không ghi API key hoặc dữ liệu giao hàng.
 
 ## Mã nguồn
 
 - `workers/mmo`: API NCC, adapter, đơn mua, giao dịch, báo cáo, bảo hành và kệ bán lẻ từ Gum Tool.
-- `modules/mmo`: giao diện Vue/Pinia được build riêng vào `dist/mmo`; tải bên trong trang admin cùng origin, dùng cookie TiệmDigital. CSS và runtime không ảnh hưởng giao diện cửa hàng React.
+- `src/components/admin/CommerceAdmin.tsx`: giao diện sản phẩm, NCC, đối soát, đơn nhập, giao dịch và bảo hành trong admin chung. `modules/mmo` là mã giao diện cũ, không được build/tải trong luồng quản trị hiện tại.
 - `workers/mmo/schema.ts`: sáu bảng MMO và index, được gộp vào schema TiệmDigital. Không có SQL migration tĩnh.
-- Trang xem trước kệ bán lẻ và tài liệu API trong MMO dành cho quản trị. Danh mục cửa hàng `/api/catalog`, đơn khách, ví và luồng giao hàng cửa hàng vẫn sử dụng dữ liệu hiện có; thao tác mua NCC không tự trừ ví khách hoặc tự giao đơn cửa hàng.
+- `workers/catalog.ts`, `workers/commerceSchema.ts`: danh mục chung, % lợi nhuận, kho mã hóa và ánh xạ dữ liệu bán lẻ cũ vào `products`; website chỉ gọi `/api/catalog` nội bộ. Script `sync-catalog.mjs` đã dừng nhập từ Gum Tool.
+- `workers/fulfillment.ts`: sau thanh toán, tự mua NCC hoặc xuất kho, giao một phần và chuyển ngoại lệ cho admin. Không giữ kho khi tạo đơn; khách thanh toán trước được ưu tiên. Webhook/tác vụ chạy lại không được mua hoặc giao trùng.
 
-`npm ci`, `npm run typecheck`, `npm test`, `npm run build`, `npm run check:pages` kiểm tra cả hai ứng dụng. Vue dùng compiler TypeScript 6 riêng cho công cụ Vue; React/Worker giữ TypeScript 7. `npm run build:mmo` chỉ build giao diện MMO. Phần Swagger tải khi mở tài liệu API.
+`npm run typecheck`, `npm test`, `npm run build`, `npm run check:pages` kiểm tra Worker và giao diện React hiện tại. Build mặc định không tạo ứng dụng Vue riêng.
 
-`node tests/migrate-mmo.node.mjs` kiểm tra ánh xạ chủ sở hữu và đối chiếu dữ liệu. `node tests/admin-mmo.browser.cjs` kiểm tra trên localhost với tài khoản fixture/D1 local, gồm đăng nhập/đăng xuất, tạo rồi xóa giao dịch thử, báo cáo, cấu hình và layout mobile; cần Playwright có sẵn qua `NODE_PATH` nếu không cài trong dự án. Không chạy bài browser ghi dữ liệu này trên production.
+`node tests/migrate-mmo.node.mjs` kiểm tra ánh xạ chủ sở hữu và đối chiếu dữ liệu. `node tests/admin-commerce.browser.cjs` kiểm tra admin chung trên Vite preview bằng API fixtures, không gọi NCC, thanh toán hoặc gửi Telegram thật; cần Playwright qua `NODE_PATH`. `tests/unified-commerce.test.ts` kiểm tra API/D1, thanh toán, FIFO kho, giá NCC, giao một phần và đối soát với outbound mocks.
+
+## Vận hành danh mục và giao hàng
+
+Áp dụng schema bằng `node scripts/schema.mjs` cho local; môi trường remote cần `--remote --env=<môi trường>`. Các bảng mới được thêm cộng dồn; sản phẩm và lịch sử đơn cũ giữ nguyên ID. `catalog_imports` ánh xạ sản phẩm bán lẻ cũ sang ID mới trong `products` để tránh nhầm với sản phẩm hiện có. Nếu chuyển thêm dữ liệu bằng script migration bên dưới, áp dụng lại schema để đưa kệ bán lẻ vừa chuyển vào danh mục chung. Schema có thể chạy lại.
+
+Trước khi bật tự giao, cấu hình `DELIVERY_KEY` và nhập kho hoặc liên kết sản phẩm NCC, cấu hình tỷ giá và % lợi nhuận mặc định/từng sản phẩm. API key của NCC chỉ cấu hình tại Nhà cung cấp. Giá gợi ý bằng giá nhập nhân (1 + %); admin được sửa tay. Khi NCC tăng giá, tăng giá bán cùng tỷ lệ kể cả giá sửa tay; giảm giá nhập thì giữ nguyên giá bán. Đồng bộ và kiểm tra trước khi mua không sửa giá đã chốt của đơn.
+
+Cron hiện có chạy mỗi 5 phút: đồng bộ giá/tồn NCC, xử lý thanh toán tồn đọng, tự giao hàng và gửi thông báo. Tác vụ mua đã ở PROCESSING nhưng quá hạn mà chưa có kết quả chuyển đối soát, không tự mua lại. NCC thất bại/hết hàng, kho tự tạo hết sau thanh toán, hoặc giá nhập vượt giá của đơn đã trả tiền đều báo admin; không tự hoàn tiền hay thu thêm.
+
+Cấu hình Telegram Chat ID quản trị tại Nhà cung cấp và secret `TELEGRAM_BOT_TOKEN`. Cảnh báo luôn lưu trong admin; lỗi gửi Telegram có retry và được xem/gửi lại trong Telegram & hệ thống. Admin đối soát rồi bổ sung dữ liệu còn thiếu hoặc xác nhận chưa có giao dịch mua thành công trước khi cho phép thử lại. Hoàn tiền tiếp tục dùng quy trình phê duyệt tài chính hiện có.
 
 ## Chuyển dữ liệu
 

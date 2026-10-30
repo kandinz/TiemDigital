@@ -26,10 +26,10 @@ it('keeps every MMO route private, uses TiệmDigital identity, and supports ret
   const owner = await account('mmo_owner', 'owner');
   const frameEnv = { ...testEnv, SITE_ASSETS: { fetch: async (request: Request) => new Response(new URL(request.url).pathname, { headers: { 'content-type': 'text/html' } }) } as Fetcher };
   const frame = await worker.fetch(new Request(`${origin}/admin/mmo-ui`, { headers: { cookie: owner.cookie } }), frameEnv);
-  expect(frame.status).toBe(200);
-  expect(await frame.text()).toBe('/mmo/index.html');
-  expect(frame.headers.get('x-frame-options')).toBe('SAMEORIGIN');
-  expect(frame.headers.get('content-security-policy')).toContain("frame-ancestors 'self'");
+  expect(frame.status).toBe(302);
+  expect(frame.headers.get('location')).toBe(`${origin}/admin/products`);
+  expect(frame.headers.get('x-frame-options')).toBe('DENY');
+  expect(frame.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
   expect(frame.headers.get('cache-control')).toBe('no-store');
   expect((await worker.fetch(new Request(`${origin}/admin/mmo-ui`), frameEnv)).status).toBe(401);
   expect((await request('/settings', owner.cookie, { usd_rate: 26000 }, 'PUT', 'https://attacker.test')).status).toBe(403);

@@ -3,6 +3,7 @@
 // Existing databases may retain legacy currency columns/enum values for history.
 // New orders/settlements are restricted to VND + BANK/WALLET by the guards below.
 import { MMO_SCHEMA_STATEMENTS } from './mmo/schema.ts';
+import { COMMERCE_SCHEMA_STATEMENTS } from './commerceSchema.ts';
 export function authColumnUpgrades(columns: string[]) {
   return columns.length ? ['username', 'displayUsername'].filter((name) => !columns.includes(name)).map((name) => `ALTER TABLE user ADD COLUMN ${name} TEXT`) : [];
 }
@@ -104,4 +105,5 @@ export const SCHEMA_STATEMENTS = [
   `CREATE TRIGGER IF NOT EXISTS delivery_notify AFTER UPDATE OF fulfillment_status ON orders WHEN NEW.fulfillment_status='DELIVERED' AND OLD.fulfillment_status<>'DELIVERED' BEGIN
     INSERT INTO outbox(id,user_id,kind,body) VALUES('delivery:'||NEW.id,NEW.user_id,'ORDER_DELIVERED',json_object('orderId',NEW.id));
   END`,
+  ...COMMERCE_SCHEMA_STATEMENTS,
 ];

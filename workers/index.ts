@@ -5,17 +5,17 @@ import {
   createOrder,
   orderFor,
   payWallet,
-  serializeOrder,
   walletFor,
 } from "./commerce";
 import { bankWebhook, createIntent, intentFor, qrImageUrl } from "./payments";
 import { adminApi } from "./admin";
 import { administrator } from "./auth";
 import { createLink, telegramWebhook } from "./telegram";
-import { decryptDelivery } from "./delivery";
 import { processOutbox, scheduled } from "./operations";
 import { now, readBody, sha256 } from "./http";
 import { z } from "zod";
+import { catalogProducts } from './catalog';
+import { orderProgress, receivedDelivery } from './fulfillment';
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const response = await handle(request, env);
@@ -24,15 +24,14 @@ export default {
     if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin/')) headers.set('Cache-Control', 'no-store');
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-    const mmoFrame = pathname === '/admin/mmo-ui';
-    headers.set("X-Frame-Options", mmoFrame ? 'SAMEORIGIN' : 'DENY');
+    headers.set("X-Frame-Options", 'DENY');
     headers.set(
       "Permissions-Policy",
       "camera=(), microphone=(), geolocation=()",
     );
     headers.set(
       "Content-Security-Policy",
-      `default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self' https://challenges.cloudflare.com; frame-src 'self' https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors ${mmoFrame ? "'self'" : "'none'"}; form-action 'self'`,
+      `default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`,
     );
     if (env.ENVIRONMENT === "production")
       headers.set("Strict-Transport-Security", "max-age=31536000");
@@ -72,8 +71,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       if (url.pathname === '/admin/mmo-ui') {
         const admin = await administrator(request, env);
         if (admin.role !== 'owner') throw new HttpError(403, 'Không đủ quyền MMO');
-        const asset = new URL('/mmo/index.html', url);
-        return env.SITE_ASSETS.fetch(new Request(asset, { headers: request.headers }));
+        return Response.redirect(`${url.origin}/admin/products`, 302);
       }
       return env.SITE_ASSETS.fetch(request);
     }
@@ -164,9 +162,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return json({ ...page, blocks: JSON.parse(page.blocks) });
     }
     if (url.pathname === "/api/catalog" && request.method === "GET") {
-      const { results } = await env.DB.prepare(
-        "SELECT id,name,description,category,image_url,selling_price,in_stock,updated_at FROM products ORDER BY id DESC",
-      ).all();
+      const configured = await catalogProducts(env, true);
+      const results = configured.map(({ id, name, description, category, image_url, selling_price, in_stock, updated_at }) => ({ id, name, description, category, image_url, selling_price, in_stock, updated_at }));
       return json({
         products: results.map((p) => ({ ...p, in_stock: !!p.in_stock })),
         categories: [...new Set(results.map((p) => p.category))],
@@ -246,11 +243,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       );
       if (receive && request.method === "GET") {
         const order = await orderFor(env, receive[1], actor);
-        if (order.payment_status !== "PAID" || !order.delivery)
-          throw new HttpError(409, "Sản phẩm đang được chuẩn bị");
-        return json({
-          value: await decryptDelivery(env, order.id, order.delivery),
-        });
+        return json(await receivedDelivery(env, order));
       }
       if (url.pathname === "/api/me/wallet" && request.method === "GET") {
         return json(await walletFor(env, actor));
@@ -272,7 +265,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         )
           .bind(actor.id)
           .all<import("./types").StoredOrder>();
-        return json({ orders: results.map(serializeOrder) });
+        return json({ orders: await Promise.all(results.map(order => orderProgress(env, order))) });
       }
       if (url.pathname === "/api/me/topups" && request.method === "POST")
         return json(await createIntent(request, env, actor), 201);
@@ -284,7 +277,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       if (orderMatch) {
         if (!orderMatch[2] && request.method === "GET")
           return json(
-            serializeOrder(await orderFor(env, orderMatch[1], actor)),
+            await orderProgress(env, await orderFor(env, orderMatch[1], actor)),
           );
         if (orderMatch[2] === "wallet" && request.method === "POST")
           return json(await payWallet(request, env, actor, orderMatch[1]));

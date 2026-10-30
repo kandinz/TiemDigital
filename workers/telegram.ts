@@ -4,6 +4,7 @@ import { HttpError, json, limitedText, now, rateLimit, sha256 } from "./http";
 import { createOrder, orderFor, payWallet, walletFor } from "./commerce";
 import { createIntent, intentFor, qrImageUrl } from "./payments";
 import { publicEmail } from './auth';
+import { catalogProducts } from './catalog';
 
 export async function telegramCall(env: Env, method: string, body: unknown) {
   if (!env.TELEGRAM_BOT_TOKEN)
@@ -215,17 +216,7 @@ async function showQr(
 }
 
 async function showProductDetail(env: Env, chatId: string, productId: number) {
-  const product = await env.DB.prepare(
-    "SELECT id,name,description,selling_price,in_stock FROM products WHERE id=?",
-  )
-    .bind(productId)
-    .first<{
-      id: number;
-      name: string;
-      description: string;
-      selling_price: number;
-      in_stock: number;
-    }>();
+  const product = (await catalogProducts(env, true)).find(p => p.id === productId);
   if (!product) {
     await sendText(env, chatId, "Không tìm thấy sản phẩm.", {
       reply_markup: mainMenu(),
@@ -255,9 +246,9 @@ async function showProductDetail(env: Env, chatId: string, productId: number) {
 }
 
 async function showCategories(env: Env, chatId: string) {
-  const { results } = await env.DB.prepare(
-    "SELECT category,COUNT(*) AS count FROM products WHERE in_stock=1 GROUP BY category ORDER BY category",
-  ).all<{ category: string; count: number }>();
+  const counts = new Map<string, number>();
+  for (const p of await catalogProducts(env, true)) if (p.in_stock) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+  const results = [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([category, count]) => ({ category, count }));
   await sendText(
     env,
     chatId,
@@ -283,11 +274,7 @@ async function showCategoryProducts(
   chatId: string,
   category: string,
 ) {
-  const { results } = await env.DB.prepare(
-    "SELECT id,name,selling_price FROM products WHERE category=? AND in_stock=1 ORDER BY name",
-  )
-    .bind(category)
-    .all<{ id: number; name: string; selling_price: number }>();
+  const results = (await catalogProducts(env, true)).filter(p => p.category === category && p.in_stock).sort((a, b) => a.name.localeCompare(b.name));
   await sendText(
     env,
     chatId,

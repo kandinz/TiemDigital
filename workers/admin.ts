@@ -11,11 +11,13 @@ import {
   limitedBytes,
 } from "./http";
 import { configSchema, paymentConfig, reconcile } from "./payments";
-import { serializeOrder } from "./commerce";
+
 import { encryptDelivery } from "./delivery";
 import { sha256 } from "./http";
 import { sweep } from "./operations";
 import { mmoApi } from './mmo';
+import { catalogAdmin } from './catalog';
+import { fulfillmentAdmin, orderProgress } from './fulfillment';
 
 const blockSchema = z.discriminatedUnion("type", [
   z.object({
@@ -40,23 +42,15 @@ const pageSchema = z.object({
   description: z.string().max(500),
   blocks: z.array(blockSchema).max(30),
 });
-const productSchema = z.object({
-  id: z.number().int().positive(),
-  name: z.string().min(1).max(150),
-  description: z.string().max(10000),
-  category: z.string().min(1).max(80),
-  selling_price: z.number().int().min(1000).max(100000000),
-  in_stock: z.boolean(),
-  image_url: z
-    .union([z.literal(""), z.url().refine((s) => s.startsWith("https://"))])
-    .default(""),
-});
-
 export async function adminApi(request: Request, env: Env) {
   const admin = await administrator(request, env);
   checkOrigin(request, env, true);
   const url = new URL(request.url);
   const path = url.pathname.slice("/api/admin".length);
+  const catalogResponse = await catalogAdmin(request, env, admin, path);
+  if (catalogResponse) return catalogResponse;
+  const fulfillmentResponse = await fulfillmentAdmin(request, env, admin, path);
+  if (fulfillmentResponse) return fulfillmentResponse;
   if (path === '/mmo' || path.startsWith('/mmo/')) {
     requireRole(admin, ['owner']);
     if (!['GET', 'HEAD'].includes(request.method))
@@ -156,7 +150,7 @@ export async function adminApi(request: Request, env: Env) {
     const { results } = await env.DB.prepare(
       "SELECT * FROM orders ORDER BY created_at DESC,id DESC LIMIT 100",
     ).all<StoredOrder>();
-    return json({ orders: results.map(serializeOrder) });
+    return json({ orders: await Promise.all(results.map(order => orderProgress(env, order))) });
   }
   const delivery = path.match(/^\/orders\/([A-Z0-9]+)\/deliver$/);
   if (delivery && request.method === "POST") {
@@ -168,8 +162,10 @@ export async function adminApi(request: Request, env: Env) {
     const encrypted = await encryptDelivery(env, delivery[1], body.value);
     const result = await env.DB.batch([
       env.DB.prepare(
-        "UPDATE orders SET delivery=?,fulfillment_status='DELIVERED' WHERE id=? AND payment_status='PAID' AND fulfillment_status='QUEUED' RETURNING id",
+        "UPDATE orders SET delivery=?,fulfillment_status='DELIVERED' WHERE id=? AND payment_status='PAID' AND fulfillment_status='QUEUED' AND NOT EXISTS(SELECT 1 FROM fulfillments WHERE order_id=orders.id AND status NOT IN('QUEUED','REVIEW')) RETURNING id",
       ).bind(encrypted, delivery[1]),
+      env.DB.prepare("UPDATE fulfillments SET status='DELIVERED',delivered_quantity=quantity,reason=NULL,updated_at=unixepoch() WHERE order_id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND delivery=? AND fulfillment_status='DELIVERED')").bind(delivery[1], delivery[1], encrypted),
+      env.DB.prepare("UPDATE admin_alerts SET resolved_at=unixepoch() WHERE order_id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND delivery=? AND fulfillment_status='DELIVERED')").bind(delivery[1], delivery[1], encrypted),
       env.DB.prepare(
         "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
       ).bind(id(), admin.email, "DELIVERY_ATTEMPT", delivery[1], "{}"),
@@ -358,42 +354,6 @@ export async function adminApi(request: Request, env: Env) {
     requireRole(admin, ["owner"]);
     await audit(env, admin.email, "SWEEP", "inbox-outbox");
     await sweep(env);
-    return json({ ok: true });
-  }
-  if (path === "/products" && request.method === "GET")
-    return json({
-      products: (
-        await env.DB.prepare(
-          "SELECT id,name,description,category,image_url,selling_price,in_stock,updated_at FROM products ORDER BY id DESC",
-        ).all()
-      ).results,
-    });
-  if (path === "/products" && request.method === "POST") {
-    requireRole(admin, ["owner"]);
-    const p = await readBody(request, productSchema);
-    await env.DB.batch([
-      env.DB.prepare(
-        "INSERT INTO products(id,name,description,category,image_url,selling_price,in_stock,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,description=excluded.description,category=excluded.category,image_url=excluded.image_url,selling_price=excluded.selling_price,in_stock=excluded.in_stock,updated_at=excluded.updated_at",
-      ).bind(
-        p.id,
-        p.name,
-        p.description,
-        p.category,
-        p.image_url || null,
-        p.selling_price,
-        Number(p.in_stock),
-        new Date().toISOString(),
-      ),
-      env.DB.prepare(
-        "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
-      ).bind(
-        id(),
-        admin.email,
-        "PRODUCT_SAVE",
-        String(p.id),
-        JSON.stringify({ priceVnd: p.selling_price }),
-      ),
-    ]);
     return json({ ok: true });
   }
   if (path === "/pages" && request.method === "GET") {

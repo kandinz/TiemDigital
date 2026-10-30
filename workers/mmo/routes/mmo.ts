@@ -51,6 +51,8 @@ app.get("/providers", async (c) => {
       id: p.id,
       name: p.name,
       base_url: p.base_url,
+      auth_type: p.auth_type,
+      auth_key_name: p.auth_key_name,
       is_active: Boolean(p.is_active),
       sort_order: p.sort_order,
       bot_url: p.bot_url || null,
@@ -172,7 +174,7 @@ app.put("/providers/:id", requireAdmin, async (c) => {
   for (const field of allowedFields) {
     if (body[field] !== undefined) {
       updates.push(`${field} = ?`);
-      params.push(body[field]);
+      params.push(field === 'is_active' ? Number(Boolean(body[field])) : body[field]);
     }
   }
   
