@@ -127,6 +127,9 @@ function focusPanel(element: HTMLElement | null) {
   });
 }
 
+/**
+ * Hiển thị danh mục sản phẩm ở chế độ chỉ đọc cho quản trị viên hỗ trợ/kiểm toán.
+ */
 export function ReadOnlyProducts({ run }: { run: Run }) {
   const [products, setProducts] = useState<Product[]>([]);
   useEffect(() => {
@@ -152,10 +155,20 @@ export function ReadOnlyProducts({ run }: { run: Run }) {
           <tbody>
             {products.map((p) => (
               <tr key={p.id}>
-                <td>{p.name}</td>
-                <td>{p.category}</td>
-                <td>{amountLabel(p.selling_price)}</td>
-                <td>{p.active ? "Hiển thị" : "Ẩn"}</td>
+                <td>
+                  <strong>{p.name}</strong>
+                </td>
+                <td>
+                  <span className="status neutral">{p.category}</span>
+                </td>
+                <td>
+                  <strong>{amountLabel(p.selling_price)}</strong>
+                </td>
+                <td>
+                  <span className={p.active ? "status good" : "status"}>
+                    {p.active ? "Hiển thị" : "Ẩn"}
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -228,692 +241,778 @@ export function CatalogProducts({ run }: { run: Run }) {
       p.cost_vnd * (1 + (p.markup_percent ?? config.markupPercent ?? 0) / 100),
     );
 
+  const activeCount = products.filter((p) => Boolean(p.active)).length;
+  const stockSourceCount = products.filter((p) => p.source === "stock").length;
+  const providerSourceCount = products.filter(
+    (p) => p.source === "provider",
+  ).length;
+
   return (
-    <>
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Danh mục bán</h2>
-          <button
-            onClick={() => {
-              setProduct(emptyProduct());
-              setInventory("");
-              focusPanel(editorRef.current);
-            }}
-          >
-            Thêm sản phẩm tự tạo
-          </button>
-        </div>
-        <div className="action-row">
-          <input
-            aria-label="Tìm sản phẩm quản trị"
-            placeholder="Tìm theo tên hoặc danh mục…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-          <button
-            onClick={() =>
-              void run(async () => {
-                const result = await api<{
-                  errors: { providerId: string; error: string }[];
-                }>("/api/admin/products/sync", { body: {} });
-                setSyncErrors(
-                  result.errors
-                    .map((v) => `${v.providerId}: ${v.error}`)
-                    .join("\n"),
-                );
-                await load();
-              })
-            }
-          >
-            Đồng bộ giá nhập & tồn NCC
-          </button>
-        </div>
-        {syncErrors && (
-          <p role="alert" className="notice error">
-            {syncErrors}
-          </p>
-        )}
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Sản phẩm</th>
-                <th>Nguồn</th>
-                <th>Giá nhập</th>
-                <th>Giá bán</th>
-                <th>Kho / hiển thị</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products
-                .filter((p) =>
-                  `${p.name} ${p.category}`
-                    .toLowerCase()
-                    .includes(filter.toLowerCase()),
-                )
-                .map((p) => (
-                  <tr
-                    key={p.id}
-                    className={product.id === p.id ? "selected-row" : ""}
-                  >
-                    <td>
-                      <button
-                        onClick={() => {
-                          setProduct(p);
-                          setInventory("");
-                          focusPanel(editorRef.current);
-                        }}
-                      >
-                        {p.name}
-                      </button>
-                      <br />
-                      <small>
-                        {p.category} · #{p.id}
-                      </small>
-                      <div className="action-row">
-                        {Boolean(p.active) ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void run(async () => {
-                                await api(`/api/admin/products/${p.id}`, {
-                                  method: "DELETE",
-                                });
-                                if (product.id === p.id)
-                                  setProduct(emptyProduct());
-                                await load();
-                              })
-                            }
-                          >
-                            Ngừng bán
-                          </button>
-                        ) : (
-                          <>
+    <div className="admin-split-grid">
+      <div>
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Danh mục bán</h2>
+              <p className="muted">
+                Chọn sản phẩm để chỉnh sửa, nhập key kho hoặc đồng bộ giá từ
+                NCC.
+              </p>
+            </div>
+            <button
+              className="primary"
+              onClick={() => {
+                setProduct(emptyProduct());
+                setInventory("");
+                focusPanel(editorRef.current);
+              }}
+            >
+              Thêm sản phẩm tự tạo
+            </button>
+          </div>
+          <div className="admin-kv-grid">
+            <div className="admin-kv-item">
+              <small>Tổng sản phẩm</small>
+              <strong>{products.length}</strong>
+            </div>
+            <div className="admin-kv-item">
+              <small>Đang hiển thị</small>
+              <strong>{activeCount}</strong>
+            </div>
+            <div className="admin-kv-item">
+              <small>Kho tự tạo</small>
+              <strong>{stockSourceCount}</strong>
+            </div>
+            <div className="admin-kv-item">
+              <small>Liên kết NCC</small>
+              <strong>{providerSourceCount}</strong>
+            </div>
+          </div>
+          <div className="admin-toolbar">
+            <input
+              aria-label="Tìm sản phẩm quản trị"
+              placeholder="Tìm theo tên hoặc danh mục…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+            <button
+              onClick={() =>
+                void run(async () => {
+                  const result = await api<{
+                    errors: { providerId: string; error: string }[];
+                  }>("/api/admin/products/sync", { body: {} });
+                  setSyncErrors(
+                    result.errors
+                      .map((v) => `${v.providerId}: ${v.error}`)
+                      .join("\n"),
+                  );
+                  await load();
+                })
+              }
+            >
+              Đồng bộ giá nhập & tồn NCC
+            </button>
+          </div>
+          {syncErrors && (
+            <p role="alert" className="notice error">
+              {syncErrors}
+            </p>
+          )}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Sản phẩm</th>
+                  <th>Nguồn</th>
+                  <th>Giá nhập</th>
+                  <th>Giá bán</th>
+                  <th>Kho / hiển thị</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products
+                  .filter((p) =>
+                    `${p.name} ${p.category}`
+                      .toLowerCase()
+                      .includes(filter.toLowerCase()),
+                  )
+                  .map((p) => (
+                    <tr
+                      key={p.id}
+                      className={product.id === p.id ? "selected-row" : ""}
+                    >
+                      <td>
+                        <button
+                          onClick={() => {
+                            setProduct(p);
+                            setInventory("");
+                            focusPanel(editorRef.current);
+                          }}
+                        >
+                          {p.name}
+                        </button>
+                        <br />
+                        <small className="muted">
+                          {p.category} · #{p.id}
+                        </small>
+                        <div className="action-row" style={{ marginTop: 6 }}>
+                          {Boolean(p.active) ? (
                             <button
                               type="button"
                               onClick={() =>
                                 void run(async () => {
-                                  await api(
-                                    `/api/admin/products/${p.id}/status`,
-                                    {
-                                      method: "PATCH",
-                                      body: { active: true },
-                                    },
-                                  );
-                                  if (product.id === p.id)
-                                    setProduct({ ...product, active: true });
-                                  await load();
-                                })
-                              }
-                            >
-                              Bật bán lại
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void run(async () => {
-                                  await api(
-                                    `/api/admin/products/${p.id}?permanent=1`,
-                                    { method: "DELETE" },
-                                  );
+                                  await api(`/api/admin/products/${p.id}`, {
+                                    method: "DELETE",
+                                  });
                                   if (product.id === p.id)
                                     setProduct(emptyProduct());
                                   await load();
                                 })
                               }
                             >
-                              Xóa hẳn
+                              Ngừng bán
                             </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      {p.source === "stock" ? "Kho tự tạo" : p.provider_id}
-                    </td>
-                    <td>
-                      {p.source === "provider" ? amountLabel(p.cost_vnd) : "—"}
-                    </td>
-                    <td>{amountLabel(p.selling_price)}</td>
-                    <td>
-                      {p.source === "stock"
-                        ? `${p.available} có sẵn`
-                        : p.in_stock
-                          ? "Còn hàng"
-                          : "Hết hàng"}{" "}
-                      · {p.active ? "Hiện" : "Ẩn"}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-        {!products.length && (
-          <p className="muted">
-            Chưa có sản phẩm. Thêm sản phẩm tự tạo hoặc chọn từ NCC bên dưới.
-          </p>
-        )}
-      </section>
-      <section className="panel">
-        <h2>Chọn sản phẩm từ nhà cung cấp</h2>
-        <div className="action-row">
-          <select
-            aria-label="Chọn nhà cung cấp"
-            value={providerId}
-            onChange={(e) => {
-              setProviderId(e.target.value);
-              setVendorProducts([]);
-            }}
-          >
-            <option value="">Chọn NCC…</option>
-            {providers
-              .filter((p) => p.is_active)
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-          </select>
-          <button
-            disabled={!providerId}
-            onClick={() =>
-              void run(async () => {
-                const data = await api<{
-                  products: VendorProduct[];
-                  usd_rate: number;
-                }>(
-                  `${supplierApi}/products?provider_id=${encodeURIComponent(providerId)}`,
-                );
-                setVendorProducts(data.products);
-                setUsdRate(data.usd_rate);
-              })
-            }
-          >
-            Tải danh mục NCC
-          </button>
-        </div>
-        {!!vendorProducts.length && (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Sản phẩm NCC</th>
-                  <th>Giá nhập VND</th>
-                  <th>Trạng thái</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {vendorProducts.map((v) => (
-                  <tr key={v.provider_product_id}>
-                    <td>{v.name}</td>
-                    <td>{amountLabel(Math.ceil(v.price_usd * usdRate))}</td>
-                    <td>{v.in_stock ? "Còn hàng" : "Hết hàng"}</td>
-                    <td>
-                      <button
-                        onClick={() => {
-                          const existing = products.find(
-                            (p) =>
-                              p.provider_id === providerId &&
-                              p.provider_product_id === v.provider_product_id,
-                          );
-                          const p = existing ?? {
-                            ...emptyProduct(),
-                            source: "provider" as const,
-                            provider_id: providerId,
-                            provider_product_id: v.provider_product_id,
-                            name: v.name,
-                            description: v.extra?.description ?? "",
-                            category: v.category || "Khác",
-                            image_url: v.extra?.image_url ?? "",
-                            cost_vnd: Math.ceil(v.price_usd * usdRate),
-                            in_stock: v.in_stock,
-                          };
-                          setProduct(
-                            existing ?? {
-                              ...p,
-                              selling_price:
-                                config.markupPercent === null
-                                  ? Math.max(1000, p.cost_vnd)
-                                  : suggestedPrice(p),
-                            },
-                          );
-                          focusPanel(editorRef.current);
-                        }}
-                      >
-                        {products.some(
-                          (p) =>
-                            p.provider_id === providerId &&
-                            p.provider_product_id === v.provider_product_id,
-                        )
-                          ? "Chỉnh sản phẩm"
-                          : "Đưa vào danh mục"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void run(async () => {
+                                    await api(
+                                      `/api/admin/products/${p.id}/status`,
+                                      {
+                                        method: "PATCH",
+                                        body: { active: true },
+                                      },
+                                    );
+                                    if (product.id === p.id)
+                                      setProduct({ ...product, active: true });
+                                    await load();
+                                  })
+                                }
+                              >
+                                Bật bán lại
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void run(async () => {
+                                    await api(
+                                      `/api/admin/products/${p.id}?permanent=1`,
+                                      { method: "DELETE" },
+                                    );
+                                    if (product.id === p.id)
+                                      setProduct(emptyProduct());
+                                    await load();
+                                  })
+                                }
+                              >
+                                Xóa hẳn
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <span className="status neutral">
+                          {p.source === "stock" ? "Kho tự tạo" : p.provider_id}
+                        </span>
+                      </td>
+                      <td>
+                        {p.source === "provider"
+                          ? amountLabel(p.cost_vnd)
+                          : "—"}
+                      </td>
+                      <td>
+                        <strong>{amountLabel(p.selling_price)}</strong>
+                      </td>
+                      <td>
+                        <span
+                          className={
+                            p.source === "stock"
+                              ? p.available > 0
+                                ? "status good"
+                                : "status"
+                              : p.in_stock
+                                ? "status good"
+                                : "status"
+                          }
+                        >
+                          {p.source === "stock"
+                            ? `${p.available} có sẵn`
+                            : p.in_stock
+                              ? "Còn hàng"
+                              : "Hết hàng"}
+                        </span>{" "}
+                        <span className="status neutral">
+                          {p.active ? "Hiện" : "Ẩn"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
-        )}
-      </section>
-      <section className="panel panel-focus-target" ref={editorRef}>
-        <div className="panel-heading">
-          <h2>
-            {product.id
-              ? `Chỉnh sản phẩm #${product.id}`
-              : product.source === "provider"
-                ? "Thêm sản phẩm từ NCC"
-                : "Thêm sản phẩm tự tạo"}
-          </h2>
-          {product.id && (
-            <button
-              type="button"
-              onClick={() => {
-                setProduct(emptyProduct());
-                setInventory("");
-              }}
-            >
-              Tạo sản phẩm mới
-            </button>
+          {!products.length && (
+            <p className="muted">
+              Chưa có sản phẩm. Thêm sản phẩm tự tạo hoặc chọn từ NCC bên dưới.
+            </p>
           )}
-        </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              const saved = await api<{ id: number }>("/api/admin/products", {
-                body: {
-                  ...product,
-                  active: Boolean(product.active),
-                  provider_id:
-                    product.source === "provider"
-                      ? (product.provider_id ?? undefined)
-                      : undefined,
-                  provider_product_id:
-                    product.source === "provider"
-                      ? (product.provider_product_id ?? undefined)
-                      : undefined,
-                },
-              });
-              await load();
-              setProduct((p) => ({ ...p, id: saved.id }));
-            });
-          }}
-        >
-          <div className="form-grid">
-            <label>
-              Tên sản phẩm
-              <input
-                required
-                maxLength={150}
-                value={product.name}
-                onChange={(e) =>
-                  setProduct({ ...product, name: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              Danh mục
-              <input
-                required
-                value={product.category}
-                onChange={(e) =>
-                  setProduct({ ...product, category: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              Nguồn cung ứng
-              <select
-                value={product.source}
-                onChange={(e) =>
-                  setProduct({
-                    ...product,
-                    source: e.target.value as "stock" | "provider",
-                  })
-                }
-              >
-                <option value="stock">Kho tự tạo</option>
-                <option value="provider">Nhà cung cấp (API)</option>
-              </select>
-            </label>
-            <label>
-              Ảnh HTTPS
-              <input
-                type="url"
-                value={product.image_url ?? ""}
-                onChange={(e) =>
-                  setProduct({ ...product, image_url: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              Giá bán VND
-              <input
-                required
-                type="number"
-                min={1}
-                max={100000000}
-                step={1}
-                value={product.selling_price || ""}
-                onChange={(e) =>
-                  setProduct({
-                    ...product,
-                    selling_price: Number(e.target.value),
-                  })
-                }
-              />
-            </label>
-            {product.source === "provider" && (
-              <>
-                <label>
-                  Mã NCC liên kết
-                  <select
-                    required
-                    value={product.provider_id ?? ""}
-                    onChange={(e) =>
-                      setProduct({
-                        ...product,
-                        provider_id: e.target.value || null,
-                      })
-                    }
-                  >
-                    <option value="">Chọn NCC…</option>
-                    {providers.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.id})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Mã sản phẩm phía NCC
-                  <input
-                    required
-                    value={product.provider_product_id ?? ""}
-                    onChange={(e) =>
-                      setProduct({
-                        ...product,
-                        provider_product_id: e.target.value || null,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  % riêng (trống = mặc định{" "}
-                  {config.markupPercent ?? "chưa cấu hình"}%)
-                  <input
-                    type="number"
-                    min={0}
-                    max={10000}
-                    step="0.01"
-                    value={product.markup_percent ?? ""}
-                    onChange={(e) =>
-                      setProduct({
-                        ...product,
-                        markup_percent:
-                          e.target.value === "" ? null : Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-                <div>
-                  <p>Giá nhập: {amountLabel(product.cost_vnd)}</p>
-                  <button
-                    type="button"
-                    disabled={
-                      product.markup_percent === null &&
-                      config.markupPercent === null
-                    }
-                    onClick={() =>
-                      setProduct({
-                        ...product,
-                        selling_price: suggestedPrice(product),
-                      })
-                    }
-                  >
-                    Tự điền giá theo %
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-          <label>
-            Mô tả
-            <textarea
-              maxLength={10000}
-              value={product.description}
-              onChange={(e) =>
-                setProduct({ ...product, description: e.target.value })
-              }
-            />
-          </label>
-          <div className="action-row">
-            <label>
-              <input
-                type="checkbox"
-                checked={Boolean(product.active)}
-                onChange={(e) =>
-                  setProduct({ ...product, active: e.target.checked })
-                }
-              />{" "}
-              Hiển thị trên cửa hàng
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={product.in_stock}
-                onChange={(e) =>
-                  setProduct({ ...product, in_stock: e.target.checked })
-                }
-              />{" "}
-              Cho phép bán
-            </label>
-          </div>
-          <button className="primary">Lưu sản phẩm</button>
-        </form>
-        {product.source === "stock" && product.id && (
-          <>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  const pid = product.id!;
-                  await api(`/api/admin/products/${pid}/inventory`, {
-                    body: {
-                      values: inventory
-                        .split("\n")
-                        .map((v) => v.trim())
-                        .filter(Boolean),
-                    },
-                  });
-                  setInventory("");
-                  await Promise.all([load(), loadInventory(pid)]);
-                });
+        </section>
+
+        <section className="panel">
+          <h2>Chọn sản phẩm từ nhà cung cấp</h2>
+          <p className="muted">
+            Tải bảng giá trực tiếp từ nhà cung cấp để liên kết và mở bán trên
+            cửa hàng.
+          </p>
+          <div className="admin-toolbar">
+            <select
+              aria-label="Chọn nhà cung cấp"
+              value={providerId}
+              onChange={(e) => {
+                setProviderId(e.target.value);
+                setVendorProducts([]);
               }}
             >
-              <h3>Nhập kho key / tài khoản</h3>
-              <p className="muted">
-                Mỗi dòng là một đơn vị hàng. Dữ liệu được mã hóa; chỉ giao khi
-                thanh toán thành công. Không giữ kho cho đơn chưa thanh toán.
-              </p>
-              <label>
-                Dữ liệu nhập kho
-                <textarea
-                  required
-                  value={inventory}
-                  onChange={(e) => setInventory(e.target.value)}
-                  autoComplete="off"
-                />
-              </label>
-              <button>Nhập vào kho</button>
-            </form>
-            <div>
-              <h3>
-                Danh sách key trong kho ({inventoryItems.filter((i) => !i.fulfillment_id).length} có sẵn /{" "}
-                {inventoryItems.length} tổng)
-              </h3>
-              {!inventoryItems.length ? (
-                <p className="muted">Chưa có dữ liệu trong kho sản phẩm này.</p>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Key / Tài khoản</th>
-                        <th>Nguồn nhập</th>
-                        <th>Trạng thái</th>
-                        <th />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {inventoryItems.map((item) => (
-                        <tr key={item.id}>
-                          <td className="mono">
-                            {editingItemId === item.id ? (
-                              <input
-                                aria-label="Sửa dữ liệu kho"
-                                value={editingItemValue}
-                                onChange={(e) =>
-                                  setEditingItemValue(e.target.value)
-                                }
-                              />
-                            ) : (
-                              item.value ?? "(Đã mã hóa)"
-                            )}
-                          </td>
-                          <td>
-                            {item.supplier_order_id
-                              ? `Đơn NCC: ${item.supplier_order_id}`
-                              : "Nhập tay"}
-                            <br />
-                            <small>{timeLabel(item.created_at)}</small>
-                          </td>
-                          <td>
-                            {item.fulfillment_id
-                              ? `Đã giao (${item.fulfillment_id})`
-                              : "Chưa giao"}
-                          </td>
-                          <td>
-                            {!item.fulfillment_id && (
-                              <div className="action-row">
-                                {editingItemId === item.id ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void run(async () => {
-                                          const pid = product.id!;
-                                          await api(
-                                            `/api/admin/products/${pid}/inventory/${encodeURIComponent(item.id)}`,
-                                            {
-                                              method: "PUT",
-                                              body: { value: editingItemValue },
-                                            },
-                                          );
-                                          setEditingItemId(null);
-                                          setEditingItemValue("");
-                                          await loadInventory(pid);
-                                        })
-                                      }
-                                    >
-                                      Lưu key
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingItemId(null);
-                                        setEditingItemValue("");
-                                      }}
-                                    >
-                                      Hủy
-                                    </button>
-                                  </>
-                                ) : (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingItemId(item.id);
-                                        setEditingItemValue(item.value ?? "");
-                                      }}
-                                    >
-                                      Sửa key
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void run(async () => {
-                                          const pid = product.id!;
-                                          await api(
-                                            `/api/admin/products/${pid}/inventory/${encodeURIComponent(item.id)}`,
-                                            { method: "DELETE" },
-                                          );
-                                          await Promise.all([
-                                            load(),
-                                            loadInventory(pid),
-                                          ]);
-                                        })
-                                      }
-                                    >
-                                      Xóa key
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </section>
-      <section className="panel">
-        <h2>Giá bán mặc định</h2>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              await api("/api/admin/catalog-config", {
-                method: "PUT",
-                body: config,
-              });
-              await load();
-            });
-          }}
-        >
-          <label>
-            % lợi nhuận mặc định
-            <input
-              type="number"
-              min={0}
-              max={10000}
-              step="0.01"
-              value={config.markupPercent ?? ""}
-              onChange={(e) =>
-                setConfig({
-                  ...config,
-                  markupPercent:
-                    e.target.value === "" ? null : Number(e.target.value),
+              <option value="">Chọn NCC…</option>
+              {providers
+                .filter((p) => p.is_active)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+            </select>
+            <button
+              className="primary"
+              disabled={!providerId}
+              onClick={() =>
+                void run(async () => {
+                  const data = await api<{
+                    products: VendorProduct[];
+                    usd_rate: number;
+                  }>(
+                    `${supplierApi}/products?provider_id=${encodeURIComponent(providerId)}`,
+                  );
+                  setVendorProducts(data.products);
+                  setUsdRate(data.usd_rate);
                 })
               }
-            />
-          </label>
-          <p className="muted">
-            Giá gợi ý = giá nhập × (1 + %). NCC tăng giá thì giá bán tăng cùng
-            tỷ lệ, kể cả giá sửa tay. NCC giảm giá thì giữ nguyên giá bán. Giá
-            mới chỉ áp dụng cho đơn mới.
-          </p>
-          <button>Lưu cấu hình giá</button>
-        </form>
-      </section>
-    </>
+            >
+              Tải danh mục NCC
+            </button>
+          </div>
+          {!!vendorProducts.length && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Sản phẩm NCC</th>
+                    <th>Giá nhập VND</th>
+                    <th>Trạng thái</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {vendorProducts.map((v) => (
+                    <tr key={v.provider_product_id}>
+                      <td>
+                        <strong>{v.name}</strong>
+                      </td>
+                      <td>{amountLabel(Math.ceil(v.price_usd * usdRate))}</td>
+                      <td>
+                        <span className={v.in_stock ? "status good" : "status"}>
+                          {v.in_stock ? "Còn hàng" : "Hết hàng"}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          onClick={() => {
+                            const existing = products.find(
+                              (p) =>
+                                p.provider_id === providerId &&
+                                p.provider_product_id === v.provider_product_id,
+                            );
+                            const p = existing ?? {
+                              ...emptyProduct(),
+                              source: "provider" as const,
+                              provider_id: providerId,
+                              provider_product_id: v.provider_product_id,
+                              name: v.name,
+                              description: v.extra?.description ?? "",
+                              category: v.category || "Khác",
+                              image_url: v.extra?.image_url ?? "",
+                              cost_vnd: Math.ceil(v.price_usd * usdRate),
+                              in_stock: v.in_stock,
+                            };
+                            setProduct(
+                              existing ?? {
+                                ...p,
+                                selling_price:
+                                  config.markupPercent === null
+                                    ? Math.max(1000, p.cost_vnd)
+                                    : suggestedPrice(p),
+                              },
+                            );
+                            focusPanel(editorRef.current);
+                          }}
+                        >
+                          {products.some(
+                            (p) =>
+                              p.provider_id === providerId &&
+                              p.provider_product_id === v.provider_product_id,
+                          )
+                            ? "Chỉnh sản phẩm"
+                            : "Đưa vào danh mục"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className="panel">
+          <h2>Giá bán mặc định</h2>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                await api("/api/admin/catalog-config", {
+                  method: "PUT",
+                  body: config,
+                });
+                await load();
+              });
+            }}
+          >
+            <label>
+              % lợi nhuận mặc định
+              <input
+                type="number"
+                min={0}
+                max={10000}
+                step="0.01"
+                value={config.markupPercent ?? ""}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    markupPercent:
+                      e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+            <p className="muted">
+              Giá gợi ý = giá nhập × (1 + %). NCC tăng giá thì giá bán tăng cùng
+              tỷ lệ, kể cả giá sửa tay. NCC giảm giá thì giữ nguyên giá bán. Giá
+              mới chỉ áp dụng cho đơn mới.
+            </p>
+            <button>Lưu cấu hình giá</button>
+          </form>
+        </section>
+      </div>
+
+      <aside className="admin-sticky-pane">
+        <section className="panel panel-focus-target" ref={editorRef}>
+          <div className="panel-heading">
+            <h2>
+              {product.id
+                ? `Chỉnh sản phẩm #${product.id}`
+                : product.source === "provider"
+                  ? "Thêm sản phẩm từ NCC"
+                  : "Thêm sản phẩm tự tạo"}
+            </h2>
+            {product.id && (
+              <button
+                type="button"
+                onClick={() => {
+                  setProduct(emptyProduct());
+                  setInventory("");
+                }}
+              >
+                Tạo sản phẩm mới
+              </button>
+            )}
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                const saved = await api<{ id: number }>("/api/admin/products", {
+                  body: {
+                    ...product,
+                    active: Boolean(product.active),
+                    provider_id:
+                      product.source === "provider"
+                        ? (product.provider_id ?? undefined)
+                        : undefined,
+                    provider_product_id:
+                      product.source === "provider"
+                        ? (product.provider_product_id ?? undefined)
+                        : undefined,
+                  },
+                });
+                await load();
+                setProduct((p) => ({ ...p, id: saved.id }));
+              });
+            }}
+          >
+            <div className="form-grid">
+              <label>
+                Tên sản phẩm
+                <input
+                  required
+                  maxLength={150}
+                  value={product.name}
+                  onChange={(e) =>
+                    setProduct({ ...product, name: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Danh mục
+                <input
+                  required
+                  value={product.category}
+                  onChange={(e) =>
+                    setProduct({ ...product, category: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Nguồn cung ứng
+                <select
+                  value={product.source}
+                  onChange={(e) =>
+                    setProduct({
+                      ...product,
+                      source: e.target.value as "stock" | "provider",
+                    })
+                  }
+                >
+                  <option value="stock">Kho tự tạo</option>
+                  <option value="provider">Nhà cung cấp (API)</option>
+                </select>
+              </label>
+              <label>
+                Ảnh HTTPS
+                <input
+                  type="url"
+                  value={product.image_url ?? ""}
+                  onChange={(e) =>
+                    setProduct({ ...product, image_url: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Giá bán VND
+                <input
+                  required
+                  type="number"
+                  min={1}
+                  max={100000000}
+                  step={1}
+                  value={product.selling_price || ""}
+                  onChange={(e) =>
+                    setProduct({
+                      ...product,
+                      selling_price: Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
+              {product.source === "provider" && (
+                <>
+                  <label>
+                    Mã NCC liên kết
+                    <select
+                      required
+                      value={product.provider_id ?? ""}
+                      onChange={(e) =>
+                        setProduct({
+                          ...product,
+                          provider_id: e.target.value || null,
+                        })
+                      }
+                    >
+                      <option value="">Chọn NCC…</option>
+                      {providers.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.id})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Mã sản phẩm phía NCC
+                    <input
+                      required
+                      value={product.provider_product_id ?? ""}
+                      onChange={(e) =>
+                        setProduct({
+                          ...product,
+                          provider_product_id: e.target.value || null,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    % riêng (trống = mặc định{" "}
+                    {config.markupPercent ?? "chưa cấu hình"}%)
+                    <input
+                      type="number"
+                      min={0}
+                      max={10000}
+                      step="0.01"
+                      value={product.markup_percent ?? ""}
+                      onChange={(e) =>
+                        setProduct({
+                          ...product,
+                          markup_percent:
+                            e.target.value === ""
+                              ? null
+                              : Number(e.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                  <div>
+                    <p>Giá nhập: {amountLabel(product.cost_vnd)}</p>
+                    <button
+                      type="button"
+                      disabled={
+                        product.markup_percent === null &&
+                        config.markupPercent === null
+                      }
+                      onClick={() =>
+                        setProduct({
+                          ...product,
+                          selling_price: suggestedPrice(product),
+                        })
+                      }
+                    >
+                      Tự điền giá theo %
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            <label>
+              Mô tả
+              <textarea
+                maxLength={10000}
+                value={product.description}
+                onChange={(e) =>
+                  setProduct({ ...product, description: e.target.value })
+                }
+              />
+            </label>
+            <div className="action-row" style={{ marginBottom: 14 }}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={Boolean(product.active)}
+                  onChange={(e) =>
+                    setProduct({ ...product, active: e.target.checked })
+                  }
+                />{" "}
+                Hiển thị trên cửa hàng
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={product.in_stock}
+                  onChange={(e) =>
+                    setProduct({ ...product, in_stock: e.target.checked })
+                  }
+                />{" "}
+                Cho phép bán
+              </label>
+            </div>
+            <button className="primary">Lưu sản phẩm</button>
+          </form>
+
+          {product.source === "stock" && product.id && (
+            <div className="admin-detail">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void run(async () => {
+                    const pid = product.id!;
+                    await api(`/api/admin/products/${pid}/inventory`, {
+                      body: {
+                        values: inventory
+                          .split("\n")
+                          .map((v) => v.trim())
+                          .filter(Boolean),
+                      },
+                    });
+                    setInventory("");
+                    await Promise.all([load(), loadInventory(pid)]);
+                  });
+                }}
+              >
+                <h3>Nhập kho key / tài khoản</h3>
+                <p className="muted">
+                  Mỗi dòng là một đơn vị hàng. Dữ liệu được mã hóa; chỉ giao khi
+                  thanh toán thành công. Không giữ kho cho đơn chưa thanh toán.
+                </p>
+                <label>
+                  Dữ liệu nhập kho
+                  <textarea
+                    required
+                    value={inventory}
+                    onChange={(e) => setInventory(e.target.value)}
+                    autoComplete="off"
+                  />
+                </label>
+                <button className="primary">Nhập vào kho</button>
+              </form>
+              <div style={{ marginTop: 18 }}>
+                <h3>
+                  Danh sách key trong kho (
+                  {inventoryItems.filter((i) => !i.fulfillment_id).length} có
+                  sẵn / {inventoryItems.length} tổng)
+                </h3>
+                {!inventoryItems.length ? (
+                  <p className="muted">
+                    Chưa có dữ liệu trong kho sản phẩm này.
+                  </p>
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Key / Tài khoản</th>
+                          <th>Nguồn nhập</th>
+                          <th>Trạng thái</th>
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inventoryItems.map((item) => (
+                          <tr key={item.id}>
+                            <td className="mono">
+                              {editingItemId === item.id ? (
+                                <input
+                                  aria-label="Sửa dữ liệu kho"
+                                  value={editingItemValue}
+                                  onChange={(e) =>
+                                    setEditingItemValue(e.target.value)
+                                  }
+                                />
+                              ) : (
+                                (item.value ?? "(Đã mã hóa)")
+                              )}
+                            </td>
+                            <td>
+                              {item.supplier_order_id
+                                ? `Đơn NCC: ${item.supplier_order_id}`
+                                : "Nhập tay"}
+                              <br />
+                              <small className="muted">
+                                {timeLabel(item.created_at)}
+                              </small>
+                            </td>
+                            <td>
+                              <span
+                                className={
+                                  item.fulfillment_id ? "status" : "status good"
+                                }
+                              >
+                                {item.fulfillment_id
+                                  ? `Đã giao (${item.fulfillment_id})`
+                                  : "Chưa giao"}
+                              </span>
+                            </td>
+                            <td>
+                              {!item.fulfillment_id && (
+                                <div className="action-row">
+                                  {editingItemId === item.id ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="primary"
+                                        onClick={() =>
+                                          void run(async () => {
+                                            const pid = product.id!;
+                                            await api(
+                                              `/api/admin/products/${pid}/inventory/${encodeURIComponent(item.id)}`,
+                                              {
+                                                method: "PUT",
+                                                body: {
+                                                  value: editingItemValue,
+                                                },
+                                              },
+                                            );
+                                            setEditingItemId(null);
+                                            setEditingItemValue("");
+                                            await loadInventory(pid);
+                                          })
+                                        }
+                                      >
+                                        Lưu key
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingItemId(null);
+                                          setEditingItemValue("");
+                                        }}
+                                      >
+                                        Hủy
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingItemId(item.id);
+                                          setEditingItemValue(item.value ?? "");
+                                        }}
+                                      >
+                                        Sửa key
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void run(async () => {
+                                            const pid = product.id!;
+                                            await api(
+                                              `/api/admin/products/${pid}/inventory/${encodeURIComponent(item.id)}`,
+                                              { method: "DELETE" },
+                                            );
+                                            await Promise.all([
+                                              load(),
+                                              loadInventory(pid),
+                                            ]);
+                                          })
+                                        }
+                                      >
+                                        Xóa key
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+      </aside>
+    </div>
   );
 }
 
@@ -968,383 +1067,418 @@ export function Providers({ run }: { run: Run }) {
   }, [run]);
 
   return (
-    <>
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Nhà cung cấp</h2>
-          <div className="action-row">
-            <button
-              type="button"
-              onClick={() =>
-                void run(async () => {
-                  const res = await api<{ updated: number; total: number }>(
-                    `${supplierApi}/providers/sync-telegram`,
-                    { body: {} },
-                  );
-                  setNotice(
-                    `Đã đồng bộ Telegram cho ${res.updated}/${res.total} nhà cung cấp.`,
-                  );
-                  await load();
-                })
-              }
-            >
-              Đồng bộ Telegram
-            </button>
-            <button
-              onClick={() => {
-                const unusedAdapter =
-                  ADAPTER_IDS.find(
-                    (id) => !providers.some((p) => p.id === id),
-                  ) ?? "prodseller";
-                setEditing(false);
-                setForm({
-                  id: unusedAdapter,
-                  name: "",
-                  base_url: "",
-                  api_key: "",
-                  auth_type: "header",
-                  auth_key_name: "Authorization",
-                  bot_url: "",
-                  sort_order: 99,
-                  is_active: true,
-                });
-                focusPanel(editorRef.current);
-              }}
-            >
-              Thêm kết nối
-            </button>
-          </div>
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>NCC</th>
-                <th>API key</th>
-                <th>Số dư</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {providers.map((p) => (
-                <tr
-                  key={p.id}
-                  className={editing && form.id === p.id ? "selected-row" : ""}
-                >
-                  <td>
-                    {p.name}
-                    <br />
-                    <small>
-                      {p.id} · {p.is_active ? "Đang bật" : "Đã tắt"}
-                    </small>
-                  </td>
-                  <td>{p.api_key_masked || "Chưa cấu hình"}</td>
-                  <td>
-                    {p.balance ?? "—"} {p.balance_currency}
-                  </td>
-                  <td>
-                    <div className="action-row">
-                      <button
-                        onClick={() => {
-                          setEditing(true);
-                          setForm({
-                            id: p.id,
-                            name: p.name,
-                            base_url: p.base_url,
-                            api_key: "",
-                            auth_type: p.auth_type || "header",
-                            auth_key_name: p.auth_key_name || "Authorization",
-                            bot_url: p.bot_url || "",
-                            sort_order: p.sort_order ?? 99,
-                            is_active: p.is_active,
-                          });
-                          focusPanel(editorRef.current);
-                        }}
-                      >
-                        Chỉnh kết nối
-                      </button>
-                      <button
-                        onClick={() =>
-                          void run(async () => {
-                            const result = await api<{
-                              balance: number;
-                              currency: string;
-                            }>(
-                              `${supplierApi}/providers/${encodeURIComponent(p.id)}/sync-balance`,
-                              { body: {} },
-                            );
-                            setNotice(
-                              `${p.name}: ${result.balance} ${result.currency}`,
-                            );
-                            await load();
-                          })
-                        }
-                      >
-                        Cập nhật số dư
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void run(async () => {
-                            await api(
-                              `${supplierApi}/providers/${encodeURIComponent(p.id)}`,
-                              { method: "DELETE" },
-                            );
-                            if (form.id === p.id) setEditing(false);
-                            setNotice(`Đã xóa kết nối ${p.name}.`);
-                            await load();
-                          })
-                        }
-                      >
-                        Xóa
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {notice && <p role="status">{notice}</p>}
-      </section>
-      <section className="panel panel-focus-target" ref={editorRef}>
-        <h2>{editing ? "Chỉnh kết nối NCC" : "Thêm kết nối NCC"}</h2>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              const { api_key, ...rest } = form;
-              await api(
-                `${supplierApi}/providers${editing ? `/${encodeURIComponent(form.id)}` : ""}`,
-                {
-                  method: editing ? "PUT" : "POST",
-                  body: { ...rest, ...(api_key ? { api_key } : {}) },
-                },
-              );
-              setForm({ ...form, api_key: "" });
-              setEditing(true);
-              await load();
-            });
-          }}
-        >
-          <div className="form-grid">
-            <label>
-              Adapter
-              <select
-                disabled={editing}
-                value={form.id}
-                onChange={(e) => {
-                  const nextId = e.target.value;
-                  const existing = providers.find((p) => p.id === nextId);
-                  if (existing) {
-                    setForm({
-                      id: existing.id,
-                      name: existing.name,
-                      base_url: existing.base_url,
-                      api_key: "",
-                      auth_type: existing.auth_type || "header",
-                      auth_key_name: existing.auth_key_name || "Authorization",
-                      bot_url: existing.bot_url || "",
-                      sort_order: existing.sort_order ?? 99,
-                      is_active: existing.is_active,
-                    });
-                  } else {
-                    setForm({ ...form, id: nextId });
-                  }
-                }}
-              >
-                {ADAPTER_IDS.map((id) => (
-                  <option key={id}>{id}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Tên NCC
-              <input
-                required
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
-            </label>
-            <label>
-              Địa chỉ API
-              <input
-                required
-                type="url"
-                value={form.base_url}
-                onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-              />
-            </label>
-            <label>
-              API key {editing && "(để trống để giữ nguyên)"}
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={form.api_key}
-                onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-              />
-            </label>
-            <label>
-              Kiểu xác thực
-              <select
-                value={form.auth_type}
-                onChange={(e) =>
-                  setForm({ ...form, auth_type: e.target.value })
-                }
-              >
-                <option value="header">Header</option>
-                <option value="query">Query</option>
-              </select>
-            </label>
-            <label>
-              Tên header / tham số
-              <input
-                required
-                value={form.auth_key_name}
-                onChange={(e) =>
-                  setForm({ ...form, auth_key_name: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              Telegram Bot / liên hệ (t.me/...)
-              <input
-                value={form.bot_url}
-                placeholder="https://t.me/ten_bot"
-                onChange={(e) => setForm({ ...form, bot_url: e.target.value })}
-              />
-            </label>
-            <label>
-              Thứ tự hiển thị
-              <input
-                type="number"
-                min={1}
-                max={999}
-                value={form.sort_order}
-                onChange={(e) =>
-                  setForm({ ...form, sort_order: Number(e.target.value) || 99 })
-                }
-              />
-            </label>
-          </div>
-          <div className="action-row">
-            <label>
-              <input
-                type="checkbox"
-                checked={form.is_active}
-                onChange={(e) =>
-                  setForm({ ...form, is_active: e.target.checked })
-                }
-              />{" "}
-              Bật nhà cung cấp
-            </label>
-            {form.bot_url && (
+    <div className="admin-split-grid">
+      <div>
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Nhà cung cấp</h2>
+              <p className="muted">
+                Quản lý danh sách kết nối API nhà cung cấp và kiểm tra số dư khả
+                dụng.
+              </p>
+            </div>
+            <div className="action-row">
               <button
                 type="button"
                 onClick={() =>
                   void run(async () => {
-                    const res = await api<{
-                      data: { name?: string; avatar_url?: string } | null;
-                    }>(`${supplierApi}/providers/extract-telegram`, {
-                      body: { bot_url: form.bot_url },
-                    });
-                    if (res.data?.name) {
-                      setForm((prev) => ({
-                        ...prev,
-                        name: res.data?.name || prev.name,
-                      }));
-                      setNotice(`Đã lấy tên từ Telegram: ${res.data.name}`);
-                    }
+                    const res = await api<{ updated: number; total: number }>(
+                      `${supplierApi}/providers/sync-telegram`,
+                      { body: {} },
+                    );
+                    setNotice(
+                      `Đã đồng bộ Telegram cho ${res.updated}/${res.total} nhà cung cấp.`,
+                    );
+                    await load();
                   })
                 }
               >
-                Lấy tên từ Telegram
+                Đồng bộ Telegram
               </button>
-            )}
+              <button
+                className="primary"
+                onClick={() => {
+                  const unusedAdapter =
+                    ADAPTER_IDS.find(
+                      (id) => !providers.some((p) => p.id === id),
+                    ) ?? "prodseller";
+                  setEditing(false);
+                  setForm({
+                    id: unusedAdapter,
+                    name: "",
+                    base_url: "",
+                    api_key: "",
+                    auth_type: "header",
+                    auth_key_name: "Authorization",
+                    bot_url: "",
+                    sort_order: 99,
+                    is_active: true,
+                  });
+                  focusPanel(editorRef.current);
+                }}
+              >
+                Thêm kết nối
+              </button>
+            </div>
           </div>
-          <button className="primary">Lưu kết nối</button>
-        </form>
-      </section>
-      <section className="panel">
-        <h2>Tỷ giá & phân loại NCC</h2>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              const parsed = categories
-                .split("\n")
-                .filter((v) => v.trim())
-                .map((line) => {
-                  const [name, ...words] = line.split(":");
-                  return {
-                    name: name.trim(),
-                    keywords: words
-                      .join(":")
-                      .split(",")
-                      .map((v) => v.trim())
-                      .filter(Boolean),
-                  };
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>NCC</th>
+                  <th>API key</th>
+                  <th>Số dư</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {providers.map((p) => (
+                  <tr
+                    key={p.id}
+                    className={
+                      editing && form.id === p.id ? "selected-row" : ""
+                    }
+                  >
+                    <td>
+                      <strong>{p.name}</strong>
+                      <br />
+                      <small className="muted">{p.id}</small>{" "}
+                      <span className={p.is_active ? "status good" : "status"}>
+                        {p.is_active ? "Đang bật" : "Đã tắt"}
+                      </span>
+                    </td>
+                    <td className="mono">
+                      {p.api_key_masked || "Chưa cấu hình"}
+                    </td>
+                    <td>
+                      <strong>
+                        {p.balance ?? "—"} {p.balance_currency}
+                      </strong>
+                    </td>
+                    <td>
+                      <div className="action-row">
+                        <button
+                          onClick={() => {
+                            setEditing(true);
+                            setForm({
+                              id: p.id,
+                              name: p.name,
+                              base_url: p.base_url,
+                              api_key: "",
+                              auth_type: p.auth_type || "header",
+                              auth_key_name: p.auth_key_name || "Authorization",
+                              bot_url: p.bot_url || "",
+                              sort_order: p.sort_order ?? 99,
+                              is_active: p.is_active,
+                            });
+                            focusPanel(editorRef.current);
+                          }}
+                        >
+                          Chỉnh kết nối
+                        </button>
+                        <button
+                          onClick={() =>
+                            void run(async () => {
+                              const result = await api<{
+                                balance: number;
+                                currency: string;
+                              }>(
+                                `${supplierApi}/providers/${encodeURIComponent(p.id)}/sync-balance`,
+                                { body: {} },
+                              );
+                              setNotice(
+                                `${p.name}: ${result.balance} ${result.currency}`,
+                              );
+                              await load();
+                            })
+                          }
+                        >
+                          Cập nhật số dư
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void run(async () => {
+                              await api(
+                                `${supplierApi}/providers/${encodeURIComponent(p.id)}`,
+                                { method: "DELETE" },
+                              );
+                              if (form.id === p.id) setEditing(false);
+                              setNotice(`Đã xóa kết nối ${p.name}.`);
+                              await load();
+                            })
+                          }
+                        >
+                          Xóa
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {notice && (
+            <p role="status" className="notice" style={{ marginTop: 12 }}>
+              {notice}
+            </p>
+          )}
+        </section>
+
+        <section className="panel">
+          <h2>Tỷ giá & phân loại NCC</h2>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                const parsed = categories
+                  .split("\n")
+                  .filter((v) => v.trim())
+                  .map((line) => {
+                    const [name, ...words] = line.split(":");
+                    return {
+                      name: name.trim(),
+                      keywords: words
+                        .join(":")
+                        .split(",")
+                        .map((v) => v.trim())
+                        .filter(Boolean),
+                    };
+                  });
+                await api(`${supplierApi}/settings`, {
+                  method: "PUT",
+                  body: { usd_rate: rate, categories: parsed },
                 });
-              await api(`${supplierApi}/settings`, {
-                method: "PUT",
-                body: { usd_rate: rate, categories: parsed },
+                await load();
               });
-              await load();
-            });
-          }}
-        >
-          <label>
-            Tỷ giá USD → VND
-            <input
-              type="number"
-              required
-              min={1}
-              value={rate}
-              onChange={(e) => setRate(Number(e.target.value))}
-            />
-          </label>
-          <label>
-            Phân loại (mỗi dòng: Tên: từ khóa, từ khóa)
-            <textarea
-              value={categories}
-              onChange={(e) => setCategories(e.target.value)}
-            />
-          </label>
-          <button>Lưu tỷ giá & phân loại</button>
-        </form>
-      </section>
-      <section className="panel">
-        <h2>Cảnh báo Telegram cho quản trị</h2>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              await api("/api/admin/catalog-config", {
-                method: "PUT",
-                body: config,
+            }}
+          >
+            <label>
+              Tỷ giá USD → VND
+              <input
+                type="number"
+                required
+                min={1}
+                value={rate}
+                onChange={(e) => setRate(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              Phân loại (mỗi dòng: Tên: từ khóa, từ khóa)
+              <textarea
+                value={categories}
+                onChange={(e) => setCategories(e.target.value)}
+              />
+            </label>
+            <button>Lưu tỷ giá & phân loại</button>
+          </form>
+        </section>
+
+        <section className="panel">
+          <h2>Cảnh báo Telegram cho quản trị</h2>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                await api("/api/admin/catalog-config", {
+                  method: "PUT",
+                  body: config,
+                });
+                await load();
               });
-              await load();
-            });
-          }}
-        >
-          <label>
-            Chat ID quản trị (tài khoản hoặc nhóm)
-            <input
-              pattern="-?[0-9]{1,25}"
-              value={config.telegramChatId}
-              onChange={(e) =>
-                setConfig({ ...config, telegramChatId: e.target.value })
-              }
-            />
-          </label>
-          <p className="muted">
-            Bot cần được thêm vào nhóm và có quyền gửi tin. Cảnh báo luôn lưu
-            trong admin; Telegram gửi qua tác vụ nền.
-          </p>
-          <button>Lưu nơi nhận cảnh báo</button>
-        </form>
-      </section>
-    </>
+            }}
+          >
+            <label>
+              Chat ID quản trị (tài khoản hoặc nhóm)
+              <input
+                pattern="-?[0-9]{1,25}"
+                value={config.telegramChatId}
+                onChange={(e) =>
+                  setConfig({ ...config, telegramChatId: e.target.value })
+                }
+              />
+            </label>
+            <p className="muted">
+              Bot cần được thêm vào nhóm và có quyền gửi tin. Cảnh báo luôn lưu
+              trong admin; Telegram gửi qua tác vụ nền.
+            </p>
+            <button>Lưu nơi nhận cảnh báo</button>
+          </form>
+        </section>
+      </div>
+
+      <aside className="admin-sticky-pane">
+        <section className="panel panel-focus-target" ref={editorRef}>
+          <h2>{editing ? "Chỉnh kết nối NCC" : "Thêm kết nối NCC"}</h2>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                const { api_key, ...rest } = form;
+                await api(
+                  `${supplierApi}/providers${editing ? `/${encodeURIComponent(form.id)}` : ""}`,
+                  {
+                    method: editing ? "PUT" : "POST",
+                    body: { ...rest, ...(api_key ? { api_key } : {}) },
+                  },
+                );
+                setForm({ ...form, api_key: "" });
+                setEditing(true);
+                await load();
+              });
+            }}
+          >
+            <div className="form-grid">
+              <label>
+                Adapter
+                <select
+                  disabled={editing}
+                  value={form.id}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    const existing = providers.find((p) => p.id === nextId);
+                    if (existing) {
+                      setForm({
+                        id: existing.id,
+                        name: existing.name,
+                        base_url: existing.base_url,
+                        api_key: "",
+                        auth_type: existing.auth_type || "header",
+                        auth_key_name:
+                          existing.auth_key_name || "Authorization",
+                        bot_url: existing.bot_url || "",
+                        sort_order: existing.sort_order ?? 99,
+                        is_active: existing.is_active,
+                      });
+                    } else {
+                      setForm({ ...form, id: nextId });
+                    }
+                  }}
+                >
+                  {ADAPTER_IDS.map((id) => (
+                    <option key={id}>{id}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Tên NCC
+                <input
+                  required
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              </label>
+              <label>
+                Địa chỉ API
+                <input
+                  required
+                  type="url"
+                  value={form.base_url}
+                  onChange={(e) =>
+                    setForm({ ...form, base_url: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                API key {editing && "(để trống để giữ nguyên)"}
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.api_key}
+                  onChange={(e) =>
+                    setForm({ ...form, api_key: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Kiểu xác thực
+                <select
+                  value={form.auth_type}
+                  onChange={(e) =>
+                    setForm({ ...form, auth_type: e.target.value })
+                  }
+                >
+                  <option value="header">Header</option>
+                  <option value="query">Query</option>
+                </select>
+              </label>
+              <label>
+                Tên header / tham số
+                <input
+                  required
+                  value={form.auth_key_name}
+                  onChange={(e) =>
+                    setForm({ ...form, auth_key_name: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Telegram Bot / liên hệ (t.me/...)
+                <input
+                  value={form.bot_url}
+                  placeholder="https://t.me/ten_bot"
+                  onChange={(e) =>
+                    setForm({ ...form, bot_url: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Thứ tự hiển thị
+                <input
+                  type="number"
+                  min={1}
+                  max={999}
+                  value={form.sort_order}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      sort_order: Number(e.target.value) || 99,
+                    })
+                  }
+                />
+              </label>
+            </div>
+            <div className="action-row" style={{ marginBottom: 14 }}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.is_active}
+                  onChange={(e) =>
+                    setForm({ ...form, is_active: e.target.checked })
+                  }
+                />{" "}
+                Bật nhà cung cấp
+              </label>
+              {form.bot_url && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void run(async () => {
+                      const res = await api<{
+                        data: { name?: string; avatar_url?: string } | null;
+                      }>(`${supplierApi}/providers/extract-telegram`, {
+                        body: { bot_url: form.bot_url },
+                      });
+                      if (res.data?.name) {
+                        setForm((prev) => ({
+                          ...prev,
+                          name: res.data?.name || prev.name,
+                        }));
+                        setNotice(`Đã lấy tên từ Telegram: ${res.data.name}`);
+                      }
+                    })
+                  }
+                >
+                  Lấy tên từ Telegram
+                </button>
+              )}
+            </div>
+            <button className="primary">Lưu kết nối</button>
+          </form>
+        </section>
+      </aside>
+    </div>
   );
 }
 
@@ -1392,7 +1526,13 @@ export function FulfillmentAlerts({
   return (
     <section className="panel">
       <div className="panel-heading">
-        <h2>Cần xử lý & đối soát ({alerts.length})</h2>
+        <div>
+          <h2>Cần xử lý & đối soát ({alerts.length})</h2>
+          <p className="muted">
+            Các đơn gặp sự cố tồn kho hoặc cần xác nhận kết quả mua từ NCC trước
+            khi giao tiếp.
+          </p>
+        </div>
         <button onClick={() => void run(load)}>Cập nhật cảnh báo</button>
       </div>
       {!alerts.length ? (
@@ -1417,24 +1557,29 @@ export function FulfillmentAlerts({
                   <td>
                     <span className="mono">{a.order_id}</span>
                     <br />
-                    {a.name}
+                    <strong>{a.name}</strong>
                     <br />
-                    <small>{timeLabel(a.created_at)}</small>
+                    <small className="muted">{timeLabel(a.created_at)}</small>
                   </td>
                   <td>
-                    {reasonLabel(a.reason)}
+                    <span className="status danger-badge">
+                      {reasonLabel(a.reason)}
+                    </span>
                     {a.purchase_order_id && (
-                      <small className="admin-block">
+                      <small className="admin-block muted">
                         Đơn nhập: {a.purchase_order_id}
                       </small>
                     )}
                   </td>
                   <td>
-                    {a.delivered_quantity}/{a.quantity}
+                    <strong>
+                      {a.delivered_quantity}/{a.quantity}
+                    </strong>
                   </td>
                   <td>
                     {canResolve && (
                       <button
+                        className="primary"
                         onClick={() => {
                           setSelected(a);
                           setValues("");
@@ -1456,7 +1601,7 @@ export function FulfillmentAlerts({
       {selected && (
         <form
           ref={resolveRef}
-          className="panel-focus-target"
+          className="admin-detail panel-focus-target"
           onSubmit={(e) => {
             e.preventDefault();
             void run(async () => {
@@ -1515,7 +1660,7 @@ export function FulfillmentAlerts({
               />
             </label>
           )}
-          <div className="action-row">
+          <div className="action-row" style={{ marginBottom: 12 }}>
             <button
               className="primary"
               disabled={selected.status !== "DELIVERED" && !values.trim()}
@@ -1529,8 +1674,8 @@ export function FulfillmentAlerts({
             </button>
           </div>
           {selected.delivered_quantity === 0 && (
-            <>
-              <label>
+            <div className="stack">
+              <label className="check-label">
                 <input
                   type="checkbox"
                   checked={confirmed}
@@ -1539,29 +1684,31 @@ export function FulfillmentAlerts({
                 Tôi đã đối soát lần xử lý này và xác nhận chưa có giao dịch mua
                 thành công cần nhận hàng.
               </label>
-              <button
-                type="button"
-                disabled={!confirmed || reason.trim().length < 5}
-                onClick={() =>
-                  void run(async () => {
-                    await api(
-                      `/api/admin/fulfillments/${encodeURIComponent(selected.fulfillment_id)}/retry`,
-                      {
-                        body: {
-                          confirmedNoPurchase: true,
-                          reason,
-                          expectedAttempt: selected.attempts,
+              <div>
+                <button
+                  type="button"
+                  disabled={!confirmed || reason.trim().length < 5}
+                  onClick={() =>
+                    void run(async () => {
+                      await api(
+                        `/api/admin/fulfillments/${encodeURIComponent(selected.fulfillment_id)}/retry`,
+                        {
+                          body: {
+                            confirmedNoPurchase: true,
+                            reason,
+                            expectedAttempt: selected.attempts,
+                          },
                         },
-                      },
-                    );
-                    setSelected(null);
-                    await load();
-                  })
-                }
-              >
-                Cho phép thực hiện lại sau đối soát
-              </button>
-            </>
+                      );
+                      setSelected(null);
+                      await load();
+                    })
+                  }
+                >
+                  Cho phép thực hiện lại sau đối soát
+                </button>
+              </div>
+            </div>
           )}
         </form>
       )}
@@ -1648,448 +1795,243 @@ export function PurchaseOrders({
   );
 
   return (
-    <section className="panel">
-      <div className="panel-heading">
-        <h2>Đơn nhập nhà cung cấp</h2>
-        <div className="action-row">
-          {providerFilter && (
-            <button
-              type="button"
-              onClick={() =>
-                void run(async () => {
-                  const res = await api<{ message: string }>(
-                    `${supplierApi}/orders/sync-provider/${encodeURIComponent(providerFilter)}`,
-                    { body: {} },
-                  );
-                  setPurchaseNotice(res.message);
-                  await load(search, providerFilter);
-                })
-              }
-            >
-              Đồng bộ NCC đang lọc
-            </button>
-          )}
-          <button
-            onClick={() =>
-              void run(async () => {
-                await api(`${supplierApi}/orders/sync-all`, { body: {} });
-                await load(search, providerFilter);
-              })
-            }
-          >
-            Đồng bộ lịch sử NCC
-          </button>
-        </div>
-      </div>
-      <p className="muted">
-        Mua trực tiếp để sử dụng hoặc nhập dữ liệu NCC giao vào kho sản phẩm tự
-        tạo. Đơn chờ giao chỉ được nhập kho sau khi NCC hoàn tất.
-      </p>
-      {purchaseNotice && (
-        <p role="status" className="notice">
-          {purchaseNotice}
-        </p>
-      )}
-      <form
-        className="action-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void run(() => load(search, providerFilter));
-        }}
-      >
-        <input
-          aria-label="Tìm đơn nhập"
-          value={search}
-          placeholder="Tìm đơn nhập…"
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <select
-          aria-label="Lọc theo nhà cung cấp"
-          value={providerFilter}
-          onChange={(e) => {
-            const next = e.target.value;
-            setProviderFilter(next);
-            void run(() => load(search, next));
-          }}
-        >
-          <option value="">Tất cả NCC</option>
-          {providers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} ({p.id})
-            </option>
-          ))}
-        </select>
-        <button>Tìm</button>
-      </form>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Đơn / NCC</th>
-              <th>Sản phẩm</th>
-              <th>Giá nhập</th>
-              <th>Trạng thái</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr
-                key={o.id}
-                className={selected?.id === o.id ? "selected-row" : ""}
-              >
-                <td>
-                  <button
-                    onClick={() =>
-                      void run(async () => {
-                        const result = await api<{ order: SupplierOrder }>(
-                          `${supplierApi}/orders/${encodeURIComponent(o.id)}`,
-                        );
-                        setSelected(result.order);
-                        setManualStatus(result.order.status);
-                        setManualDelivered(
-                          result.order.delivered_items?.join("\n") ?? "",
-                        );
-                        focusPanel(detailRef.current);
-                      })
-                    }
-                  >
-                    {o.id}
-                  </button>
-                  <br />
-                  {o.provider_id}
-                </td>
-                <td>
-                  {o.product_name} × {o.quantity}
-                </td>
-                <td>
-                  {o.total_price} {o.currency}
-                </td>
-                <td>{o.status}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {selected && (
-        <div className="admin-detail" ref={detailRef}>
-          <h3>Đơn nhập {selected.id}</h3>
-          <p>
-            NCC: {selected.provider_id} · Mã NCC:{" "}
-            {selected.provider_order_id ?? "Chưa có"} · {selected.status}
-          </p>
-          <pre className="code-block">
-            {selected.delivered_items?.join("\n") ||
-              "Chưa có dữ liệu giao hàng"}
-          </pre>
+    <div className="admin-split-grid">
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Đơn nhập nhà cung cấp</h2>
+            <p className="muted">
+              Mua trực tiếp để sử dụng hoặc nhập dữ liệu NCC giao vào kho sản
+              phẩm tự tạo. Đơn chờ giao chỉ được nhập kho sau khi NCC hoàn tất.
+            </p>
+          </div>
           <div className="action-row">
-            {canImportSelected && (
-              <button
-                onClick={() =>
-                  void run(async () => {
-                    if (!stockProductId)
-                      throw new Error("Chọn sản phẩm kho trước khi nhập");
-                    const result = await api<{ added: number; total: number }>(
-                      `/api/admin/supplier-purchases/${encodeURIComponent(selected.id)}/import`,
-                      {
-                        body: { productId: Number(stockProductId) },
-                      },
-                    );
-                    setPurchaseNotice(
-                      result.added
-                        ? `Đã nhập ${result.added} đơn vị từ đơn ${selected.id} vào kho.`
-                        : `Đơn ${selected.id} đã có ${result.total} đơn vị trong kho; không nhập trùng.`,
-                    );
-                    await load(search, providerFilter);
-                  })
-                }
-              >
-                Nhập đơn này vào kho
-              </button>
-            )}
-            {selected.can_check_status && (
-              <button
-                onClick={() =>
-                  void run(async () => {
-                    const checkRes = await api<{
-                      status: string;
-                      raw_status: string;
-                    }>(
-                      `${supplierApi}/orders/${encodeURIComponent(selected.id)}/check-status`,
-                      { body: {} },
-                    );
-                    await load(search, providerFilter);
-                    const detail = await api<{ order: SupplierOrder }>(
-                      `${supplierApi}/orders/${encodeURIComponent(selected.id)}`,
-                    );
-                    setSelected(detail.order);
-                    setManualStatus(detail.order.status);
-                    setManualDelivered(
-                      detail.order.delivered_items?.join("\n") ?? "",
-                    );
-                    setPurchaseNotice(
-                      `Trạng thái đơn ${selected.id}: ${checkRes.status} (${checkRes.raw_status || "đã kiểm tra"})`,
-                    );
-                  })
-                }
-              >
-                Kiểm tra trạng thái NCC
-              </button>
-            )}
-            {!selected.linked_transaction_id && (
+            {providerFilter && (
               <button
                 type="button"
                 onClick={() =>
                   void run(async () => {
-                    await api(
-                      `${supplierApi}/orders/${encodeURIComponent(selected.id)}`,
-                      { method: "DELETE" },
+                    const res = await api<{ message: string }>(
+                      `${supplierApi}/orders/sync-provider/${encodeURIComponent(providerFilter)}`,
+                      { body: {} },
                     );
-                    setPurchaseNotice(`Đã xóa đơn nhập ${selected.id}.`);
-                    setSelected(null);
+                    setPurchaseNotice(res.message);
                     await load(search, providerFilter);
                   })
                 }
               >
-                Xóa đơn nhập
+                Đồng bộ NCC đang lọc
               </button>
             )}
-            <button onClick={() => setSelected(null)}>Đóng chi tiết</button>
-          </div>
-          {canImportSelected && (
-            <label>
-              Sản phẩm kho nhận hàng
-              <select
-                value={stockProductId}
-                onChange={(e) => setStockProductId(e.target.value)}
-              >
-                <option value="">Chọn sản phẩm kho</option>
-                {stockProducts.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.name} · #{product.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <details>
-            <summary>Cập nhật thủ công trạng thái / dữ liệu nhận được</summary>
-            <div className="form-grid">
-              <label>
-                Trạng thái đơn nhập
-                <select
-                  value={manualStatus || selected.status}
-                  onChange={(e) => setManualStatus(e.target.value)}
-                >
-                  <option value="completed">completed (Đã hoàn tất)</option>
-                  <option value="processing">processing (Đang xử lý)</option>
-                  <option value="pending">pending (Chờ xử lý)</option>
-                  <option value="failed">failed (Thất bại)</option>
-                  <option value="cancelled">cancelled (Đã hủy)</option>
-                </select>
-              </label>
-            </div>
-            <label>
-              Dữ liệu giao hàng nhận được (mỗi dòng 1 mục)
-              <textarea
-                value={manualDelivered}
-                onChange={(e) => setManualDelivered(e.target.value)}
-              />
-            </label>
             <button
-              type="button"
               onClick={() =>
                 void run(async () => {
-                  await api(
-                    `${supplierApi}/orders/${encodeURIComponent(selected.id)}/status`,
-                    {
-                      method: "PATCH",
-                      body: {
-                        status: manualStatus || selected.status,
-                        delivered_items: manualDelivered,
-                      },
-                    },
-                  );
+                  await api(`${supplierApi}/orders/sync-all`, { body: {} });
                   await load(search, providerFilter);
-                  const detail = await api<{ order: SupplierOrder }>(
-                    `${supplierApi}/orders/${encodeURIComponent(selected.id)}`,
-                  );
-                  setSelected(detail.order);
-                  setPurchaseNotice(
-                    `Đã cập nhật trạng thái đơn ${selected.id} thành ${detail.order.status}.`,
-                  );
                 })
               }
             >
-              Lưu trạng thái đơn nhập
+              Đồng bộ lịch sử NCC
             </button>
-          </details>
+          </div>
         </div>
-      )}
-      <details open>
-        <summary>Mua hàng từ nhà cung cấp</summary>
-        <p className="muted">
-          Đơn khách đã thanh toán được mua tự động. Chỉ dùng mục này để nhập
-          hàng chủ động; đơn lỗi hoặc timeout cần đối soát tại cảnh báo trước
-          khi mua lại.
-        </p>
+        {purchaseNotice && (
+          <p role="status" className="notice">
+            {purchaseNotice}
+          </p>
+        )}
         <form
+          className="admin-toolbar"
           onSubmit={(e) => {
             e.preventDefault();
-            if (buying) return;
-            setBuying(true);
-            void run(async () => {
-              const selectedProduct = vendorProducts.find(
-                (v) => v.provider_product_id === item,
-              );
-              if (!selectedProduct) throw new Error("Chọn sản phẩm NCC");
-              if (destination === "stock" && !stockProductId)
-                throw new Error("Chọn sản phẩm kho nhận hàng");
-              const purchase = await api<{
-                order_id: string;
-                status: string;
-                persisted: boolean;
-              }>(`${supplierApi}/order`, {
-                body: {
-                  provider_id: provider,
-                  product_id: item,
-                  product_name: selectedProduct.name,
-                  quantity,
-                  email,
-                  unit_price: selectedProduct.price_usd,
-                  total_price: selectedProduct.price_usd * quantity,
-                },
-              });
-              setPurchaseNotice(
-                `Đã gửi yêu cầu mua NCC. Mã đơn: ${purchase.order_id}. ${purchase.persisted ? "" : "NCC đã xử lý nhưng chưa lưu được đơn; cần đối soát, không mua lại."}`,
-              );
-              if (!purchase.persisted) return;
-              await load(search, providerFilter);
-              const detail = await api<{ order: SupplierOrder }>(
-                `${supplierApi}/orders/${encodeURIComponent(purchase.order_id)}`,
-              );
-              setSelected(detail.order);
-              setManualStatus(detail.order.status);
-              setManualDelivered(
-                detail.order.delivered_items?.join("\n") ?? "",
-              );
-              if (destination === "stock") {
-                if (purchase.status !== "completed") {
-                  setPurchaseNotice(
-                    `Đơn ${purchase.order_id} đang chờ NCC giao. Sau khi hoàn tất, mở đơn và chọn Nhập đơn này vào kho.`,
-                  );
-                  return;
-                }
-                const imported = await api<{ added: number; total: number }>(
-                  `/api/admin/supplier-purchases/${encodeURIComponent(purchase.order_id)}/import`,
-                  {
-                    body: { productId: Number(stockProductId) },
-                  },
-                );
-                setPurchaseNotice(
-                  `Đã mua đơn ${purchase.order_id} và nhập ${imported.added} đơn vị vào kho.`,
-                );
-                await load(search, providerFilter);
-              }
-            }).finally(() => setBuying(false));
+            void run(() => load(search, providerFilter));
           }}
         >
-          <div className="form-grid">
-            <label>
-              NCC
-              <select
-                required
-                value={provider}
-                onChange={(e) => {
-                  setProvider(e.target.value);
-                  setVendorProducts([]);
-                  setItem("");
-                }}
-              >
-                <option value="">Chọn NCC</option>
-                {providers
-                  .filter((p) => p.is_active)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              disabled={!provider}
-              onClick={() =>
-                void run(async () => {
-                  setVendorProducts(
-                    (
-                      await api<{ products: VendorProduct[] }>(
-                        `${supplierApi}/products?provider_id=${encodeURIComponent(provider)}`,
-                      )
-                    ).products,
-                  );
-                })
-              }
-            >
-              Tải sản phẩm
-            </button>
-            <label>
-              Sản phẩm
-              <select
-                required
-                value={item}
-                onChange={(e) => setItem(e.target.value)}
-              >
-                <option value="">Chọn sản phẩm</option>
-                {vendorProducts
-                  .filter((p) => p.in_stock)
-                  .map((p) => (
-                    <option
-                      key={p.provider_product_id}
-                      value={p.provider_product_id}
+          <input
+            aria-label="Tìm đơn nhập"
+            value={search}
+            placeholder="Tìm đơn nhập…"
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select
+            aria-label="Lọc theo nhà cung cấp"
+            value={providerFilter}
+            onChange={(e) => {
+              const next = e.target.value;
+              setProviderFilter(next);
+              void run(() => load(search, next));
+            }}
+          >
+            <option value="">Tất cả NCC</option>
+            {providers.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.id})
+              </option>
+            ))}
+          </select>
+          <button className="primary">Tìm</button>
+        </form>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Đơn / NCC</th>
+                <th>Sản phẩm</th>
+                <th>Giá nhập</th>
+                <th>Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((o) => (
+                <tr
+                  key={o.id}
+                  className={selected?.id === o.id ? "selected-row" : ""}
+                >
+                  <td>
+                    <button
+                      onClick={() =>
+                        void run(async () => {
+                          const result = await api<{ order: SupplierOrder }>(
+                            `${supplierApi}/orders/${encodeURIComponent(o.id)}`,
+                          );
+                          setSelected(result.order);
+                          setManualStatus(result.order.status);
+                          setManualDelivered(
+                            result.order.delivered_items?.join("\n") ?? "",
+                          );
+                          focusPanel(detailRef.current);
+                        })
+                      }
                     >
-                      {p.name} · {p.price_usd} USD
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              Số lượng
-              <input
-                required
-                type="number"
-                min={1}
-                max={20}
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Email kích hoạt (nếu cần)
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </label>
-            <label>
-              Mục đích mua
-              <select
-                value={destination}
-                onChange={(e) =>
-                  setDestination(e.target.value as "self" | "stock")
-                }
-              >
-                <option value="self">
-                  Dùng riêng · xem dữ liệu trong chi tiết đơn
-                </option>
-                <option value="stock">Nhập vào kho của tôi</option>
-              </select>
-            </label>
-            {destination === "stock" && (
-              <label>
+                      {o.id}
+                    </button>
+                    <br />
+                    <small className="muted">{o.provider_id}</small>
+                  </td>
+                  <td>
+                    <strong>{o.product_name}</strong> × {o.quantity}
+                  </td>
+                  <td>
+                    <strong>
+                      {o.total_price} {o.currency}
+                    </strong>
+                  </td>
+                  <td>
+                    <span
+                      className={
+                        o.status === "completed"
+                          ? "status good"
+                          : o.status === "failed" || o.status === "cancelled"
+                            ? "status danger-badge"
+                            : "status"
+                      }
+                    >
+                      {o.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {selected && (
+          <div className="admin-detail panel-focus-target" ref={detailRef}>
+            <div className="panel-heading">
+              <h3>Đơn nhập {selected.id}</h3>
+              <button onClick={() => setSelected(null)}>Đóng chi tiết</button>
+            </div>
+            <p>
+              NCC: <strong>{selected.provider_id}</strong> · Mã NCC:{" "}
+              <span className="mono">
+                {selected.provider_order_id ?? "Chưa có"}
+              </span>{" "}
+              · <span className="status">{selected.status}</span>
+            </p>
+            <pre className="code-block">
+              {selected.delivered_items?.join("\n") ||
+                "Chưa có dữ liệu giao hàng"}
+            </pre>
+            <div className="action-row" style={{ marginTop: 12 }}>
+              {canImportSelected && (
+                <button
+                  className="primary"
+                  onClick={() =>
+                    void run(async () => {
+                      if (!stockProductId)
+                        throw new Error("Chọn sản phẩm kho trước khi nhập");
+                      const result = await api<{
+                        added: number;
+                        total: number;
+                      }>(
+                        `/api/admin/supplier-purchases/${encodeURIComponent(selected.id)}/import`,
+                        {
+                          body: { productId: Number(stockProductId) },
+                        },
+                      );
+                      setPurchaseNotice(
+                        result.added
+                          ? `Đã nhập ${result.added} đơn vị từ đơn ${selected.id} vào kho.`
+                          : `Đơn ${selected.id} đã có ${result.total} đơn vị trong kho; không nhập trùng.`,
+                      );
+                      await load(search, providerFilter);
+                    })
+                  }
+                >
+                  Nhập đơn này vào kho
+                </button>
+              )}
+              {selected.can_check_status && (
+                <button
+                  onClick={() =>
+                    void run(async () => {
+                      const checkRes = await api<{
+                        status: string;
+                        raw_status: string;
+                      }>(
+                        `${supplierApi}/orders/${encodeURIComponent(selected.id)}/check-status`,
+                        { body: {} },
+                      );
+                      await load(search, providerFilter);
+                      const detail = await api<{ order: SupplierOrder }>(
+                        `${supplierApi}/orders/${encodeURIComponent(selected.id)}`,
+                      );
+                      setSelected(detail.order);
+                      setManualStatus(detail.order.status);
+                      setManualDelivered(
+                        detail.order.delivered_items?.join("\n") ?? "",
+                      );
+                      setPurchaseNotice(
+                        `Trạng thái đơn ${selected.id}: ${checkRes.status} (${checkRes.raw_status || "đã kiểm tra"})`,
+                      );
+                    })
+                  }
+                >
+                  Kiểm tra trạng thái NCC
+                </button>
+              )}
+              {!selected.linked_transaction_id && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void run(async () => {
+                      await api(
+                        `${supplierApi}/orders/${encodeURIComponent(selected.id)}`,
+                        { method: "DELETE" },
+                      );
+                      setPurchaseNotice(`Đã xóa đơn nhập ${selected.id}.`);
+                      setSelected(null);
+                      await load(search, providerFilter);
+                    })
+                  }
+                >
+                  Xóa đơn nhập
+                </button>
+              )}
+            </div>
+            {canImportSelected && (
+              <label style={{ marginTop: 12 }}>
                 Sản phẩm kho nhận hàng
                 <select
-                  required
                   value={stockProductId}
                   onChange={(e) => setStockProductId(e.target.value)}
                 >
@@ -2102,13 +2044,257 @@ export function PurchaseOrders({
                 </select>
               </label>
             )}
+            <details>
+              <summary>
+                Cập nhật thủ công trạng thái / dữ liệu nhận được
+              </summary>
+              <div className="form-grid">
+                <label>
+                  Trạng thái đơn nhập
+                  <select
+                    value={manualStatus || selected.status}
+                    onChange={(e) => setManualStatus(e.target.value)}
+                  >
+                    <option value="completed">completed (Đã hoàn tất)</option>
+                    <option value="processing">processing (Đang xử lý)</option>
+                    <option value="pending">pending (Chờ xử lý)</option>
+                    <option value="failed">failed (Thất bại)</option>
+                    <option value="cancelled">cancelled (Đã hủy)</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                Dữ liệu giao hàng nhận được (mỗi dòng 1 mục)
+                <textarea
+                  value={manualDelivered}
+                  onChange={(e) => setManualDelivered(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  void run(async () => {
+                    await api(
+                      `${supplierApi}/orders/${encodeURIComponent(selected.id)}/status`,
+                      {
+                        method: "PATCH",
+                        body: {
+                          status: manualStatus || selected.status,
+                          delivered_items: manualDelivered,
+                        },
+                      },
+                    );
+                    await load(search, providerFilter);
+                    const detail = await api<{ order: SupplierOrder }>(
+                      `${supplierApi}/orders/${encodeURIComponent(selected.id)}`,
+                    );
+                    setSelected(detail.order);
+                    setPurchaseNotice(
+                      `Đã cập nhật trạng thái đơn ${selected.id} thành ${detail.order.status}.`,
+                    );
+                  })
+                }
+              >
+                Lưu trạng thái đơn nhập
+              </button>
+            </details>
           </div>
-          <button className="primary" disabled={buying}>
-            {buying ? "Đang gửi đơn mua…" : "Mua từ NCC"}
-          </button>
-        </form>
-      </details>
-    </section>
+        )}
+      </section>
+
+      <aside className="admin-sticky-pane">
+        <section className="panel">
+          <details open style={{ marginTop: 0, border: 0, padding: 0, background: "transparent" }}>
+            <summary>Mua hàng từ nhà cung cấp</summary>
+            <p className="muted">
+              Đơn khách đã thanh toán được mua tự động. Chỉ dùng mục này để nhập
+              hàng chủ động; đơn lỗi hoặc timeout cần đối soát tại cảnh báo
+              trước khi mua lại.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (buying) return;
+                setBuying(true);
+                void run(async () => {
+                  const selectedProduct = vendorProducts.find(
+                    (v) => v.provider_product_id === item,
+                  );
+                  if (!selectedProduct) throw new Error("Chọn sản phẩm NCC");
+                  if (destination === "stock" && !stockProductId)
+                    throw new Error("Chọn sản phẩm kho nhận hàng");
+                  const purchase = await api<{
+                    order_id: string;
+                    status: string;
+                    persisted: boolean;
+                  }>(`${supplierApi}/order`, {
+                    body: {
+                      provider_id: provider,
+                      product_id: item,
+                      product_name: selectedProduct.name,
+                      quantity,
+                      email,
+                      unit_price: selectedProduct.price_usd,
+                      total_price: selectedProduct.price_usd * quantity,
+                    },
+                  });
+                  setPurchaseNotice(
+                    `Đã gửi yêu cầu mua NCC. Mã đơn: ${purchase.order_id}. ${purchase.persisted ? "" : "NCC đã xử lý nhưng chưa lưu được đơn; cần đối soát, không mua lại."}`,
+                  );
+                  if (!purchase.persisted) return;
+                  await load(search, providerFilter);
+                  const detail = await api<{ order: SupplierOrder }>(
+                    `${supplierApi}/orders/${encodeURIComponent(purchase.order_id)}`,
+                  );
+                  setSelected(detail.order);
+                  setManualStatus(detail.order.status);
+                  setManualDelivered(
+                    detail.order.delivered_items?.join("\n") ?? "",
+                  );
+                  if (destination === "stock") {
+                    if (purchase.status !== "completed") {
+                      setPurchaseNotice(
+                        `Đơn ${purchase.order_id} đang chờ NCC giao. Sau khi hoàn tất, mở đơn và chọn Nhập đơn này vào kho.`,
+                      );
+                      return;
+                    }
+                    const imported = await api<{
+                      added: number;
+                      total: number;
+                    }>(
+                      `/api/admin/supplier-purchases/${encodeURIComponent(purchase.order_id)}/import`,
+                      {
+                        body: { productId: Number(stockProductId) },
+                      },
+                    );
+                    setPurchaseNotice(
+                      `Đã mua đơn ${purchase.order_id} và nhập ${imported.added} đơn vị vào kho.`,
+                    );
+                    await load(search, providerFilter);
+                  }
+                }).finally(() => setBuying(false));
+              }}
+            >
+              <div className="form-grid">
+                <label>
+                  NCC
+                  <select
+                    required
+                    value={provider}
+                    onChange={(e) => {
+                      setProvider(e.target.value);
+                      setVendorProducts([]);
+                      setItem("");
+                    }}
+                  >
+                    <option value="">Chọn NCC</option>
+                    {providers
+                      .filter((p) => p.is_active)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <div style={{ display: "flex", alignItems: "flex-end", marginBottom: 14 }}>
+                  <button
+                    type="button"
+                    disabled={!provider}
+                    onClick={() =>
+                      void run(async () => {
+                        setVendorProducts(
+                          (
+                            await api<{ products: VendorProduct[] }>(
+                              `${supplierApi}/products?provider_id=${encodeURIComponent(provider)}`,
+                            )
+                          ).products,
+                        );
+                      })
+                    }
+                  >
+                    Tải sản phẩm
+                  </button>
+                </div>
+                <label>
+                  Sản phẩm
+                  <select
+                    required
+                    value={item}
+                    onChange={(e) => setItem(e.target.value)}
+                  >
+                    <option value="">Chọn sản phẩm</option>
+                    {vendorProducts
+                      .filter((p) => p.in_stock)
+                      .map((p) => (
+                        <option
+                          key={p.provider_product_id}
+                          value={p.provider_product_id}
+                        >
+                          {p.name} · {p.price_usd} USD
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  Số lượng
+                  <input
+                    required
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={quantity}
+                    onChange={(e) => setQuantity(Number(e.target.value))}
+                  />
+                </label>
+                <label>
+                  Email kích hoạt (nếu cần)
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Mục đích mua
+                  <select
+                    value={destination}
+                    onChange={(e) =>
+                      setDestination(e.target.value as "self" | "stock")
+                    }
+                  >
+                    <option value="self">
+                      Dùng riêng · xem dữ liệu trong chi tiết đơn
+                    </option>
+                    <option value="stock">Nhập vào kho của tôi</option>
+                  </select>
+                </label>
+                {destination === "stock" && (
+                  <label>
+                    Sản phẩm kho nhận hàng
+                    <select
+                      required
+                      value={stockProductId}
+                      onChange={(e) => setStockProductId(e.target.value)}
+                    >
+                      <option value="">Chọn sản phẩm kho</option>
+                      {stockProducts.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name} · #{product.id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+              <button className="primary" disabled={buying}>
+                {buying ? "Đang gửi đơn mua…" : "Mua từ NCC"}
+              </button>
+            </form>
+          </details>
+        </section>
+      </aside>
+    </div>
   );
 }
 
@@ -2174,6 +2360,9 @@ const emptyTransaction = () => ({
   purchase_order_id: null as string | null,
 });
 
+/**
+ * Hiển thị báo cáo doanh thu, giá vốn và lợi nhuận theo từng tháng của hệ thống MMO.
+ */
 function MonthlyReport({ run }: { run: Run }) {
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [yearSummary, setYearSummary] = useState<{
@@ -2210,7 +2399,7 @@ function MonthlyReport({ run }: { run: Run }) {
 
   return (
     <section className="panel">
-      <details open>
+      <details open style={{ marginTop: 0, border: 0, padding: 0, background: "transparent" }}>
         <summary>Báo cáo MMO cũ theo tháng</summary>
         <p className="muted">
           Dữ liệu giao dịch đã chuyển từ hệ thống MMO cũ. Giá vốn của đơn bán và
@@ -2223,7 +2412,7 @@ function MonthlyReport({ run }: { run: Run }) {
             void run(() => load(year));
           }}
         >
-          <label>
+          <label style={{ marginBottom: 0 }}>
             Năm báo cáo
             <input
               type="number"
@@ -2233,7 +2422,7 @@ function MonthlyReport({ run }: { run: Run }) {
               onChange={(e) => setYear(Number(e.target.value))}
             />
           </label>
-          <button>Xem báo cáo năm</button>
+          <button className="primary">Xem báo cáo năm</button>
         </form>
         {yearSummary && (
           <div className="metric-grid">
@@ -2265,12 +2454,18 @@ function MonthlyReport({ run }: { run: Run }) {
             <tbody>
               {months.map((m) => (
                 <tr key={m.month}>
-                  <td>{m.label}</td>
+                  <td>
+                    <strong>{m.label}</strong>
+                  </td>
                   <td>{amountLabel(m.revenue)}</td>
                   <td>{amountLabel(m.cost)}</td>
                   <td>{amountLabel(m.otherExpense)}</td>
                   <td>{amountLabel(m.totalExpense)}</td>
-                  <td>{amountLabel(m.profit)}</td>
+                  <td>
+                    <strong className={m.profit >= 0 ? "positive" : "danger"}>
+                      {amountLabel(m.profit)}
+                    </strong>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -2346,9 +2541,8 @@ export function BusinessFinance({
 
   return (
     <>
-      {!warrantyOnly && <MonthlyReport run={run} />}
       {!warrantyOnly && (
-        <>
+        <div className="admin-two-col">
           <section className="panel">
             <h2>Doanh thu & lợi nhuận cửa hàng</h2>
             <p className="muted">
@@ -2375,6 +2569,10 @@ export function BusinessFinance({
           </section>
           <section className="panel">
             <h2>Giao dịch và chi phí MMO cũ</h2>
+            <p className="muted">
+              Tổng hợp số liệu từ sổ giao dịch nhập tay và hệ thống MMO trước
+              đây.
+            </p>
             <div className="metric-grid">
               {[
                 ["Doanh thu nhập tay", summary.totalRevenue],
@@ -2388,315 +2586,345 @@ export function BusinessFinance({
               ))}
             </div>
           </section>
-        </>
+        </div>
       )}
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>{warrantyOnly ? "Tra cứu & xử lý bảo hành" : "Sổ giao dịch"}</h2>
-          <button
-            onClick={() => {
-              setSelected(null);
-              setForm(emptyTransaction());
-              focusPanel(formRef.current);
+      {!warrantyOnly && <MonthlyReport run={run} />}
+      <div className="admin-split-grid">
+        <section className="panel">
+          <div className="panel-heading">
+            <h2>
+              {warrantyOnly ? "Tra cứu & xử lý bảo hành" : "Sổ giao dịch"}
+            </h2>
+            <button
+              className="primary"
+              onClick={() => {
+                setSelected(null);
+                setForm(emptyTransaction());
+                focusPanel(formRef.current);
+              }}
+            >
+              Ghi giao dịch mới
+            </button>
+          </div>
+          {warrantyOnly && warrantyCounts && (
+            <div className="admin-filter-pills">
+              {(
+                [
+                  ["all", `Tất cả (${warrantyCounts.all})`],
+                  ["valid", `Còn hạn (${warrantyCounts.valid})`],
+                  [
+                    "expiring_soon",
+                    `Sắp hết hạn (${warrantyCounts.expiringSoon})`,
+                  ],
+                  ["expired", `Hết hạn (${warrantyCounts.expired})`],
+                  ["lifetime", `Trọn đời (${warrantyCounts.lifetime})`],
+                ] as const
+              ).map(([statusKey, label]) => (
+                <button
+                  key={statusKey}
+                  type="button"
+                  className={warrantyStatusFilter === statusKey ? "primary" : ""}
+                  onClick={() => {
+                    setWarrantyStatusFilter(statusKey);
+                    void run(() =>
+                      load(search, warrantyOnly, typeFilter, statusKey),
+                    );
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <form
+            className="admin-toolbar"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(() =>
+                load(search, warrantyOnly, typeFilter, warrantyStatusFilter),
+              );
             }}
           >
-            Ghi giao dịch mới
-          </button>
-        </div>
-        {warrantyOnly && warrantyCounts && (
-          <div className="action-row">
-            {(
-              [
-                ["all", `Tất cả (${warrantyCounts.all})`],
-                ["valid", `Còn hạn (${warrantyCounts.valid})`],
-                ["expiring_soon", `Sắp hết hạn (${warrantyCounts.expiringSoon})`],
-                ["expired", `Hết hạn (${warrantyCounts.expired})`],
-                ["lifetime", `Trọn đời (${warrantyCounts.lifetime})`],
-              ] as const
-            ).map(([statusKey, label]) => (
-              <button
-                key={statusKey}
-                type="button"
-                className={warrantyStatusFilter === statusKey ? "primary" : ""}
-                onClick={() => {
-                  setWarrantyStatusFilter(statusKey);
+            <input
+              aria-label="Tìm giao dịch bảo hành"
+              placeholder="Tên sản phẩm, khách hàng…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {!warrantyOnly && (
+              <select
+                aria-label="Lọc loại giao dịch"
+                value={typeFilter}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setTypeFilter(next);
                   void run(() =>
-                    load(search, warrantyOnly, typeFilter, statusKey),
+                    load(search, warrantyOnly, next, warrantyStatusFilter),
                   );
                 }}
               >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-        <form
-          className="action-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(() =>
-              load(search, warrantyOnly, typeFilter, warrantyStatusFilter),
-            );
-          }}
-        >
-          <input
-            aria-label="Tìm giao dịch bảo hành"
-            placeholder="Tên sản phẩm, khách hàng…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {!warrantyOnly && (
-            <select
-              aria-label="Lọc loại giao dịch"
-              value={typeFilter}
-              onChange={(e) => {
-                const next = e.target.value;
-                setTypeFilter(next);
-                void run(() =>
-                  load(search, warrantyOnly, next, warrantyStatusFilter),
-                );
-              }}
-            >
-              <option value="">Tất cả loại</option>
-              <option value="sale">Bán hàng</option>
-              <option value="purchase">Nhập hàng</option>
-              <option value="expense">Chi phí</option>
-            </select>
-          )}
-          <button>Tìm</button>
-        </form>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Ngày / sản phẩm</th>
-                <th>Khách</th>
-                <th>Giá vốn / bán</th>
-                <th>Bảo hành</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map((t) => (
-                <tr
-                  key={t.id}
-                  className={selected === t.id ? "selected-row" : ""}
-                >
-                  <td>
-                    {t.date}
-                    <br />
-                    {t.product_name} · {t.type}
-                  </td>
-                  <td>{t.customer_info}</td>
-                  <td>
-                    {amountLabel(t.cost_price)} / {amountLabel(t.sale_price)}
-                  </td>
-                  <td>
-                    {t.warranty_status}
-                    <br />
-                    {t.warranty_expire_date ?? "—"}
-                  </td>
-                  <td>
-                    <button
-                      onClick={() => {
-                        setSelected(t.id);
-                        setForm({ ...emptyTransaction(), ...t });
-                        focusPanel(formRef.current);
-                      }}
-                    >
-                      Chỉnh / bảo hành
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <section className="panel panel-focus-target" ref={formRef}>
-        <h2>
-          {selected
-            ? `Chỉnh giao dịch #${selected}`
-            : "Ghi bán hàng / nhập hàng / chi phí"}
-        </h2>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              await api(
-                `${supplierApi}/transactions${selected ? `/${selected}` : ""}`,
-                { method: selected ? "PUT" : "POST", body: form },
-              );
-              setSelected(null);
-              setForm(emptyTransaction());
-              await load(
-                search,
-                warrantyOnly,
-                typeFilter,
-                warrantyStatusFilter,
-              );
-            });
-          }}
-        >
-          <div className="form-grid">
-            <label>
-              Loại
-              <select
-                value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value })}
-              >
+                <option value="">Tất cả loại</option>
                 <option value="sale">Bán hàng</option>
                 <option value="purchase">Nhập hàng</option>
                 <option value="expense">Chi phí</option>
               </select>
-            </label>
-            <label>
-              Ngày
-              <input
-                type="date"
-                required
-                value={form.date}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
-              />
-            </label>
-            <label>
-              Sản phẩm / nội dung
-              <input
-                required
-                value={form.product_name}
-                onChange={(e) =>
-                  setForm({ ...form, product_name: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              Khách hàng
-              <input
-                value={form.customer_info ?? ""}
-                onChange={(e) =>
-                  setForm({ ...form, customer_info: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              Giá vốn VND
-              <input
-                type="number"
-                min={0}
-                required
-                value={form.cost_price}
-                onChange={(e) =>
-                  setForm({ ...form, cost_price: Number(e.target.value) })
-                }
-              />
-            </label>
-            <label>
-              Giá bán VND
-              <input
-                type="number"
-                min={0}
-                required
-                value={form.sale_price}
-                onChange={(e) =>
-                  setForm({ ...form, sale_price: Number(e.target.value) })
-                }
-              />
-            </label>
-            <label>
-              Thời hạn bảo hành
-              <select
-                value={form.warranty_period}
-                onChange={(e) =>
-                  setForm({ ...form, warranty_period: e.target.value })
-                }
-              >
-                {[
-                  ["none", "Không"],
-                  ["7d", "7 ngày"],
-                  ["1m", "1 tháng"],
-                  ["3m", "3 tháng"],
-                  ["6m", "6 tháng"],
-                  ["12m", "1 năm"],
-                  ["lifetime", "Trọn đời"],
-                ].map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Đơn nhập NCC liên quan
-              <input
-                value={form.purchase_order_id ?? ""}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    purchase_order_id: e.target.value || null,
-                  })
-                }
-              />
-            </label>
-          </div>
-          <label>
-            Dữ liệu giao / thay thế bảo hành
-            <textarea
-              value={form.delivered_data ?? ""}
-              onChange={(e) =>
-                setForm({ ...form, delivered_data: e.target.value })
-              }
-              autoComplete="off"
-            />
-          </label>
-          <label>
-            Ghi chú bảo hành
-            <textarea
-              value={form.warranty_note ?? ""}
-              onChange={(e) =>
-                setForm({ ...form, warranty_note: e.target.value })
-              }
-            />
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={form.warranty_status === "void"}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  warranty_status: e.target.checked ? "void" : "valid",
-                })
-              }
-            />{" "}
-            Vô hiệu hóa bảo hành
-          </label>
-          <div className="action-row">
-            <button className="primary">Lưu giao dịch</button>
-            {selected && (
-              <button
-                type="button"
-                onClick={() =>
-                  void run(async () => {
-                    await api(`${supplierApi}/transactions/${selected}`, {
-                      method: "DELETE",
-                    });
-                    setSelected(null);
-                    setForm(emptyTransaction());
-                    await load(
-                      search,
-                      warrantyOnly,
-                      typeFilter,
-                      warrantyStatusFilter,
-                    );
-                  })
-                }
-              >
-                Ẩn giao dịch này
-              </button>
             )}
+            <button className="primary">Tìm</button>
+          </form>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ngày / sản phẩm</th>
+                  <th>Khách</th>
+                  <th>Giá vốn / bán</th>
+                  <th>Bảo hành</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.map((t) => (
+                  <tr
+                    key={t.id}
+                    className={selected === t.id ? "selected-row" : ""}
+                  >
+                    <td>
+                      <small className="muted">{t.date}</small>
+                      <br />
+                      <strong>{t.product_name}</strong> ·{" "}
+                      <span className="status neutral">{t.type}</span>
+                    </td>
+                    <td>{t.customer_info || "—"}</td>
+                    <td>
+                      {amountLabel(t.cost_price)} /{" "}
+                      <strong>{amountLabel(t.sale_price)}</strong>
+                    </td>
+                    <td>
+                      <span
+                        className={
+                          t.warranty_status === "valid"
+                            ? "status good"
+                            : "status"
+                        }
+                      >
+                        {t.warranty_status}
+                      </span>
+                      <br />
+                      <small className="muted">
+                        {t.warranty_expire_date ?? "—"}
+                      </small>
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => {
+                          setSelected(t.id);
+                          setForm({ ...emptyTransaction(), ...t });
+                          focusPanel(formRef.current);
+                        }}
+                      >
+                        Chỉnh / bảo hành
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </form>
-      </section>
+        </section>
+
+        <aside className="admin-sticky-pane">
+          <section className="panel panel-focus-target" ref={formRef}>
+            <h2>
+              {selected
+                ? `Chỉnh giao dịch #${selected}`
+                : "Ghi bán hàng / nhập hàng / chi phí"}
+            </h2>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(async () => {
+                  await api(
+                    `${supplierApi}/transactions${selected ? `/${selected}` : ""}`,
+                    { method: selected ? "PUT" : "POST", body: form },
+                  );
+                  setSelected(null);
+                  setForm(emptyTransaction());
+                  await load(
+                    search,
+                    warrantyOnly,
+                    typeFilter,
+                    warrantyStatusFilter,
+                  );
+                });
+              }}
+            >
+              <div className="form-grid">
+                <label>
+                  Loại
+                  <select
+                    value={form.type}
+                    onChange={(e) =>
+                      setForm({ ...form, type: e.target.value })
+                    }
+                  >
+                    <option value="sale">Bán hàng</option>
+                    <option value="purchase">Nhập hàng</option>
+                    <option value="expense">Chi phí</option>
+                  </select>
+                </label>
+                <label>
+                  Ngày
+                  <input
+                    type="date"
+                    required
+                    value={form.date}
+                    onChange={(e) =>
+                      setForm({ ...form, date: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Sản phẩm / nội dung
+                  <input
+                    required
+                    value={form.product_name}
+                    onChange={(e) =>
+                      setForm({ ...form, product_name: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Khách hàng
+                  <input
+                    value={form.customer_info ?? ""}
+                    onChange={(e) =>
+                      setForm({ ...form, customer_info: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Giá vốn VND
+                  <input
+                    type="number"
+                    min={0}
+                    required
+                    value={form.cost_price}
+                    onChange={(e) =>
+                      setForm({ ...form, cost_price: Number(e.target.value) })
+                    }
+                  />
+                </label>
+                <label>
+                  Giá bán VND
+                  <input
+                    type="number"
+                    min={0}
+                    required
+                    value={form.sale_price}
+                    onChange={(e) =>
+                      setForm({ ...form, sale_price: Number(e.target.value) })
+                    }
+                  />
+                </label>
+                <label>
+                  Thời hạn bảo hành
+                  <select
+                    value={form.warranty_period}
+                    onChange={(e) =>
+                      setForm({ ...form, warranty_period: e.target.value })
+                    }
+                  >
+                    {[
+                      ["none", "Không"],
+                      ["7d", "7 ngày"],
+                      ["1m", "1 tháng"],
+                      ["3m", "3 tháng"],
+                      ["6m", "6 tháng"],
+                      ["12m", "1 năm"],
+                      ["lifetime", "Trọn đời"],
+                    ].map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Đơn nhập NCC liên quan
+                  <input
+                    value={form.purchase_order_id ?? ""}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        purchase_order_id: e.target.value || null,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <label>
+                Dữ liệu giao / thay thế bảo hành
+                <textarea
+                  value={form.delivered_data ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, delivered_data: e.target.value })
+                  }
+                  autoComplete="off"
+                />
+              </label>
+              <label>
+                Ghi chú bảo hành
+                <textarea
+                  value={form.warranty_note ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, warranty_note: e.target.value })
+                  }
+                />
+              </label>
+              <div className="action-row" style={{ marginBottom: 14 }}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={form.warranty_status === "void"}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        warranty_status: e.target.checked ? "void" : "valid",
+                      })
+                    }
+                  />{" "}
+                  Vô hiệu hóa bảo hành
+                </label>
+              </div>
+              <div className="action-row">
+                <button className="primary">Lưu giao dịch</button>
+                {selected && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void run(async () => {
+                        await api(`${supplierApi}/transactions/${selected}`, {
+                          method: "DELETE",
+                        });
+                        setSelected(null);
+                        setForm(emptyTransaction());
+                        await load(
+                          search,
+                          warrantyOnly,
+                          typeFilter,
+                          warrantyStatusFilter,
+                        );
+                      })
+                    }
+                  >
+                    Ẩn giao dịch này
+                  </button>
+                )}
+              </div>
+            </form>
+          </section>
+        </aside>
+      </div>
     </>
   );
 }
