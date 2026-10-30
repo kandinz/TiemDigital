@@ -198,6 +198,7 @@ export function CatalogProducts({ run }: { run: Run }) {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingItemValue, setEditingItemValue] = useState("");
   const [syncErrors, setSyncErrors] = useState("");
+  const [editorOpen, setEditorOpen] = useState(false);
   const editorRef = useRef<HTMLElement | null>(null);
 
   async function loadInventory(productId: number) {
@@ -255,8 +256,7 @@ export function CatalogProducts({ run }: { run: Run }) {
             <div>
               <h2>Danh mục bán</h2>
               <p className="muted">
-                Chọn sản phẩm để chỉnh sửa, nhập key kho hoặc đồng bộ giá từ
-                NCC.
+                Bấm vào dòng sản phẩm để chỉnh sửa, nhập key kho hoặc ngừng bán.
               </p>
             </div>
             <button
@@ -264,6 +264,7 @@ export function CatalogProducts({ run }: { run: Run }) {
               onClick={() => {
                 setProduct(emptyProduct());
                 setInventory("");
+                setEditorOpen(true);
                 focusPanel(editorRef.current);
               }}
             >
@@ -339,79 +340,20 @@ export function CatalogProducts({ run }: { run: Run }) {
                   .map((p) => (
                     <tr
                       key={p.id}
-                      className={product.id === p.id ? "selected-row" : ""}
+                      className={`clickable-row ${product.id === p.id ? "selected-row" : ""}`}
+                      onClick={() => {
+                        setProduct(p);
+                        setInventory("");
+                        setEditorOpen(true);
+                        focusPanel(editorRef.current);
+                      }}
                     >
                       <td>
-                        <button
-                          onClick={() => {
-                            setProduct(p);
-                            setInventory("");
-                            focusPanel(editorRef.current);
-                          }}
-                        >
-                          {p.name}
-                        </button>
+                        <strong>{p.name}</strong>
                         <br />
                         <small className="muted">
                           {p.category} · #{p.id}
                         </small>
-                        <div className="action-row" style={{ marginTop: 6 }}>
-                          {Boolean(p.active) ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void run(async () => {
-                                  await api(`/api/admin/products/${p.id}`, {
-                                    method: "DELETE",
-                                  });
-                                  if (product.id === p.id)
-                                    setProduct(emptyProduct());
-                                  await load();
-                                })
-                              }
-                            >
-                              Ngừng bán
-                            </button>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void run(async () => {
-                                    await api(
-                                      `/api/admin/products/${p.id}/status`,
-                                      {
-                                        method: "PATCH",
-                                        body: { active: true },
-                                      },
-                                    );
-                                    if (product.id === p.id)
-                                      setProduct({ ...product, active: true });
-                                    await load();
-                                  })
-                                }
-                              >
-                                Bật bán lại
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void run(async () => {
-                                    await api(
-                                      `/api/admin/products/${p.id}?permanent=1`,
-                                      { method: "DELETE" },
-                                    );
-                                    if (product.id === p.id)
-                                      setProduct(emptyProduct());
-                                    await load();
-                                  })
-                                }
-                              >
-                                Xóa hẳn
-                              </button>
-                            </>
-                          )}
-                        </div>
                       </td>
                       <td>
                         <span className="status neutral">
@@ -463,8 +405,8 @@ export function CatalogProducts({ run }: { run: Run }) {
         <section className="panel">
           <h2>Chọn sản phẩm từ nhà cung cấp</h2>
           <p className="muted">
-            Tải bảng giá trực tiếp từ nhà cung cấp để liên kết và mở bán trên
-            cửa hàng.
+            Tải bảng giá trực tiếp từ nhà cung cấp và bấm vào dòng sản phẩm để
+            liên kết mở bán trên cửa hàng.
           </p>
           <div className="admin-toolbar">
             <select
@@ -511,64 +453,74 @@ export function CatalogProducts({ run }: { run: Run }) {
                     <th>Sản phẩm NCC</th>
                     <th>Giá nhập VND</th>
                     <th>Trạng thái</th>
-                    <th />
+                    <th>Danh mục bán</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {vendorProducts.map((v) => (
-                    <tr key={v.provider_product_id}>
-                      <td>
-                        <strong>{v.name}</strong>
-                      </td>
-                      <td>{amountLabel(Math.ceil(v.price_usd * usdRate))}</td>
-                      <td>
-                        <span className={v.in_stock ? "status good" : "status"}>
-                          {v.in_stock ? "Còn hàng" : "Hết hàng"}
-                        </span>
-                      </td>
-                      <td>
-                        <button
-                          onClick={() => {
-                            const existing = products.find(
-                              (p) =>
-                                p.provider_id === providerId &&
-                                p.provider_product_id === v.provider_product_id,
-                            );
-                            const p = existing ?? {
-                              ...emptyProduct(),
-                              source: "provider" as const,
-                              provider_id: providerId,
-                              provider_product_id: v.provider_product_id,
-                              name: v.name,
-                              description: v.extra?.description ?? "",
-                              category: v.category || "Khác",
-                              image_url: v.extra?.image_url ?? "",
-                              cost_vnd: Math.ceil(v.price_usd * usdRate),
-                              in_stock: v.in_stock,
-                            };
-                            setProduct(
-                              existing ?? {
-                                ...p,
-                                selling_price:
-                                  config.markupPercent === null
-                                    ? Math.max(1000, p.cost_vnd)
-                                    : suggestedPrice(p),
-                              },
-                            );
-                            focusPanel(editorRef.current);
-                          }}
-                        >
-                          {products.some(
+                  {vendorProducts.map((v) => {
+                    const alreadyLinked = products.some(
+                      (p) =>
+                        p.provider_id === providerId &&
+                        p.provider_product_id === v.provider_product_id,
+                    );
+                    return (
+                      <tr
+                        key={v.provider_product_id}
+                        className="clickable-row"
+                        onClick={() => {
+                          const existing = products.find(
                             (p) =>
                               p.provider_id === providerId &&
                               p.provider_product_id === v.provider_product_id,
-                          )
-                            ? "Chỉnh sản phẩm"
-                            : "Đưa vào danh mục"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                          );
+                          const p = existing ?? {
+                            ...emptyProduct(),
+                            source: "provider" as const,
+                            provider_id: providerId,
+                            provider_product_id: v.provider_product_id,
+                            name: v.name,
+                            description: v.extra?.description ?? "",
+                            category: v.category || "Khác",
+                            image_url: v.extra?.image_url ?? "",
+                            cost_vnd: Math.ceil(v.price_usd * usdRate),
+                            in_stock: v.in_stock,
+                          };
+                          setProduct(
+                            existing ?? {
+                              ...p,
+                              selling_price:
+                                config.markupPercent === null
+                                  ? Math.max(1000, p.cost_vnd)
+                                  : suggestedPrice(p),
+                            },
+                          );
+                          setEditorOpen(true);
+                          focusPanel(editorRef.current);
+                        }}
+                      >
+                        <td>
+                          <strong>{v.name}</strong>
+                        </td>
+                        <td>{amountLabel(Math.ceil(v.price_usd * usdRate))}</td>
+                        <td>
+                          <span
+                            className={v.in_stock ? "status good" : "status"}
+                          >
+                            {v.in_stock ? "Còn hàng" : "Hết hàng"}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className={
+                              alreadyLinked ? "status good" : "status neutral"
+                            }
+                          >
+                            {alreadyLinked ? "Đã liên kết" : "Chưa thêm"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -616,7 +568,12 @@ export function CatalogProducts({ run }: { run: Run }) {
         </section>
       </div>
 
-      <aside className="admin-sticky-pane">
+      <aside
+        className={`admin-sticky-pane admin-detail-pane ${editorOpen ? "is-open" : ""}`}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setEditorOpen(false);
+        }}
+      >
         <section className="panel panel-focus-target" ref={editorRef}>
           <div className="panel-heading">
             <h2>
@@ -626,17 +583,82 @@ export function CatalogProducts({ run }: { run: Run }) {
                   ? "Thêm sản phẩm từ NCC"
                   : "Thêm sản phẩm tự tạo"}
             </h2>
-            {product.id && (
+            <div className="action-row">
+              {product.id && (
+                <>
+                  {product.active ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void run(async () => {
+                          await api(`/api/admin/products/${product.id}`, {
+                            method: "DELETE",
+                          });
+                          setProduct(emptyProduct());
+                          setEditorOpen(false);
+                          await load();
+                        })
+                      }
+                    >
+                      Ngừng bán
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void run(async () => {
+                            await api(
+                              `/api/admin/products/${product.id}/status`,
+                              {
+                                method: "PATCH",
+                                body: { active: true },
+                              },
+                            );
+                            setProduct({ ...product, active: true });
+                            await load();
+                          })
+                        }
+                      >
+                        Bật bán lại
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void run(async () => {
+                            await api(
+                              `/api/admin/products/${product.id}?permanent=1`,
+                              { method: "DELETE" },
+                            );
+                            setProduct(emptyProduct());
+                            setEditorOpen(false);
+                            await load();
+                          })
+                        }
+                      >
+                        Xóa hẳn
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProduct(emptyProduct());
+                      setInventory("");
+                    }}
+                  >
+                    Tạo sản phẩm mới
+                  </button>
+                </>
+              )}
               <button
                 type="button"
-                onClick={() => {
-                  setProduct(emptyProduct());
-                  setInventory("");
-                }}
+                className="admin-mobile-only"
+                onClick={() => setEditorOpen(false)}
               >
-                Tạo sản phẩm mới
+                Đóng
               </button>
-            )}
+            </div>
           </div>
           <form
             onSubmit={(e) => {
@@ -890,21 +912,97 @@ export function CatalogProducts({ run }: { run: Run }) {
                           <th>Key / Tài khoản</th>
                           <th>Nguồn nhập</th>
                           <th>Trạng thái</th>
-                          <th />
                         </tr>
                       </thead>
                       <tbody>
                         {inventoryItems.map((item) => (
-                          <tr key={item.id}>
+                          <tr
+                            key={item.id}
+                            className={
+                              !item.fulfillment_id && editingItemId !== item.id
+                                ? "clickable-row"
+                                : editingItemId === item.id
+                                  ? "selected-row"
+                                  : ""
+                            }
+                            onClick={() => {
+                              if (
+                                !item.fulfillment_id &&
+                                editingItemId !== item.id
+                              ) {
+                                setEditingItemId(item.id);
+                                setEditingItemValue(item.value ?? "");
+                              }
+                            }}
+                          >
                             <td className="mono">
                               {editingItemId === item.id ? (
-                                <input
-                                  aria-label="Sửa dữ liệu kho"
-                                  value={editingItemValue}
-                                  onChange={(e) =>
-                                    setEditingItemValue(e.target.value)
-                                  }
-                                />
+                                <div
+                                  className="stack"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <input
+                                    aria-label="Sửa dữ liệu kho"
+                                    value={editingItemValue}
+                                    onChange={(e) =>
+                                      setEditingItemValue(e.target.value)
+                                    }
+                                  />
+                                  <div className="action-row">
+                                    <button
+                                      type="button"
+                                      className="primary"
+                                      onClick={() =>
+                                        void run(async () => {
+                                          const pid = product.id!;
+                                          await api(
+                                            `/api/admin/products/${pid}/inventory/${encodeURIComponent(item.id)}`,
+                                            {
+                                              method: "PUT",
+                                              body: {
+                                                value: editingItemValue,
+                                              },
+                                            },
+                                          );
+                                          setEditingItemId(null);
+                                          setEditingItemValue("");
+                                          await loadInventory(pid);
+                                        })
+                                      }
+                                    >
+                                      Lưu key
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void run(async () => {
+                                          const pid = product.id!;
+                                          await api(
+                                            `/api/admin/products/${pid}/inventory/${encodeURIComponent(item.id)}`,
+                                            { method: "DELETE" },
+                                          );
+                                          setEditingItemId(null);
+                                          setEditingItemValue("");
+                                          await Promise.all([
+                                            load(),
+                                            loadInventory(pid),
+                                          ]);
+                                        })
+                                      }
+                                    >
+                                      Xóa key
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingItemId(null);
+                                        setEditingItemValue("");
+                                      }}
+                                    >
+                                      Hủy
+                                    </button>
+                                  </div>
+                                </div>
                               ) : (
                                 (item.value ?? "(Đã mã hóa)")
                               )}
@@ -929,78 +1027,6 @@ export function CatalogProducts({ run }: { run: Run }) {
                                   : "Chưa giao"}
                               </span>
                             </td>
-                            <td>
-                              {!item.fulfillment_id && (
-                                <div className="action-row">
-                                  {editingItemId === item.id ? (
-                                    <>
-                                      <button
-                                        type="button"
-                                        className="primary"
-                                        onClick={() =>
-                                          void run(async () => {
-                                            const pid = product.id!;
-                                            await api(
-                                              `/api/admin/products/${pid}/inventory/${encodeURIComponent(item.id)}`,
-                                              {
-                                                method: "PUT",
-                                                body: {
-                                                  value: editingItemValue,
-                                                },
-                                              },
-                                            );
-                                            setEditingItemId(null);
-                                            setEditingItemValue("");
-                                            await loadInventory(pid);
-                                          })
-                                        }
-                                      >
-                                        Lưu key
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setEditingItemId(null);
-                                          setEditingItemValue("");
-                                        }}
-                                      >
-                                        Hủy
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setEditingItemId(item.id);
-                                          setEditingItemValue(item.value ?? "");
-                                        }}
-                                      >
-                                        Sửa key
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          void run(async () => {
-                                            const pid = product.id!;
-                                            await api(
-                                              `/api/admin/products/${pid}/inventory/${encodeURIComponent(item.id)}`,
-                                              { method: "DELETE" },
-                                            );
-                                            await Promise.all([
-                                              load(),
-                                              loadInventory(pid),
-                                            ]);
-                                          })
-                                        }
-                                      >
-                                        Xóa key
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              )}
-                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1022,6 +1048,7 @@ export function CatalogProducts({ run }: { run: Run }) {
 export function Providers({ run }: { run: Run }) {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [editing, setEditing] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [form, setForm] = useState({
     id: "prodseller",
     name: "",
@@ -1074,8 +1101,8 @@ export function Providers({ run }: { run: Run }) {
             <div>
               <h2>Nhà cung cấp</h2>
               <p className="muted">
-                Quản lý danh sách kết nối API nhà cung cấp và kiểm tra số dư khả
-                dụng.
+                Bấm vào dòng nhà cung cấp để chỉnh kết nối, cập nhật số dư hoặc
+                xóa kết nối.
               </p>
             </div>
             <div className="action-row">
@@ -1104,6 +1131,7 @@ export function Providers({ run }: { run: Run }) {
                       (id) => !providers.some((p) => p.id === id),
                     ) ?? "prodseller";
                   setEditing(false);
+                  setEditorOpen(true);
                   setForm({
                     id: unusedAdapter,
                     name: "",
@@ -1129,24 +1157,37 @@ export function Providers({ run }: { run: Run }) {
                   <th>NCC</th>
                   <th>API key</th>
                   <th>Số dư</th>
-                  <th />
+                  <th>Trạng thái</th>
                 </tr>
               </thead>
               <tbody>
                 {providers.map((p) => (
                   <tr
                     key={p.id}
-                    className={
+                    className={`clickable-row ${
                       editing && form.id === p.id ? "selected-row" : ""
-                    }
+                    }`}
+                    onClick={() => {
+                      setEditing(true);
+                      setEditorOpen(true);
+                      setForm({
+                        id: p.id,
+                        name: p.name,
+                        base_url: p.base_url,
+                        api_key: "",
+                        auth_type: p.auth_type || "header",
+                        auth_key_name: p.auth_key_name || "Authorization",
+                        bot_url: p.bot_url || "",
+                        sort_order: p.sort_order ?? 99,
+                        is_active: p.is_active,
+                      });
+                      focusPanel(editorRef.current);
+                    }}
                   >
                     <td>
                       <strong>{p.name}</strong>
                       <br />
-                      <small className="muted">{p.id}</small>{" "}
-                      <span className={p.is_active ? "status good" : "status"}>
-                        {p.is_active ? "Đang bật" : "Đã tắt"}
-                      </span>
+                      <small className="muted">{p.id}</small>
                     </td>
                     <td className="mono">
                       {p.api_key_masked || "Chưa cấu hình"}
@@ -1157,62 +1198,9 @@ export function Providers({ run }: { run: Run }) {
                       </strong>
                     </td>
                     <td>
-                      <div className="action-row">
-                        <button
-                          onClick={() => {
-                            setEditing(true);
-                            setForm({
-                              id: p.id,
-                              name: p.name,
-                              base_url: p.base_url,
-                              api_key: "",
-                              auth_type: p.auth_type || "header",
-                              auth_key_name: p.auth_key_name || "Authorization",
-                              bot_url: p.bot_url || "",
-                              sort_order: p.sort_order ?? 99,
-                              is_active: p.is_active,
-                            });
-                            focusPanel(editorRef.current);
-                          }}
-                        >
-                          Chỉnh kết nối
-                        </button>
-                        <button
-                          onClick={() =>
-                            void run(async () => {
-                              const result = await api<{
-                                balance: number;
-                                currency: string;
-                              }>(
-                                `${supplierApi}/providers/${encodeURIComponent(p.id)}/sync-balance`,
-                                { body: {} },
-                              );
-                              setNotice(
-                                `${p.name}: ${result.balance} ${result.currency}`,
-                              );
-                              await load();
-                            })
-                          }
-                        >
-                          Cập nhật số dư
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void run(async () => {
-                              await api(
-                                `${supplierApi}/providers/${encodeURIComponent(p.id)}`,
-                                { method: "DELETE" },
-                              );
-                              if (form.id === p.id) setEditing(false);
-                              setNotice(`Đã xóa kết nối ${p.name}.`);
-                              await load();
-                            })
-                          }
-                        >
-                          Xóa
-                        </button>
-                      </div>
+                      <span className={p.is_active ? "status good" : "status"}>
+                        {p.is_active ? "Đang bật" : "Đã tắt"}
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -1308,9 +1296,66 @@ export function Providers({ run }: { run: Run }) {
         </section>
       </div>
 
-      <aside className="admin-sticky-pane">
+      <aside
+        className={`admin-sticky-pane admin-detail-pane ${editorOpen ? "is-open" : ""}`}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setEditorOpen(false);
+        }}
+      >
         <section className="panel panel-focus-target" ref={editorRef}>
-          <h2>{editing ? "Chỉnh kết nối NCC" : "Thêm kết nối NCC"}</h2>
+          <div className="panel-heading">
+            <h2>{editing ? "Chỉnh kết nối NCC" : "Thêm kết nối NCC"}</h2>
+            <div className="action-row">
+              {editing && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void run(async () => {
+                        const result = await api<{
+                          balance: number;
+                          currency: string;
+                        }>(
+                          `${supplierApi}/providers/${encodeURIComponent(form.id)}/sync-balance`,
+                          { body: {} },
+                        );
+                        setNotice(
+                          `${form.name || form.id}: ${result.balance} ${result.currency}`,
+                        );
+                        await load();
+                      })
+                    }
+                  >
+                    Cập nhật số dư
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void run(async () => {
+                        await api(
+                          `${supplierApi}/providers/${encodeURIComponent(form.id)}`,
+                          { method: "DELETE" },
+                        );
+                        setEditing(false);
+                        setEditorOpen(false);
+                        setNotice(`Đã xóa kết nối ${form.name || form.id}.`);
+                        await load();
+                      })
+                    }
+                  >
+                    Xóa kết nối
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className="admin-mobile-only"
+                onClick={() => setEditorOpen(false)}
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -1545,14 +1590,23 @@ export function FulfillmentAlerts({
                 <th>Đơn / sản phẩm</th>
                 <th>Nguyên nhân</th>
                 <th>Đã giao</th>
-                <th />
               </tr>
             </thead>
             <tbody>
               {alerts.map((a) => (
                 <tr
                   key={a.id}
-                  className={selected?.id === a.id ? "selected-row" : ""}
+                  className={`${canResolve ? "clickable-row" : ""} ${
+                    selected?.id === a.id ? "selected-row" : ""
+                  }`}
+                  onClick={() => {
+                    if (!canResolve) return;
+                    setSelected(a);
+                    setValues("");
+                    setReason("");
+                    setConfirmed(false);
+                    focusPanel(resolveRef.current);
+                  }}
                 >
                   <td>
                     <span className="mono">{a.order_id}</span>
@@ -1576,22 +1630,6 @@ export function FulfillmentAlerts({
                       {a.delivered_quantity}/{a.quantity}
                     </strong>
                   </td>
-                  <td>
-                    {canResolve && (
-                      <button
-                        className="primary"
-                        onClick={() => {
-                          setSelected(a);
-                          setValues("");
-                          setReason("");
-                          setConfirmed(false);
-                          focusPanel(resolveRef.current);
-                        }}
-                      >
-                        Xử lý
-                      </button>
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1599,118 +1637,127 @@ export function FulfillmentAlerts({
         </div>
       )}
       {selected && (
-        <form
-          ref={resolveRef}
-          className="admin-detail panel-focus-target"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              if (selected.status === "DELIVERED") {
+        <div
+          className="admin-popup-modal"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelected(null);
+          }}
+        >
+          <form
+            ref={resolveRef}
+            className="admin-detail panel-focus-target"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                if (selected.status === "DELIVERED") {
+                  await api(
+                    `/api/admin/fulfillment-alerts/${encodeURIComponent(selected.id)}/acknowledge`,
+                    { body: { reason } },
+                  );
+                  setSelected(null);
+                  await load();
+                  return;
+                }
                 await api(
-                  `/api/admin/fulfillment-alerts/${encodeURIComponent(selected.id)}/acknowledge`,
-                  { body: { reason } },
+                  `/api/admin/fulfillments/${encodeURIComponent(selected.fulfillment_id)}/resolve`,
+                  {
+                    body: {
+                      values: values
+                        .split("\n")
+                        .map((v) => v.trim())
+                        .filter(Boolean),
+                      reason,
+                      expectedAttempt: selected.attempts,
+                    },
+                  },
                 );
                 setSelected(null);
                 await load();
-                return;
-              }
-              await api(
-                `/api/admin/fulfillments/${encodeURIComponent(selected.fulfillment_id)}/resolve`,
-                {
-                  body: {
-                    values: values
-                      .split("\n")
-                      .map((v) => v.trim())
-                      .filter(Boolean),
-                    reason,
-                    expectedAttempt: selected.attempts,
-                  },
-                },
-              );
-              setSelected(null);
-              await load();
-            });
-          }}
-        >
-          <h3>
-            Xử lý đơn {selected.order_id} · {selected.name}
-          </h3>
-          <p>
-            {reasonLabel(selected.reason)}. Kiểm tra kết quả NCC và lịch sử nhập
-            hàng trước khi xử lý.
-          </p>
-          <label>
-            Lý do / kết quả đối soát
-            <input
-              required
-              minLength={5}
-              maxLength={500}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </label>
-          {selected.status !== "DELIVERED" && (
+              });
+            }}
+          >
+            <div className="panel-heading">
+              <h3>
+                Xử lý đơn {selected.order_id} · {selected.name}
+              </h3>
+              <button type="button" onClick={() => setSelected(null)}>
+                Đóng
+              </button>
+            </div>
+            <p>
+              {reasonLabel(selected.reason)}. Kiểm tra kết quả NCC và lịch sử
+              nhập hàng trước khi xử lý.
+            </p>
             <label>
-              Bổ sung dữ liệu giao hàng (mỗi dòng một đơn vị, còn thiếu{" "}
-              {selected.quantity - selected.delivered_quantity})
-              <textarea
-                value={values}
-                onChange={(e) => setValues(e.target.value)}
-                autoComplete="off"
+              Lý do / kết quả đối soát
+              <input
+                required
+                minLength={5}
+                maxLength={500}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
               />
             </label>
-          )}
-          <div className="action-row" style={{ marginBottom: 12 }}>
-            <button
-              className="primary"
-              disabled={selected.status !== "DELIVERED" && !values.trim()}
-            >
-              {selected.status === "DELIVERED"
-                ? "Đóng cảnh báo sau đối soát"
-                : "Giao phần còn thiếu"}
-            </button>
-            <button type="button" onClick={() => setSelected(null)}>
-              Đóng
-            </button>
-          </div>
-          {selected.delivered_quantity === 0 && (
-            <div className="stack">
-              <label className="check-label">
-                <input
-                  type="checkbox"
-                  checked={confirmed}
-                  onChange={(e) => setConfirmed(e.target.checked)}
-                />{" "}
-                Tôi đã đối soát lần xử lý này và xác nhận chưa có giao dịch mua
-                thành công cần nhận hàng.
+            {selected.status !== "DELIVERED" && (
+              <label>
+                Bổ sung dữ liệu giao hàng (mỗi dòng một đơn vị, còn thiếu{" "}
+                {selected.quantity - selected.delivered_quantity})
+                <textarea
+                  value={values}
+                  onChange={(e) => setValues(e.target.value)}
+                  autoComplete="off"
+                />
               </label>
-              <div>
-                <button
-                  type="button"
-                  disabled={!confirmed || reason.trim().length < 5}
-                  onClick={() =>
-                    void run(async () => {
-                      await api(
-                        `/api/admin/fulfillments/${encodeURIComponent(selected.fulfillment_id)}/retry`,
-                        {
-                          body: {
-                            confirmedNoPurchase: true,
-                            reason,
-                            expectedAttempt: selected.attempts,
-                          },
-                        },
-                      );
-                      setSelected(null);
-                      await load();
-                    })
-                  }
-                >
-                  Cho phép thực hiện lại sau đối soát
-                </button>
-              </div>
+            )}
+            <div className="action-row" style={{ marginBottom: 12 }}>
+              <button
+                className="primary"
+                disabled={selected.status !== "DELIVERED" && !values.trim()}
+              >
+                {selected.status === "DELIVERED"
+                  ? "Đóng cảnh báo sau đối soát"
+                  : "Giao phần còn thiếu"}
+              </button>
             </div>
-          )}
-        </form>
+            {selected.delivered_quantity === 0 && (
+              <div className="stack">
+                <label className="check-label">
+                  <input
+                    type="checkbox"
+                    checked={confirmed}
+                    onChange={(e) => setConfirmed(e.target.checked)}
+                  />{" "}
+                  Tôi đã đối soát lần xử lý này và xác nhận chưa có giao dịch mua
+                  thành công cần nhận hàng.
+                </label>
+                <div>
+                  <button
+                    type="button"
+                    disabled={!confirmed || reason.trim().length < 5}
+                    onClick={() =>
+                      void run(async () => {
+                        await api(
+                          `/api/admin/fulfillments/${encodeURIComponent(selected.fulfillment_id)}/retry`,
+                          {
+                            body: {
+                              confirmedNoPurchase: true,
+                              reason,
+                              expectedAttempt: selected.attempts,
+                            },
+                          },
+                        );
+                        setSelected(null);
+                        await load();
+                      })
+                    }
+                  >
+                    Cho phép thực hiện lại sau đối soát
+                  </button>
+                </div>
+              </div>
+            )}
+          </form>
+        </div>
       )}
     </section>
   );
@@ -1760,6 +1807,7 @@ export function PurchaseOrders({
   const [buying, setBuying] = useState(false);
   const [manualStatus, setManualStatus] = useState("");
   const [manualDelivered, setManualDelivered] = useState("");
+  const [purchaseFormOpen, setPurchaseFormOpen] = useState(false);
   const detailRef = useRef<HTMLDivElement | null>(null);
 
   async function load(query = search, provFilter = providerFilter) {
@@ -1801,11 +1849,18 @@ export function PurchaseOrders({
           <div>
             <h2>Đơn nhập nhà cung cấp</h2>
             <p className="muted">
-              Mua trực tiếp để sử dụng hoặc nhập dữ liệu NCC giao vào kho sản
-              phẩm tự tạo. Đơn chờ giao chỉ được nhập kho sau khi NCC hoàn tất.
+              Bấm vào dòng đơn nhập để xem dữ liệu NCC giao hoặc đẩy hàng vào
+              kho sản phẩm tự tạo.
             </p>
           </div>
           <div className="action-row">
+            <button
+              type="button"
+              className="primary admin-mobile-only"
+              onClick={() => setPurchaseFormOpen(true)}
+            >
+              Mua hàng từ NCC
+            </button>
             {providerFilter && (
               <button
                 type="button"
@@ -1885,26 +1940,23 @@ export function PurchaseOrders({
               {orders.map((o) => (
                 <tr
                   key={o.id}
-                  className={selected?.id === o.id ? "selected-row" : ""}
+                  className={`clickable-row ${selected?.id === o.id ? "selected-row" : ""}`}
+                  onClick={() =>
+                    void run(async () => {
+                      const result = await api<{ order: SupplierOrder }>(
+                        `${supplierApi}/orders/${encodeURIComponent(o.id)}`,
+                      );
+                      setSelected(result.order);
+                      setManualStatus(result.order.status);
+                      setManualDelivered(
+                        result.order.delivered_items?.join("\n") ?? "",
+                      );
+                      focusPanel(detailRef.current);
+                    })
+                  }
                 >
                   <td>
-                    <button
-                      onClick={() =>
-                        void run(async () => {
-                          const result = await api<{ order: SupplierOrder }>(
-                            `${supplierApi}/orders/${encodeURIComponent(o.id)}`,
-                          );
-                          setSelected(result.order);
-                          setManualStatus(result.order.status);
-                          setManualDelivered(
-                            result.order.delivered_items?.join("\n") ?? "",
-                          );
-                          focusPanel(detailRef.current);
-                        })
-                      }
-                    >
-                      {o.id}
-                    </button>
+                    <strong className="mono">{o.id}</strong>
                     <br />
                     <small className="muted">{o.provider_id}</small>
                   </td>
@@ -1935,363 +1987,391 @@ export function PurchaseOrders({
           </table>
         </div>
         {selected && (
-          <div className="admin-detail panel-focus-target" ref={detailRef}>
-            <div className="panel-heading">
-              <h3>Đơn nhập {selected.id}</h3>
-              <button onClick={() => setSelected(null)}>Đóng chi tiết</button>
-            </div>
-            <p>
-              NCC: <strong>{selected.provider_id}</strong> · Mã NCC:{" "}
-              <span className="mono">
-                {selected.provider_order_id ?? "Chưa có"}
-              </span>{" "}
-              · <span className="status">{selected.status}</span>
-            </p>
-            <pre className="code-block">
-              {selected.delivered_items?.join("\n") ||
-                "Chưa có dữ liệu giao hàng"}
-            </pre>
-            <div className="action-row" style={{ marginTop: 12 }}>
-              {canImportSelected && (
-                <button
-                  className="primary"
-                  onClick={() =>
-                    void run(async () => {
-                      if (!stockProductId)
-                        throw new Error("Chọn sản phẩm kho trước khi nhập");
-                      const result = await api<{
-                        added: number;
-                        total: number;
-                      }>(
-                        `/api/admin/supplier-purchases/${encodeURIComponent(selected.id)}/import`,
-                        {
-                          body: { productId: Number(stockProductId) },
-                        },
-                      );
-                      setPurchaseNotice(
-                        result.added
-                          ? `Đã nhập ${result.added} đơn vị từ đơn ${selected.id} vào kho.`
-                          : `Đơn ${selected.id} đã có ${result.total} đơn vị trong kho; không nhập trùng.`,
-                      );
-                      await load(search, providerFilter);
-                    })
-                  }
-                >
-                  Nhập đơn này vào kho
+          <div
+            className="admin-popup-modal"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setSelected(null);
+            }}
+          >
+            <div className="admin-detail panel-focus-target" ref={detailRef}>
+              <div className="panel-heading">
+                <h3>Đơn nhập {selected.id}</h3>
+                <button type="button" onClick={() => setSelected(null)}>
+                  Đóng
                 </button>
+              </div>
+              <p>
+                NCC: <strong>{selected.provider_id}</strong> · Mã NCC:{" "}
+                <span className="mono">
+                  {selected.provider_order_id ?? "Chưa có"}
+                </span>{" "}
+                · <span className="status">{selected.status}</span>
+              </p>
+              <pre className="code-block">
+                {selected.delivered_items?.join("\n") ||
+                  "Chưa có dữ liệu giao hàng"}
+              </pre>
+              <div className="action-row" style={{ marginTop: 12 }}>
+                {canImportSelected && (
+                  <button
+                    className="primary"
+                    onClick={() =>
+                      void run(async () => {
+                        if (!stockProductId)
+                          throw new Error("Chọn sản phẩm kho trước khi nhập");
+                        const result = await api<{
+                          added: number;
+                          total: number;
+                        }>(
+                          `/api/admin/supplier-purchases/${encodeURIComponent(selected.id)}/import`,
+                          {
+                            body: { productId: Number(stockProductId) },
+                          },
+                        );
+                        setPurchaseNotice(
+                          result.added
+                            ? `Đã nhập ${result.added} đơn vị từ đơn ${selected.id} vào kho.`
+                            : `Đơn ${selected.id} đã có ${result.total} đơn vị trong kho; không nhập trùng.`,
+                        );
+                        await load(search, providerFilter);
+                      })
+                    }
+                  >
+                    Nhập đơn này vào kho
+                  </button>
+                )}
+                {selected.can_check_status && (
+                  <button
+                    onClick={() =>
+                      void run(async () => {
+                        const checkRes = await api<{
+                          status: string;
+                          raw_status: string;
+                        }>(
+                          `${supplierApi}/orders/${encodeURIComponent(selected.id)}/check-status`,
+                          { body: {} },
+                        );
+                        await load(search, providerFilter);
+                        const detail = await api<{ order: SupplierOrder }>(
+                          `${supplierApi}/orders/${encodeURIComponent(selected.id)}`,
+                        );
+                        setSelected(detail.order);
+                        setManualStatus(detail.order.status);
+                        setManualDelivered(
+                          detail.order.delivered_items?.join("\n") ?? "",
+                        );
+                        setPurchaseNotice(
+                          `Trạng thái đơn ${selected.id}: ${checkRes.status} (${checkRes.raw_status || "đã kiểm tra"})`,
+                        );
+                      })
+                    }
+                  >
+                    Kiểm tra trạng thái NCC
+                  </button>
+                )}
+                {!selected.linked_transaction_id && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void run(async () => {
+                        await api(
+                          `${supplierApi}/orders/${encodeURIComponent(selected.id)}`,
+                          { method: "DELETE" },
+                        );
+                        setPurchaseNotice(`Đã xóa đơn nhập ${selected.id}.`);
+                        setSelected(null);
+                        await load(search, providerFilter);
+                      })
+                    }
+                  >
+                    Xóa đơn nhập
+                  </button>
+                )}
+              </div>
+              {canImportSelected && (
+                <label style={{ marginTop: 12 }}>
+                  Sản phẩm kho nhận hàng
+                  <select
+                    value={stockProductId}
+                    onChange={(e) => setStockProductId(e.target.value)}
+                  >
+                    <option value="">Chọn sản phẩm kho</option>
+                    {stockProducts.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.name} · #{product.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               )}
-              {selected.can_check_status && (
+              <details>
+                <summary>
+                  Cập nhật thủ công trạng thái / dữ liệu nhận được
+                </summary>
+                <div className="form-grid">
+                  <label>
+                    Trạng thái đơn nhập
+                    <select
+                      value={manualStatus || selected.status}
+                      onChange={(e) => setManualStatus(e.target.value)}
+                    >
+                      <option value="completed">completed (Đã hoàn tất)</option>
+                      <option value="processing">processing (Đang xử lý)</option>
+                      <option value="pending">pending (Chờ xử lý)</option>
+                      <option value="failed">failed (Thất bại)</option>
+                      <option value="cancelled">cancelled (Đã hủy)</option>
+                    </select>
+                  </label>
+                </div>
+                <label>
+                  Dữ liệu giao hàng nhận được (mỗi dòng 1 mục)
+                  <textarea
+                    value={manualDelivered}
+                    onChange={(e) => setManualDelivered(e.target.value)}
+                  />
+                </label>
                 <button
+                  type="button"
                   onClick={() =>
                     void run(async () => {
-                      const checkRes = await api<{
-                        status: string;
-                        raw_status: string;
-                      }>(
-                        `${supplierApi}/orders/${encodeURIComponent(selected.id)}/check-status`,
-                        { body: {} },
+                      await api(
+                        `${supplierApi}/orders/${encodeURIComponent(selected.id)}/status`,
+                        {
+                          method: "PATCH",
+                          body: {
+                            status: manualStatus || selected.status,
+                            delivered_items: manualDelivered,
+                          },
+                        },
                       );
                       await load(search, providerFilter);
                       const detail = await api<{ order: SupplierOrder }>(
                         `${supplierApi}/orders/${encodeURIComponent(selected.id)}`,
                       );
                       setSelected(detail.order);
-                      setManualStatus(detail.order.status);
-                      setManualDelivered(
-                        detail.order.delivered_items?.join("\n") ?? "",
-                      );
                       setPurchaseNotice(
-                        `Trạng thái đơn ${selected.id}: ${checkRes.status} (${checkRes.raw_status || "đã kiểm tra"})`,
+                        `Đã cập nhật trạng thái đơn ${selected.id} thành ${detail.order.status}.`,
                       );
                     })
                   }
                 >
-                  Kiểm tra trạng thái NCC
+                  Lưu trạng thái đơn nhập
                 </button>
-              )}
-              {!selected.linked_transaction_id && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    void run(async () => {
-                      await api(
-                        `${supplierApi}/orders/${encodeURIComponent(selected.id)}`,
-                        { method: "DELETE" },
-                      );
-                      setPurchaseNotice(`Đã xóa đơn nhập ${selected.id}.`);
-                      setSelected(null);
-                      await load(search, providerFilter);
-                    })
-                  }
-                >
-                  Xóa đơn nhập
-                </button>
-              )}
+              </details>
             </div>
-            {canImportSelected && (
-              <label style={{ marginTop: 12 }}>
-                Sản phẩm kho nhận hàng
-                <select
-                  value={stockProductId}
-                  onChange={(e) => setStockProductId(e.target.value)}
-                >
-                  <option value="">Chọn sản phẩm kho</option>
-                  {stockProducts.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name} · #{product.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <details>
-              <summary>
-                Cập nhật thủ công trạng thái / dữ liệu nhận được
-              </summary>
-              <div className="form-grid">
-                <label>
-                  Trạng thái đơn nhập
-                  <select
-                    value={manualStatus || selected.status}
-                    onChange={(e) => setManualStatus(e.target.value)}
-                  >
-                    <option value="completed">completed (Đã hoàn tất)</option>
-                    <option value="processing">processing (Đang xử lý)</option>
-                    <option value="pending">pending (Chờ xử lý)</option>
-                    <option value="failed">failed (Thất bại)</option>
-                    <option value="cancelled">cancelled (Đã hủy)</option>
-                  </select>
-                </label>
-              </div>
-              <label>
-                Dữ liệu giao hàng nhận được (mỗi dòng 1 mục)
-                <textarea
-                  value={manualDelivered}
-                  onChange={(e) => setManualDelivered(e.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() =>
-                  void run(async () => {
-                    await api(
-                      `${supplierApi}/orders/${encodeURIComponent(selected.id)}/status`,
-                      {
-                        method: "PATCH",
-                        body: {
-                          status: manualStatus || selected.status,
-                          delivered_items: manualDelivered,
-                        },
-                      },
-                    );
-                    await load(search, providerFilter);
-                    const detail = await api<{ order: SupplierOrder }>(
-                      `${supplierApi}/orders/${encodeURIComponent(selected.id)}`,
-                    );
-                    setSelected(detail.order);
-                    setPurchaseNotice(
-                      `Đã cập nhật trạng thái đơn ${selected.id} thành ${detail.order.status}.`,
-                    );
-                  })
-                }
-              >
-                Lưu trạng thái đơn nhập
-              </button>
-            </details>
           </div>
         )}
       </section>
 
-      <aside className="admin-sticky-pane">
+      <aside
+        className={`admin-sticky-pane admin-detail-pane ${purchaseFormOpen ? "is-open" : ""}`}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setPurchaseFormOpen(false);
+        }}
+      >
         <section className="panel">
-          <details open style={{ marginTop: 0, border: 0, padding: 0, background: "transparent" }}>
-            <summary>Mua hàng từ nhà cung cấp</summary>
-            <p className="muted">
-              Đơn khách đã thanh toán được mua tự động. Chỉ dùng mục này để nhập
-              hàng chủ động; đơn lỗi hoặc timeout cần đối soát tại cảnh báo
-              trước khi mua lại.
-            </p>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (buying) return;
-                setBuying(true);
-                void run(async () => {
-                  const selectedProduct = vendorProducts.find(
-                    (v) => v.provider_product_id === item,
-                  );
-                  if (!selectedProduct) throw new Error("Chọn sản phẩm NCC");
-                  if (destination === "stock" && !stockProductId)
-                    throw new Error("Chọn sản phẩm kho nhận hàng");
-                  const purchase = await api<{
-                    order_id: string;
-                    status: string;
-                    persisted: boolean;
-                  }>(`${supplierApi}/order`, {
-                    body: {
-                      provider_id: provider,
-                      product_id: item,
-                      product_name: selectedProduct.name,
-                      quantity,
-                      email,
-                      unit_price: selectedProduct.price_usd,
-                      total_price: selectedProduct.price_usd * quantity,
-                    },
-                  });
-                  setPurchaseNotice(
-                    `Đã gửi yêu cầu mua NCC. Mã đơn: ${purchase.order_id}. ${purchase.persisted ? "" : "NCC đã xử lý nhưng chưa lưu được đơn; cần đối soát, không mua lại."}`,
-                  );
-                  if (!purchase.persisted) return;
-                  await load(search, providerFilter);
-                  const detail = await api<{ order: SupplierOrder }>(
-                    `${supplierApi}/orders/${encodeURIComponent(purchase.order_id)}`,
-                  );
-                  setSelected(detail.order);
-                  setManualStatus(detail.order.status);
-                  setManualDelivered(
-                    detail.order.delivered_items?.join("\n") ?? "",
-                  );
-                  if (destination === "stock") {
-                    if (purchase.status !== "completed") {
-                      setPurchaseNotice(
-                        `Đơn ${purchase.order_id} đang chờ NCC giao. Sau khi hoàn tất, mở đơn và chọn Nhập đơn này vào kho.`,
-                      );
-                      return;
-                    }
-                    const imported = await api<{
-                      added: number;
-                      total: number;
-                    }>(
-                      `/api/admin/supplier-purchases/${encodeURIComponent(purchase.order_id)}/import`,
-                      {
-                        body: { productId: Number(stockProductId) },
-                      },
-                    );
-                    setPurchaseNotice(
-                      `Đã mua đơn ${purchase.order_id} và nhập ${imported.added} đơn vị vào kho.`,
-                    );
-                    await load(search, providerFilter);
-                  }
-                }).finally(() => setBuying(false));
-              }}
+          <div className="panel-heading">
+            <h2>Mua hàng từ nhà cung cấp</h2>
+            <button
+              type="button"
+              className="admin-mobile-only"
+              onClick={() => setPurchaseFormOpen(false)}
             >
-              <div className="form-grid">
-                <label>
-                  NCC
-                  <select
-                    required
-                    value={provider}
-                    onChange={(e) => {
-                      setProvider(e.target.value);
-                      setVendorProducts([]);
-                      setItem("");
-                    }}
-                  >
-                    <option value="">Chọn NCC</option>
-                    {providers
-                      .filter((p) => p.is_active)
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <div style={{ display: "flex", alignItems: "flex-end", marginBottom: 14 }}>
-                  <button
-                    type="button"
-                    disabled={!provider}
-                    onClick={() =>
-                      void run(async () => {
-                        setVendorProducts(
-                          (
-                            await api<{ products: VendorProduct[] }>(
-                              `${supplierApi}/products?provider_id=${encodeURIComponent(provider)}`,
-                            )
-                          ).products,
-                        );
-                      })
-                    }
-                  >
-                    Tải sản phẩm
-                  </button>
-                </div>
-                <label>
-                  Sản phẩm
-                  <select
-                    required
-                    value={item}
-                    onChange={(e) => setItem(e.target.value)}
-                  >
-                    <option value="">Chọn sản phẩm</option>
-                    {vendorProducts
-                      .filter((p) => p.in_stock)
-                      .map((p) => (
-                        <option
-                          key={p.provider_product_id}
-                          value={p.provider_product_id}
-                        >
-                          {p.name} · {p.price_usd} USD
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label>
-                  Số lượng
-                  <input
-                    required
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={quantity}
-                    onChange={(e) => setQuantity(Number(e.target.value))}
-                  />
-                </label>
-                <label>
-                  Email kích hoạt (nếu cần)
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Mục đích mua
-                  <select
-                    value={destination}
-                    onChange={(e) =>
-                      setDestination(e.target.value as "self" | "stock")
-                    }
-                  >
-                    <option value="self">
-                      Dùng riêng · xem dữ liệu trong chi tiết đơn
-                    </option>
-                    <option value="stock">Nhập vào kho của tôi</option>
-                  </select>
-                </label>
-                {destination === "stock" && (
-                  <label>
-                    Sản phẩm kho nhận hàng
-                    <select
-                      required
-                      value={stockProductId}
-                      onChange={(e) => setStockProductId(e.target.value)}
-                    >
-                      <option value="">Chọn sản phẩm kho</option>
-                      {stockProducts.map((product) => (
-                        <option key={product.id} value={product.id}>
-                          {product.name} · #{product.id}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
+              Đóng
+            </button>
+          </div>
+          <p className="muted">
+            Đơn khách đã thanh toán được mua tự động. Chỉ dùng mục này để nhập
+            hàng chủ động; đơn lỗi hoặc timeout cần đối soát tại cảnh báo trước
+            khi mua lại.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (buying) return;
+              setBuying(true);
+              void run(async () => {
+                const selectedProduct = vendorProducts.find(
+                  (v) => v.provider_product_id === item,
+                );
+                if (!selectedProduct) throw new Error("Chọn sản phẩm NCC");
+                if (destination === "stock" && !stockProductId)
+                  throw new Error("Chọn sản phẩm kho nhận hàng");
+                const purchase = await api<{
+                  order_id: string;
+                  status: string;
+                  persisted: boolean;
+                }>(`${supplierApi}/order`, {
+                  body: {
+                    provider_id: provider,
+                    product_id: item,
+                    product_name: selectedProduct.name,
+                    quantity,
+                    email,
+                    unit_price: selectedProduct.price_usd,
+                    total_price: selectedProduct.price_usd * quantity,
+                  },
+                });
+                setPurchaseNotice(
+                  `Đã gửi yêu cầu mua NCC. Mã đơn: ${purchase.order_id}. ${purchase.persisted ? "" : "NCC đã xử lý nhưng chưa lưu được đơn; cần đối soát, không mua lại."}`,
+                );
+                if (!purchase.persisted) return;
+                await load(search, providerFilter);
+                const detail = await api<{ order: SupplierOrder }>(
+                  `${supplierApi}/orders/${encodeURIComponent(purchase.order_id)}`,
+                );
+                setSelected(detail.order);
+                setManualStatus(detail.order.status);
+                setManualDelivered(
+                  detail.order.delivered_items?.join("\n") ?? "",
+                );
+                setPurchaseFormOpen(false);
+                if (destination === "stock") {
+                  if (purchase.status !== "completed") {
+                    setPurchaseNotice(
+                      `Đơn ${purchase.order_id} đang chờ NCC giao. Sau khi hoàn tất, mở đơn và chọn Nhập đơn này vào kho.`,
+                    );
+                    return;
+                  }
+                  const imported = await api<{
+                    added: number;
+                    total: number;
+                  }>(
+                    `/api/admin/supplier-purchases/${encodeURIComponent(purchase.order_id)}/import`,
+                    {
+                      body: { productId: Number(stockProductId) },
+                    },
+                  );
+                  setPurchaseNotice(
+                    `Đã mua đơn ${purchase.order_id} và nhập ${imported.added} đơn vị vào kho.`,
+                  );
+                  await load(search, providerFilter);
+                }
+              }).finally(() => setBuying(false));
+            }}
+          >
+            <div className="form-grid">
+              <label>
+                NCC
+                <select
+                  required
+                  value={provider}
+                  onChange={(e) => {
+                    setProvider(e.target.value);
+                    setVendorProducts([]);
+                    setItem("");
+                  }}
+                >
+                  <option value="">Chọn NCC</option>
+                  {providers
+                    .filter((p) => p.is_active)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  marginBottom: 14,
+                }}
+              >
+                <button
+                  type="button"
+                  disabled={!provider}
+                  onClick={() =>
+                    void run(async () => {
+                      setVendorProducts(
+                        (
+                          await api<{ products: VendorProduct[] }>(
+                            `${supplierApi}/products?provider_id=${encodeURIComponent(provider)}`,
+                          )
+                        ).products,
+                      );
+                    })
+                  }
+                >
+                  Tải sản phẩm
+                </button>
               </div>
-              <button className="primary" disabled={buying}>
-                {buying ? "Đang gửi đơn mua…" : "Mua từ NCC"}
-              </button>
-            </form>
-          </details>
+              <label>
+                Sản phẩm
+                <select
+                  required
+                  value={item}
+                  onChange={(e) => setItem(e.target.value)}
+                >
+                  <option value="">Chọn sản phẩm</option>
+                  {vendorProducts
+                    .filter((p) => p.in_stock)
+                    .map((p) => (
+                      <option
+                        key={p.provider_product_id}
+                        value={p.provider_product_id}
+                      >
+                        {p.name} · {p.price_usd} USD
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label>
+                Số lượng
+                <input
+                  required
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={quantity}
+                  onChange={(e) => setQuantity(Number(e.target.value))}
+                />
+              </label>
+              <label>
+                Email kích hoạt (nếu cần)
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </label>
+              <label>
+                Mục đích mua
+                <select
+                  value={destination}
+                  onChange={(e) =>
+                    setDestination(e.target.value as "self" | "stock")
+                  }
+                >
+                  <option value="self">
+                    Dùng riêng · xem dữ liệu trong chi tiết đơn
+                  </option>
+                  <option value="stock">Nhập vào kho của tôi</option>
+                </select>
+              </label>
+              {destination === "stock" && (
+                <label>
+                  Sản phẩm kho nhận hàng
+                  <select
+                    required
+                    value={stockProductId}
+                    onChange={(e) => setStockProductId(e.target.value)}
+                  >
+                    <option value="">Chọn sản phẩm kho</option>
+                    {stockProducts.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.name} · #{product.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <button className="primary" disabled={buying}>
+              {buying ? "Đang gửi đơn mua…" : "Mua từ NCC"}
+            </button>
+          </form>
         </section>
       </aside>
     </div>
@@ -2501,6 +2581,7 @@ export function BusinessFinance({
     expired: number;
     lifetime: number;
   } | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const formRef = useRef<HTMLElement | null>(null);
 
   async function load(
@@ -2592,14 +2673,21 @@ export function BusinessFinance({
       <div className="admin-split-grid">
         <section className="panel">
           <div className="panel-heading">
-            <h2>
-              {warrantyOnly ? "Tra cứu & xử lý bảo hành" : "Sổ giao dịch"}
-            </h2>
+            <div>
+              <h2>
+                {warrantyOnly ? "Tra cứu & xử lý bảo hành" : "Sổ giao dịch"}
+              </h2>
+              <p className="muted">
+                Bấm vào dòng giao dịch để xem chi tiết, chỉnh sửa hoặc cập nhật
+                bảo hành.
+              </p>
+            </div>
             <button
               className="primary"
               onClick={() => {
                 setSelected(null);
                 setForm(emptyTransaction());
+                setEditorOpen(true);
                 focusPanel(formRef.current);
               }}
             >
@@ -2679,14 +2767,19 @@ export function BusinessFinance({
                   <th>Khách</th>
                   <th>Giá vốn / bán</th>
                   <th>Bảo hành</th>
-                  <th />
                 </tr>
               </thead>
               <tbody>
                 {transactions.map((t) => (
                   <tr
                     key={t.id}
-                    className={selected === t.id ? "selected-row" : ""}
+                    className={`clickable-row ${selected === t.id ? "selected-row" : ""}`}
+                    onClick={() => {
+                      setSelected(t.id);
+                      setForm({ ...emptyTransaction(), ...t });
+                      setEditorOpen(true);
+                      focusPanel(formRef.current);
+                    }}
                   >
                     <td>
                       <small className="muted">{t.date}</small>
@@ -2714,17 +2807,6 @@ export function BusinessFinance({
                         {t.warranty_expire_date ?? "—"}
                       </small>
                     </td>
-                    <td>
-                      <button
-                        onClick={() => {
-                          setSelected(t.id);
-                          setForm({ ...emptyTransaction(), ...t });
-                          focusPanel(formRef.current);
-                        }}
-                      >
-                        Chỉnh / bảo hành
-                      </button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -2732,13 +2814,40 @@ export function BusinessFinance({
           </div>
         </section>
 
-        <aside className="admin-sticky-pane">
+        <aside
+          className={`admin-sticky-pane admin-detail-pane ${editorOpen ? "is-open" : ""}`}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setEditorOpen(false);
+          }}
+        >
           <section className="panel panel-focus-target" ref={formRef}>
-            <h2>
-              {selected
-                ? `Chỉnh giao dịch #${selected}`
-                : "Ghi bán hàng / nhập hàng / chi phí"}
-            </h2>
+            <div className="panel-heading">
+              <h2>
+                {selected
+                  ? `Chỉnh giao dịch #${selected}`
+                  : "Ghi bán hàng / nhập hàng / chi phí"}
+              </h2>
+              <div className="action-row">
+                {selected && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelected(null);
+                      setForm(emptyTransaction());
+                    }}
+                  >
+                    Ghi mới
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="admin-mobile-only"
+                  onClick={() => setEditorOpen(false)}
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -2749,6 +2858,7 @@ export function BusinessFinance({
                   );
                   setSelected(null);
                   setForm(emptyTransaction());
+                  setEditorOpen(false);
                   await load(
                     search,
                     warrantyOnly,

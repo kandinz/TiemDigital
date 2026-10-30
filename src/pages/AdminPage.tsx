@@ -361,19 +361,15 @@ function Orders({ run }: { run: Run }) {
               {orders.map((o) => (
                 <tr
                   key={o.id}
-                  className={selected === o.id ? "selected-row" : ""}
+                  className={`clickable-row ${selected === o.id ? "selected-row" : ""}`}
+                  onClick={() => {
+                    setSelected(o.id);
+                    setDeliveredView(null);
+                    focusPanel(detailRef.current);
+                  }}
                 >
                   <td>
-                    <button
-                      className="mono"
-                      onClick={() => {
-                        setSelected(o.id);
-                        setDeliveredView(null);
-                        focusPanel(detailRef.current);
-                      }}
-                    >
-                      {o.id}
-                    </button>
+                    <strong className="mono">{o.id}</strong>
                     <br />
                     <small className="muted">
                       {o.channel === "telegram" ? "Telegram" : "Website"} ·{" "}
@@ -412,7 +408,12 @@ function Orders({ run }: { run: Run }) {
         )}
       </section>
 
-      <aside className="admin-sticky-pane">
+      <aside
+        className={`admin-sticky-pane admin-detail-pane ${selectedOrder ? "is-open" : ""}`}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setSelected("");
+        }}
+      >
         {selectedOrder ? (
           <section className="panel panel-focus-target" ref={detailRef}>
             <div className="panel-heading">
@@ -422,7 +423,7 @@ function Orders({ run }: { run: Run }) {
                 {fulfillmentLabel(selectedOrder.fulfillment_status)}
               </h3>
               <button type="button" onClick={() => setSelected("")}>
-                Đóng chi tiết
+                Đóng
               </button>
             </div>
             <div className="admin-kv-grid">
@@ -652,14 +653,6 @@ function Customers({
           />
           <button className="primary">Tìm khách</button>
         </form>
-        <label>
-          Lý do khóa / mở khóa
-          <input
-            value={reason}
-            minLength={5}
-            onChange={(e) => setReason(e.target.value)}
-          />
-        </label>
         <div className="table-wrap">
           <table>
             <thead>
@@ -667,32 +660,28 @@ function Customers({
                 <th>Khách hàng</th>
                 <th>ID</th>
                 <th>Số dư</th>
-                <th>Tài khoản</th>
+                <th>Trạng thái</th>
               </tr>
             </thead>
             <tbody>
               {customers.map((c) => (
                 <tr
                   key={c.id}
-                  className={detail?.customer.id === c.id ? "selected-row" : ""}
+                  className={`clickable-row ${detail?.customer.id === c.id ? "selected-row" : ""}`}
+                  onClick={() =>
+                    void run(async () => {
+                      const info = await api<CustomerDetailResponse>(
+                        `/api/admin/customers/${encodeURIComponent(c.id)}`,
+                      );
+                      setDetail(info);
+                      setEditName(info.customer.name);
+                      setEditPhone(info.customer.phone ?? "");
+                      focusPanel(detailRef.current);
+                    })
+                  }
                 >
                   <td>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void run(async () => {
-                          const info = await api<CustomerDetailResponse>(
-                            `/api/admin/customers/${encodeURIComponent(c.id)}`,
-                          );
-                          setDetail(info);
-                          setEditName(info.customer.name);
-                          setEditPhone(info.customer.phone ?? "");
-                          focusPanel(detailRef.current);
-                        })
-                      }
-                    >
-                      {c.name}
-                    </button>
+                    <strong>{c.name}</strong>
                     <br />
                     <small className="muted">
                       {c.email}
@@ -704,35 +693,13 @@ function Customers({
                     <strong>{amountLabel(c.balance)}</strong>
                   </td>
                   <td>
-                    <div className="action-row">
-                      <button
-                        disabled={reason.length < 5}
-                        onClick={() =>
-                          void run(async () => {
-                            await api(`/api/admin/customers/${c.id}/lock`, {
-                              body: { disabled: !c.disabled, reason },
-                            });
-                            await load(search);
-                            if (detail?.customer.id === c.id) {
-                              const updated = await api<CustomerDetailResponse>(
-                                `/api/admin/customers/${encodeURIComponent(c.id)}`,
-                              );
-                              setDetail(updated);
-                            }
-                          })
-                        }
-                      >
-                        {c.disabled ? "Mở khóa" : "Khóa và thu hồi phiên"}
-                      </button>
-                      {onAdjustWallet && (
-                        <button
-                          type="button"
-                          onClick={() => onAdjustWallet(c.id)}
-                        >
-                          Điều chỉnh số dư
-                        </button>
-                      )}
-                    </div>
+                    <span
+                      className={
+                        c.disabled ? "status danger-badge" : "status good"
+                      }
+                    >
+                      {c.disabled ? "Đang khóa" : "Hoạt động"}
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -741,7 +708,12 @@ function Customers({
         </div>
       </section>
 
-      <aside className="admin-sticky-pane">
+      <aside
+        className={`admin-sticky-pane admin-detail-pane ${detail ? "is-open" : ""}`}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setDetail(null);
+        }}
+      >
         {detail ? (
           <section className="panel panel-focus-target" ref={detailRef}>
             <div className="panel-heading">
@@ -749,7 +721,7 @@ function Customers({
                 Hồ sơ khách hàng · {detail.customer.name} ({detail.customer.id})
               </h3>
               <button type="button" onClick={() => setDetail(null)}>
-                Đóng hồ sơ
+                Đóng
               </button>
             </div>
             <div className="admin-kv-grid">
@@ -824,6 +796,44 @@ function Customers({
                 )}
               </div>
             </form>
+            <div className="admin-detail">
+              <label>
+                Lý do khóa / mở khóa tài khoản
+                <input
+                  value={reason}
+                  minLength={5}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </label>
+              <div className="action-row">
+                <button
+                  type="button"
+                  disabled={reason.length < 5}
+                  onClick={() =>
+                    void run(async () => {
+                      await api(
+                        `/api/admin/customers/${detail.customer.id}/lock`,
+                        {
+                          body: {
+                            disabled: !detail.customer.disabled,
+                            reason,
+                          },
+                        },
+                      );
+                      await load(search);
+                      const updated = await api<CustomerDetailResponse>(
+                        `/api/admin/customers/${encodeURIComponent(detail.customer.id)}`,
+                      );
+                      setDetail(updated);
+                    })
+                  }
+                >
+                  {detail.customer.disabled
+                    ? "Mở khóa tài khoản"
+                    : "Khóa và thu hồi phiên"}
+                </button>
+              </div>
+            </div>
             {detail.orders.length > 0 && (
               <div className="admin-detail">
                 <strong>Đơn hàng gần đây ({detail.orders.length}):</strong>
@@ -1456,6 +1466,7 @@ function Pages({ run }: { run: Run }) {
   const [versions, setVersions] = useState<
     { id: string; title: string; created_at: number }[]
   >([]);
+  const [editorOpen, setEditorOpen] = useState(false);
   const initializedRef = useRef(false);
   const editorRef = useRef<HTMLElement | null>(null);
 
@@ -1481,6 +1492,7 @@ function Pages({ run }: { run: Run }) {
     setTitle(page.title);
     setDescription(page.description);
     setBlocks(JSON.parse(page.blocks));
+    setEditorOpen(true);
     focusPanel(editorRef.current);
     void run(async () =>
       setVersions(
@@ -1502,6 +1514,8 @@ function Pages({ run }: { run: Run }) {
     setBlocks(next);
   }
 
+  const currentPage = pages.find((p) => p.slug === slug);
+
   return (
     <div className="admin-split-grid">
       <div>
@@ -1510,8 +1524,8 @@ function Pages({ run }: { run: Run }) {
             <div>
               <h2>Nội dung website</h2>
               <p className="muted">
-                Chọn trang để biên tập hoặc xuất bản bản nháp ra giao diện khách
-                hàng.
+                Bấm vào dòng trang để chỉnh sửa hoặc xuất bản bản nháp ra giao
+                diện khách hàng.
               </p>
             </div>
             <button
@@ -1523,61 +1537,138 @@ function Pages({ run }: { run: Run }) {
                 setDescription("");
                 setBlocks([{ type: "text", heading: "", text: "" }]);
                 setVersions([]);
+                setEditorOpen(true);
                 focusPanel(editorRef.current);
               }}
             >
               Tạo trang mới
             </button>
           </div>
-          <div className="stack">
-            {pages.map((p) => (
-              <div className="balance-strip" key={p.slug}>
-                <div className="action-row">
-                  <button onClick={() => edit(p)}>
-                    {p.title} · /{p.slug}
-                  </button>
-                  <span
-                    className={
-                      p.published_id === p.draft_id ? "status good" : "status"
-                    }
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Trang</th>
+                  <th>Đường dẫn</th>
+                  <th>Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pages.map((p) => (
+                  <tr
+                    key={p.slug}
+                    className={`clickable-row ${slug === p.slug ? "selected-row" : ""}`}
+                    onClick={() => edit(p)}
                   >
-                    {p.published_id === p.draft_id
-                      ? "Đã xuất bản"
-                      : "Có bản nháp mới"}
-                  </span>
-                </div>
-                <div className="action-row">
+                    <td>
+                      <strong>{p.title}</strong>
+                      <br />
+                      <small className="muted">
+                        {p.description || "Chưa có mô tả"}
+                      </small>
+                    </td>
+                    <td className="mono">
+                      /{p.slug === "trang-chu" ? "" : p.slug}
+                    </td>
+                    <td>
+                      <span
+                        className={
+                          p.published_id === p.draft_id
+                            ? "status good"
+                            : "status"
+                        }
+                      >
+                        {p.published_id === p.draft_id
+                          ? "Đã xuất bản"
+                          : "Có bản nháp mới"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="panel">
+          <h3>Xem trước · {title || "Tiêu đề trang"}</h3>
+          <div className="preview">
+            <h2>{title || "Tiêu đề trang"}</h2>
+            <p className="muted">{description}</p>
+            {blocks.map((b, i) => (
+              <div key={i}>
+                {b.type === "image" ? (
+                  <img
+                    src={b.url}
+                    alt={b.alt ?? ""}
+                    style={{ maxWidth: "100%", borderRadius: 8 }}
+                  />
+                ) : b.type === "link" ? (
+                  <p>
+                    {b.label} · {b.url}
+                  </p>
+                ) : (
+                  <>
+                    <h3>{b.heading}</h3>
+                    <p style={{ whiteSpace: "pre-wrap" }}>{b.text}</p>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <aside
+        className={`admin-sticky-pane admin-detail-pane ${editorOpen ? "is-open" : ""}`}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setEditorOpen(false);
+        }}
+      >
+        <section className="panel panel-focus-target" ref={editorRef}>
+          <div className="panel-heading">
+            <h2>{currentPage ? `Biên tập /${currentPage.slug}` : "Tạo trang mới"}</h2>
+            <div className="action-row">
+              {currentPage && (
+                <>
                   <a
                     className="admin-btn"
-                    href={p.slug === "trang-chu" ? "/" : `/pages/${p.slug}`}
+                    href={
+                      currentPage.slug === "trang-chu"
+                        ? "/"
+                        : `/pages/${currentPage.slug}`
+                    }
                     target="_blank"
                     rel="noreferrer"
                   >
                     Xem trang ↗
                   </a>
                   <button
+                    type="button"
                     onClick={() =>
                       void run(async () => {
-                        await api(`/api/admin/pages/${p.slug}/publish`, {
-                          body: { versionId: p.draft_id },
-                        });
+                        await api(
+                          `/api/admin/pages/${currentPage.slug}/publish`,
+                          {
+                            body: { versionId: currentPage.draft_id },
+                          },
+                        );
                         await load();
                       })
                     }
                   >
                     Xuất bản bản nháp
                   </button>
-                  {p.slug !== "trang-chu" && (
+                  {currentPage.slug !== "trang-chu" && (
                     <button
                       type="button"
                       onClick={() =>
                         void run(async () => {
-                          await api(`/api/admin/pages/${p.slug}`, {
+                          await api(`/api/admin/pages/${currentPage.slug}`, {
                             method: "DELETE",
                           });
-                          if (slug === p.slug) {
-                            setSlug("trang-chu");
-                          }
+                          setSlug("trang-chu");
+                          setEditorOpen(false);
                           await load();
                         })
                       }
@@ -1585,14 +1676,17 @@ function Pages({ run }: { run: Run }) {
                       Xóa trang
                     </button>
                   )}
-                </div>
-              </div>
-            ))}
+                </>
+              )}
+              <button
+                type="button"
+                className="admin-mobile-only"
+                onClick={() => setEditorOpen(false)}
+              >
+                Đóng
+              </button>
+            </div>
           </div>
-        </section>
-
-        <section className="panel panel-focus-target" ref={editorRef}>
-          <h2>Biên tập page</h2>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -1799,36 +1893,6 @@ function Pages({ run }: { run: Run }) {
               }}
             />
           </label>
-        </section>
-      </div>
-
-      <aside className="admin-sticky-pane">
-        <section className="panel">
-          <h3>Xem trước</h3>
-          <div className="preview">
-            <h2>{title || "Tiêu đề trang"}</h2>
-            <p className="muted">{description}</p>
-            {blocks.map((b, i) => (
-              <div key={i}>
-                {b.type === "image" ? (
-                  <img
-                    src={b.url}
-                    alt={b.alt ?? ""}
-                    style={{ maxWidth: "100%", borderRadius: 8 }}
-                  />
-                ) : b.type === "link" ? (
-                  <p>
-                    {b.label} · {b.url}
-                  </p>
-                ) : (
-                  <>
-                    <h3>{b.heading}</h3>
-                    <p style={{ whiteSpace: "pre-wrap" }}>{b.text}</p>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
           {versions.length > 0 && (
             <div className="admin-detail">
               <h3>Lịch sử & khôi phục</h3>

@@ -239,9 +239,7 @@ const transaction = {
       path: resolve(capture, "products-desktop.png"),
       fullPage: true,
     });
-    await page
-      .getByRole("button", { name: "Local fixture key", exact: true })
-      .click();
+    await page.getByRole("row", { name: /Local fixture key/ }).click();
     await page
       .getByLabel("Tên sản phẩm", { exact: true })
       .fill("Edited local fixture");
@@ -249,9 +247,7 @@ const transaction = {
     await page
       .getByRole("button", { name: "Lưu sản phẩm", exact: true })
       .click();
-    await page
-      .getByRole("button", { name: "Edited local fixture", exact: true })
-      .waitFor();
+    await page.getByRole("row", { name: /Edited local fixture/ }).waitFor();
     assert.equal(
       writes.find((v) => v.path === "/api/admin/products").body.selling_price,
       125000,
@@ -289,9 +285,7 @@ const transaction = {
         exact: true,
       })
       .waitFor();
-    await page
-      .getByRole("button", { name: "Chỉnh kết nối", exact: true })
-      .click();
+    await page.getByRole("row", { name: /Supplier fixture/ }).click();
     assert.equal(
       await page
         .getByLabel("Tên header / tham số", { exact: true })
@@ -318,7 +312,7 @@ const transaction = {
     await page
       .getByRole("button", { name: "Đơn & giao hàng", exact: true })
       .click();
-    await page.getByRole("button", { name: "Xử lý", exact: true }).click();
+    await page.getByRole("row", { name: /Kho đã hết hàng/ }).click();
     await page
       .getByLabel("Lý do / kết quả đối soát", { exact: true })
       .fill("Fixture đã được đối soát");
@@ -345,9 +339,7 @@ const transaction = {
       1,
     );
     await page.getByRole("button", { name: "Bảo hành", exact: true }).click();
-    await page
-      .getByRole("button", { name: "Chỉnh / bảo hành", exact: true })
-      .click();
+    await page.getByRole("row", { name: /Warranty fixture/ }).click();
     assert.equal(
       await page
         .getByLabel("Sản phẩm / nội dung", { exact: true })
@@ -404,6 +396,10 @@ const transaction = {
       ),
       true,
     );
+    await page.getByRole("row", { name: /Edited local fixture/ }).click();
+    await page.locator(".admin-detail-pane.is-open").waitFor();
+    await page.getByRole("button", { name: "Đóng", exact: true }).click();
+    assert.equal(await page.locator(".admin-detail-pane.is-open").count(), 0);
     await page.screenshot({
       path: resolve(capture, "products-mobile.png"),
       fullPage: true,
