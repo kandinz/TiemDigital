@@ -3,6 +3,7 @@ import { beforeAll, expect, it, vi } from "vitest";
 import worker from "../workers/index";
 import type { Env } from "../workers/types";
 import { COMMERCE_SCHEMA_STATEMENTS } from "../workers/commerceSchema";
+import { processOutbox } from "../workers/operations";
 
 const origin = "http://localhost:8787";
 const runtime = {
@@ -82,6 +83,52 @@ beforeAll(async () => {
   )
     .bind(buyerId, `wallet:${buyerId}`)
     .run();
+});
+
+it("configures Telegram notifications, registers bot commands, and skips disabled alerts", async () => {
+  const previousToken = runtime.TELEGRAM_BOT_TOKEN;
+  const previousSecret = runtime.TELEGRAM_WEBHOOK_SECRET;
+  const sent: string[] = [];
+  const telegram = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (!url.includes("api.telegram.org")) throw new Error(`Unexpected request: ${url}`);
+    sent.push(`${url} ${String(init?.body)}`);
+    return Response.json({ ok: true, result: {} });
+  });
+  runtime.TELEGRAM_BOT_TOKEN = "test-token";
+  runtime.TELEGRAM_WEBHOOK_SECRET = "test-webhook-secret";
+  try {
+    expect((await call("/api/admin/telegram/settings", buyer)).status).toBe(403);
+    const original = await body("/api/admin/telegram/settings", owner);
+    await body("/api/admin/telegram/settings", owner, {
+      adminChatId: "12345",
+      orderPaid: false,
+      orderDelivered: true,
+      orderPartial: true,
+      adminAlert: false,
+    }, "PUT");
+    expect((await body("/api/admin/telegram/settings", owner)).adminAlert).toBe(false);
+    await body("/api/admin/telegram/webhook", owner, {});
+    await body("/api/admin/telegram/webhook-info", owner);
+    await body("/api/admin/telegram/test", owner, {});
+    await body("/api/admin/telegram/send", owner, { text: "Thông báo quản trị" });
+    expect(sent.some((entry) => entry.includes("setMyCommands"))).toBe(true);
+    expect(sent.some((entry) => entry.includes("setWebhook"))).toBe(true);
+    expect(sent.some((entry) => entry.includes("getWebhookInfo"))).toBe(true);
+    expect(sent.some((entry) => entry.includes("sendMessage") && entry.includes("12345"))).toBe(true);
+    const eventId = `telegram-disabled-${crypto.randomUUID()}`;
+    await env.DB.prepare("INSERT INTO outbox(id,user_id,kind,body) VALUES(?,?,'ADMIN_ALERT',?)")
+      .bind(eventId, buyerId, JSON.stringify({ orderId: "TEST", reason: "TEST" })).run();
+    const before = sent.length;
+    await processOutbox(runtime, eventId);
+    expect(sent.length).toBe(before);
+    expect((await env.DB.prepare("SELECT status FROM outbox WHERE id=?").bind(eventId).first<{ status: string }>())?.status).toBe("DONE");
+    await body("/api/admin/telegram/settings", owner, original, "PUT");
+  } finally {
+    runtime.TELEGRAM_BOT_TOKEN = previousToken;
+    runtime.TELEGRAM_WEBHOOK_SECRET = previousSecret;
+    telegram.mockRestore();
+  }
 });
 
 it("imports a completed personal supplier purchase into stock once and keeps customer purchases out", async () => {

@@ -17,6 +17,7 @@ import { sweep } from "./operations";
 import { mmoApi } from "./mmo";
 import { catalogAdmin } from "./catalog";
 import { fulfillmentAdmin, orderProgress, receivedDelivery } from "./fulfillment";
+import { telegramCall } from "./telegram";
 
 const blockSchema = z.discriminatedUnion("type", [
   z.object({
@@ -862,6 +863,79 @@ export async function adminApi(request: Request, env: Env) {
         ).all()
       ).results,
     });
+  }
+
+  if (path === "/telegram/settings") {
+    requireRole(admin, ["owner"]);
+    if (request.method === "GET") {
+      const [settings, config] = await Promise.all([
+        env.DB.prepare("SELECT order_paid,order_delivered,order_partial,admin_alert FROM telegram_notification_settings WHERE id=1").first<{ order_paid: number; order_delivered: number; order_partial: number; admin_alert: number }>(),
+        env.DB.prepare("SELECT telegram_chat_id FROM commerce_config WHERE id=1").first<{ telegram_chat_id: string }>(),
+      ]);
+      return json({
+        adminChatId: config?.telegram_chat_id ?? "",
+        orderPaid: Boolean(settings?.order_paid ?? 1),
+        orderDelivered: Boolean(settings?.order_delivered ?? 1),
+        orderPartial: Boolean(settings?.order_partial ?? 1),
+        adminAlert: Boolean(settings?.admin_alert ?? 1),
+      });
+    }
+    if (request.method === "PUT") {
+      const input = await readBody(request, z.object({
+        adminChatId: z.string().regex(/^$|^-?\d{1,25}$/),
+        orderPaid: z.boolean(),
+        orderDelivered: z.boolean(),
+        orderPartial: z.boolean(),
+        adminAlert: z.boolean(),
+      }));
+      await env.DB.batch([
+        env.DB.prepare("UPDATE commerce_config SET telegram_chat_id=? WHERE id=1").bind(input.adminChatId),
+        env.DB.prepare("UPDATE telegram_notification_settings SET order_paid=?,order_delivered=?,order_partial=?,admin_alert=? WHERE id=1").bind(Number(input.orderPaid), Number(input.orderDelivered), Number(input.orderPartial), Number(input.adminAlert)),
+        env.DB.prepare("INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)").bind(id(), admin.email, "TELEGRAM_SETTINGS", "telegram", JSON.stringify(input)),
+      ]);
+      return json({ ok: true });
+    }
+  }
+
+  if (path === "/telegram/test" && request.method === "POST") {
+    requireRole(admin, ["owner"]);
+    const config = await env.DB.prepare("SELECT telegram_chat_id FROM commerce_config WHERE id=1").first<{ telegram_chat_id: string }>();
+    if (!config?.telegram_chat_id) throw new HttpError(400, "Hãy lưu Chat ID quản trị trước khi gửi thử");
+    await telegramCall(env, "sendMessage", { chat_id: config.telegram_chat_id, text: "Tiệm Digital · Kết nối thông báo quản trị hoạt động." });
+    await audit(env, admin.email, "TELEGRAM_TEST", "telegram");
+    return json({ ok: true });
+  }
+
+  if (path === "/telegram/send" && request.method === "POST") {
+    requireRole(admin, ["owner"]);
+    const input = await readBody(request, z.object({ text: z.string().trim().min(1).max(4096) }));
+    const config = await env.DB.prepare("SELECT telegram_chat_id FROM commerce_config WHERE id=1").first<{ telegram_chat_id: string }>();
+    if (!config?.telegram_chat_id) throw new HttpError(400, "Hãy lưu Chat ID quản trị trước khi gửi");
+    await telegramCall(env, "sendMessage", { chat_id: config.telegram_chat_id, text: input.text });
+    await audit(env, admin.email, "TELEGRAM_MESSAGE_SENT", "telegram", { length: input.text.length });
+    return json({ ok: true });
+  }
+
+  if (path === "/telegram/webhook" && request.method === "POST") {
+    requireRole(admin, ["owner"]);
+    if (!env.TELEGRAM_WEBHOOK_SECRET) throw new HttpError(400, "Thiếu TELEGRAM_WEBHOOK_SECRET");
+    await telegramCall(env, "setMyCommands", { commands: [
+      { command: "start", description: "Mở cửa hàng" },
+      { command: "products", description: "Xem và mua sản phẩm" },
+      { command: "profile", description: "Tài khoản và số dư" },
+      { command: "orders", description: "Theo dõi đơn hàng" },
+      { command: "topup", description: "Nạp tiền bằng QR" },
+      { command: "support", description: "Liên hệ hỗ trợ" },
+    ] });
+    await telegramCall(env, "setWebhook", { url: `${env.APP_ORIGIN.replace(/\/$/, "")}/webhooks/telegram`, secret_token: env.TELEGRAM_WEBHOOK_SECRET, allowed_updates: ["message", "callback_query"] });
+    await audit(env, admin.email, "TELEGRAM_WEBHOOK_SET", "telegram");
+    return json({ ok: true });
+  }
+
+  if (path === "/telegram/webhook-info" && request.method === "GET") {
+    requireRole(admin, ["owner"]);
+    const response = await telegramCall(env, "getWebhookInfo", {}) as { result?: { url?: string; pending_update_count?: number; last_error_message?: string } };
+    return json({ url: response.result?.url ?? "", pending: response.result?.pending_update_count ?? 0, lastError: response.result?.last_error_message ?? "" });
   }
 
   if (path === "/status" && request.method === "GET") {

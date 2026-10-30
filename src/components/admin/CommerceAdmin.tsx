@@ -1,3 +1,6 @@
+import { SmartTable } from "./SmartTable";
+import type { VendorSelection } from "./VendorCatalog";
+import { ProductDescriptionEditor } from "../ProductDescription";
 import { useEffect, useRef, useState } from "react";
 import { api, amountLabel, timeLabel } from "../../services/platform";
 
@@ -143,7 +146,7 @@ export function ReadOnlyProducts({ run }: { run: Run }) {
     <section className="panel">
       <h2>Danh mục sản phẩm</h2>
       <div className="table-wrap">
-        <table>
+        <SmartTable>
           <thead>
             <tr>
               <th>Sản phẩm</th>
@@ -172,7 +175,7 @@ export function ReadOnlyProducts({ run }: { run: Run }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </SmartTable>
       </div>
     </section>
   );
@@ -320,7 +323,7 @@ export function CatalogProducts({ run }: { run: Run }) {
             </p>
           )}
           <div className="table-wrap">
-            <table>
+            <SmartTable>
               <thead>
                 <tr>
                   <th>Sản phẩm</th>
@@ -393,7 +396,7 @@ export function CatalogProducts({ run }: { run: Run }) {
                     </tr>
                   ))}
               </tbody>
-            </table>
+            </SmartTable>
           </div>
           {!products.length && (
             <p className="muted">
@@ -447,7 +450,7 @@ export function CatalogProducts({ run }: { run: Run }) {
           </div>
           {!!vendorProducts.length && (
             <div className="table-wrap">
-              <table>
+              <SmartTable>
                 <thead>
                   <tr>
                     <th>Sản phẩm NCC</th>
@@ -522,7 +525,7 @@ export function CatalogProducts({ run }: { run: Run }) {
                     );
                   })}
                 </tbody>
-              </table>
+              </SmartTable>
             </div>
           )}
         </section>
@@ -823,16 +826,10 @@ export function CatalogProducts({ run }: { run: Run }) {
                 </>
               )}
             </div>
-            <label>
-              Mô tả
-              <textarea
-                maxLength={10000}
-                value={product.description}
-                onChange={(e) =>
-                  setProduct({ ...product, description: e.target.value })
-                }
-              />
-            </label>
+            <div className="description-field">
+              <span>Mô tả</span>
+              <ProductDescriptionEditor value={product.description} onChange={(description) => setProduct({ ...product, description })} />
+            </div>
             <div className="action-row" style={{ marginBottom: 14 }}>
               <label>
                 <input
@@ -906,7 +903,7 @@ export function CatalogProducts({ run }: { run: Run }) {
                   </p>
                 ) : (
                   <div className="table-wrap">
-                    <table>
+                    <SmartTable>
                       <thead>
                         <tr>
                           <th>Key / Tài khoản</th>
@@ -1030,7 +1027,7 @@ export function CatalogProducts({ run }: { run: Run }) {
                           </tr>
                         ))}
                       </tbody>
-                    </table>
+                    </SmartTable>
                   </div>
                 )}
               </div>
@@ -1062,26 +1059,20 @@ export function Providers({ run }: { run: Run }) {
   });
   const [rate, setRate] = useState(25500);
   const [categories, setCategories] = useState("");
-  const [config, setConfig] = useState<CatalogConfig>({
-    markupPercent: null,
-    telegramChatId: "",
-  });
   const [notice, setNotice] = useState("");
   const editorRef = useRef<HTMLElement | null>(null);
 
   async function load() {
-    const [directory, settings, catalog] = await Promise.all([
+    const [directory, settings] = await Promise.all([
       api<{ providers: Provider[]; usd_rate: number }>(
         `${supplierApi}/providers`,
       ),
       api<{ settings: { categories: { name: string; keywords: string[] }[] } }>(
         `${supplierApi}/settings`,
       ),
-      api<CatalogConfig>("/api/admin/catalog-config"),
     ]);
     setProviders(directory.providers);
     setRate(directory.usd_rate);
-    setConfig(catalog);
     setCategories(
       settings.settings.categories
         .map((c) => `${c.name}: ${c.keywords.join(",")}`)
@@ -1151,7 +1142,7 @@ export function Providers({ run }: { run: Run }) {
             </div>
           </div>
           <div className="table-wrap">
-            <table>
+            <SmartTable>
               <thead>
                 <tr>
                   <th>NCC</th>
@@ -1205,7 +1196,7 @@ export function Providers({ run }: { run: Run }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </SmartTable>
           </div>
           {notice && (
             <p role="status" className="notice" style={{ marginTop: 12 }}>
@@ -1263,37 +1254,6 @@ export function Providers({ run }: { run: Run }) {
           </form>
         </section>
 
-        <section className="panel">
-          <h2>Cảnh báo Telegram cho quản trị</h2>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run(async () => {
-                await api("/api/admin/catalog-config", {
-                  method: "PUT",
-                  body: config,
-                });
-                await load();
-              });
-            }}
-          >
-            <label>
-              Chat ID quản trị (tài khoản hoặc nhóm)
-              <input
-                pattern="-?[0-9]{1,25}"
-                value={config.telegramChatId}
-                onChange={(e) =>
-                  setConfig({ ...config, telegramChatId: e.target.value })
-                }
-              />
-            </label>
-            <p className="muted">
-              Bot cần được thêm vào nhóm và có quyền gửi tin. Cảnh báo luôn lưu
-              trong admin; Telegram gửi qua tác vụ nền.
-            </p>
-            <button>Lưu nơi nhận cảnh báo</button>
-          </form>
-        </section>
       </div>
 
       <aside
@@ -1584,7 +1544,7 @@ export function FulfillmentAlerts({
         <p className="muted">Không có đơn cần xử lý.</p>
       ) : (
         <div className="table-wrap">
-          <table>
+          <SmartTable>
             <thead>
               <tr>
                 <th>Đơn / sản phẩm</th>
@@ -1633,7 +1593,7 @@ export function FulfillmentAlerts({
                 </tr>
               ))}
             </tbody>
-          </table>
+          </SmartTable>
         </div>
       )}
       {selected && (
@@ -1786,18 +1746,20 @@ interface SupplierOrder {
 export function PurchaseOrders({
   run,
   ownerId,
+  initialSelection,
 }: {
   run: Run;
   ownerId: string;
+  initialSelection?: VendorSelection | null;
 }) {
   const [orders, setOrders] = useState<SupplierOrder[]>([]);
   const [selected, setSelected] = useState<SupplierOrder | null>(null);
   const [search, setSearch] = useState("");
   const [providerFilter, setProviderFilter] = useState("");
-  const [provider, setProvider] = useState("");
+  const [provider, setProvider] = useState(initialSelection?.providerId ?? "");
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [vendorProducts, setVendorProducts] = useState<VendorProduct[]>([]);
-  const [item, setItem] = useState("");
+  const [vendorProducts, setVendorProducts] = useState<VendorProduct[]>(initialSelection ? [initialSelection.product] : []);
+  const [item, setItem] = useState(initialSelection?.product.provider_product_id ?? "");
   const [quantity, setQuantity] = useState(1);
   const [email, setEmail] = useState("");
   const [destination, setDestination] = useState<"self" | "stock">("self");
@@ -1807,7 +1769,7 @@ export function PurchaseOrders({
   const [buying, setBuying] = useState(false);
   const [manualStatus, setManualStatus] = useState("");
   const [manualDelivered, setManualDelivered] = useState("");
-  const [purchaseFormOpen, setPurchaseFormOpen] = useState(false);
+  const [purchaseFormOpen, setPurchaseFormOpen] = useState(Boolean(initialSelection));
   const detailRef = useRef<HTMLDivElement | null>(null);
 
   async function load(query = search, provFilter = providerFilter) {
@@ -1927,7 +1889,7 @@ export function PurchaseOrders({
           <button className="primary">Tìm</button>
         </form>
         <div className="table-wrap">
-          <table>
+          <SmartTable>
             <thead>
               <tr>
                 <th>Đơn / NCC</th>
@@ -1984,7 +1946,7 @@ export function PurchaseOrders({
                 </tr>
               ))}
             </tbody>
-          </table>
+          </SmartTable>
         </div>
         {selected && (
           <div
@@ -2180,11 +2142,6 @@ export function PurchaseOrders({
               Đóng
             </button>
           </div>
-          <p className="muted">
-            Đơn khách đã thanh toán được mua tự động. Chỉ dùng mục này để nhập
-            hàng chủ động; đơn lỗi hoặc timeout cần đối soát tại cảnh báo trước
-            khi mua lại.
-          </p>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -2479,12 +2436,7 @@ function MonthlyReport({ run }: { run: Run }) {
 
   return (
     <section className="panel">
-      <details open style={{ marginTop: 0, border: 0, padding: 0, background: "transparent" }}>
-        <summary>Báo cáo MMO cũ theo tháng</summary>
-        <p className="muted">
-          Dữ liệu giao dịch đã chuyển từ hệ thống MMO cũ. Giá vốn của đơn bán và
-          chi phí khác được trình bày riêng.
-        </p>
+      <div className="panel-heading"><h2>Báo cáo theo tháng</h2></div>
         <form
           className="action-row"
           onSubmit={(e) => {
@@ -2504,23 +2456,8 @@ function MonthlyReport({ run }: { run: Run }) {
           </label>
           <button className="primary">Xem báo cáo năm</button>
         </form>
-        {yearSummary && (
-          <div className="metric-grid">
-            {[
-              ["Doanh thu", yearSummary.totalRevenue],
-              ["Giá vốn", yearSummary.totalCost],
-              ["Chi phí khác", yearSummary.totalOtherExpense],
-              ["Lợi nhuận", yearSummary.netProfit],
-            ].map(([label, value]) => (
-              <div className="metric" key={String(label)}>
-                <span>{label}</span>
-                <strong>{amountLabel(Number(value) || 0)}</strong>
-              </div>
-            ))}
-          </div>
-        )}
         <div className="table-wrap">
-          <table>
+          <SmartTable>
             <thead>
               <tr>
                 <th>Tháng</th>
@@ -2549,9 +2486,9 @@ function MonthlyReport({ run }: { run: Run }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+            {yearSummary && <tfoot><tr><th>Tổng năm {year}</th><td>{amountLabel(yearSummary.totalRevenue)}</td><td>{amountLabel(yearSummary.totalCost)}</td><td>{amountLabel(yearSummary.totalOtherExpense)}</td><td>{amountLabel(yearSummary.totalExpense)}</td><td><strong>{amountLabel(yearSummary.netProfit)}</strong></td></tr></tfoot>}
+          </SmartTable>
         </div>
-      </details>
     </section>
   );
 }
@@ -2562,9 +2499,13 @@ function MonthlyReport({ run }: { run: Run }) {
 export function BusinessFinance({
   run,
   warrantyOnly = false,
+  reportOnly = false,
+  transactionsOnly = false,
 }: {
   run: Run;
   warrantyOnly?: boolean;
+  reportOnly?: boolean;
+  transactionsOnly?: boolean;
 }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<Record<string, number>>({});
@@ -2622,55 +2563,19 @@ export function BusinessFinance({
 
   return (
     <>
-      {!warrantyOnly && (
-        <div className="admin-two-col">
-          <section className="panel">
-            <h2>Doanh thu & lợi nhuận cửa hàng</h2>
-            <p className="muted">
-              Doanh thu đã thanh toán và giá vốn các phần hàng đã giao. Chi phí
-              đơn NCC chưa rõ kết quả được đối soát riêng.
-            </p>
-            <div className="metric-grid">
-              {[
-                ["Doanh thu đã thu", automatic.revenue],
-                ["Giá vốn đã giao", automatic.cost],
-                ["Lợi nhuận phần đã giao", automatic.profit],
-                ["Đơn cần xử lý", automatic.review],
-              ].map(([label, value]) => (
-                <div className="metric" key={String(label)}>
-                  <span>{label}</span>
-                  <strong>
-                    {label === "Đơn cần xử lý"
-                      ? (value ?? 0)
-                      : amountLabel(Number(value) || 0)}
-                  </strong>
-                </div>
-              ))}
-            </div>
-          </section>
-          <section className="panel">
-            <h2>Giao dịch và chi phí MMO cũ</h2>
-            <p className="muted">
-              Tổng hợp số liệu từ sổ giao dịch nhập tay và hệ thống MMO trước
-              đây.
-            </p>
-            <div className="metric-grid">
-              {[
-                ["Doanh thu nhập tay", summary.totalRevenue],
-                ["Chi phí", summary.totalExpense],
-                ["Lợi nhuận ròng", summary.netProfit],
-              ].map(([label, value]) => (
-                <div className="metric" key={String(label)}>
-                  <span>{label}</span>
-                  <strong>{amountLabel(Number(value) || 0)}</strong>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      )}
-      {!warrantyOnly && <MonthlyReport run={run} />}
-      <div className="admin-split-grid">
+      {!warrantyOnly && !transactionsOnly && <div className="metric-grid finance-summary">
+        {[
+          ["Doanh thu cửa hàng", automatic.revenue],
+          ["Giá vốn đã giao", automatic.cost],
+          ["Lợi nhuận đã giao", automatic.profit],
+          ["Đơn cần xử lý", automatic.review],
+          ["Doanh thu MMO cũ", summary.totalRevenue],
+          ["Chi phí MMO cũ", summary.totalExpense],
+          ["Lợi nhuận MMO cũ", summary.netProfit],
+        ].map(([label, value]) => <div className="metric" key={String(label)}><span>{label}</span><strong>{label === "Đơn cần xử lý" ? (value ?? 0) : amountLabel(Number(value) || 0)}</strong></div>)}
+      </div>}
+      {!warrantyOnly && reportOnly && <MonthlyReport run={run} />}
+      {!reportOnly && <div className="admin-split-grid">
         <section className="panel">
           <div className="panel-heading">
             <div>
@@ -2760,7 +2665,7 @@ export function BusinessFinance({
             <button className="primary">Tìm</button>
           </form>
           <div className="table-wrap">
-            <table>
+            <SmartTable>
               <thead>
                 <tr>
                   <th>Ngày / sản phẩm</th>
@@ -2810,7 +2715,7 @@ export function BusinessFinance({
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </SmartTable>
           </div>
         </section>
 
@@ -3034,7 +2939,7 @@ export function BusinessFinance({
             </form>
           </section>
         </aside>
-      </div>
+      </div>}
     </>
   );
 }

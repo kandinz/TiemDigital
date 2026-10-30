@@ -1,3 +1,7 @@
+import { SmartTable } from "../components/admin/SmartTable";
+import { TableSearchContext } from "../components/admin/TableSearchContext";
+import { VendorCatalog, type VendorSelection } from "../components/admin/VendorCatalog";
+import { TelegramSettings } from "../components/admin/TelegramSettings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LayoutDashboard,
@@ -7,7 +11,6 @@ import {
   BarChart3,
   Landmark,
   Package,
-  FileText,
   Bot,
   ShieldAlert,
   Plug,
@@ -20,7 +23,6 @@ import {
   timeLabel,
   paymentLabel,
   fulfillmentLabel,
-  type PageBlock,
   type PlatformOrder,
 } from "../services/platform";
 import "../platform.css";
@@ -63,15 +65,6 @@ interface Approval {
   approved_by: string | null;
 }
 
-interface Page {
-  slug: string;
-  title: string;
-  description: string;
-  blocks: string;
-  draft_id: string;
-  published_id: string | null;
-}
-
 interface Customer {
   id: string;
   email: string;
@@ -96,9 +89,11 @@ type Tab =
   | "orders"
   | "purchases"
   | "finance"
+  | "finance-report"
+  | "finance-transactions"
   | "payment"
   | "products"
-  | "pages"
+  | "vendor-catalog"
   | "telegram"
   | "audit"
   | "providers";
@@ -145,39 +140,16 @@ const labels: [Tab, string][] = [
   ["customers", "Khách hàng"],
   ["orders", "Đơn & giao hàng"],
   ["purchases", "Mua hàng NCC"],
-  ["finance", "Tài chính & báo cáo"],
+  ["finance", "Ví & sổ cái"],
+  ["finance-report", "Báo cáo doanh thu"],
+  ["finance-transactions", "Sổ giao dịch MMO"],
   ["payment", "Thanh toán ngân hàng"],
   ["products", "Sản phẩm"],
-  ["pages", "Nội dung website"],
-  ["telegram", "Telegram & hệ thống"],
+  ["vendor-catalog", "Sản phẩm NCC"],
+  ["telegram", "Telegram Bot"],
   ["audit", "Nhật ký quản trị"],
   ["providers", "Nhà cung cấp"],
 ];
-
-const tabDescriptions: Record<Tab, string> = {
-  overview:
-    "Theo dõi nhanh chỉ số tài chính, hàng đợi đối soát và điều phối vận hành toàn cửa hàng.",
-  customers:
-    "Tra cứu hồ sơ khách hàng, kiểm tra số dư ví, liên kết Telegram và quản lý trạng thái bảo mật tài khoản.",
-  orders:
-    "Quản lý đơn hàng khách mua, xử lý cảnh báo tồn kho, xem dữ liệu đã giao và giao hàng thủ công.",
-  purchases:
-    "Đặt mua hàng chủ động từ nhà cung cấp, đồng bộ lịch sử đơn nhập và đẩy dữ liệu thẳng vào kho tự tạo.",
-  finance:
-    "Báo cáo doanh thu - lợi nhuận thực tế, sổ giao dịch MMO, điều chỉnh số dư ví và đối chiếu sổ cái.",
-  payment:
-    "Cấu hình tài khoản ngân hàng ACB nhận tiền tự động qua SePay và chạy đối soát giao dịch.",
-  products:
-    "Quản trị danh mục sản phẩm đang bán, nhập kho key/tài khoản tự tạo và đồng bộ sản phẩm từ nhà cung cấp.",
-  pages:
-    "Biên tập nội dung các trang thông tin trên website, xem trước trực quan và khôi phục lịch sử phiên bản.",
-  telegram:
-    "Giám sát trạng thái kết nối bot Telegram, hàng đợi thông báo (outbox) và thực thi tác vụ bảo trì hệ thống.",
-  audit:
-    "Tra cứu nhật ký thao tác của các quản trị viên nhằm đảm bảo tính minh bạch và an toàn vận hành.",
-  providers:
-    "Thiết lập kết nối API nhà cung cấp, cấu hình tỷ giá USD, từ khóa phân loại tự động và kênh cảnh báo Telegram.",
-};
 
 const navGroups: { title: string; items: Tab[] }[] = [
   {
@@ -186,15 +158,15 @@ const navGroups: { title: string; items: Tab[] }[] = [
   },
   {
     title: "Danh mục & Nguồn hàng",
-    items: ["products", "providers"],
+    items: ["products", "vendor-catalog", "providers"],
   },
   {
     title: "Tài chính & Ngân hàng",
-    items: ["finance", "payment"],
+    items: ["finance-report", "finance-transactions", "finance", "payment"],
   },
   {
     title: "Nội dung & Hệ thống",
-    items: ["pages", "telegram", "audit"],
+    items: ["telegram", "audit"],
   },
 ];
 
@@ -213,13 +185,14 @@ function TabIcon({ tab }: { tab: Tab }) {
     case "purchases":
       return <Truck {...props} />;
     case "finance":
+    case "finance-report":
+    case "finance-transactions":
       return <BarChart3 {...props} />;
     case "payment":
       return <Landmark {...props} />;
     case "products":
+    case "vendor-catalog":
       return <Package {...props} />;
-    case "pages":
-      return <FileText {...props} />;
     case "telegram":
       return <Bot {...props} />;
     case "audit":
@@ -347,7 +320,7 @@ function Orders({ run }: { run: Run }) {
           <button className="primary">Tìm đơn</button>
         </form>
         <div className="table-wrap">
-          <table>
+          <SmartTable>
             <thead>
               <tr>
                 <th>Đơn</th>
@@ -399,7 +372,7 @@ function Orders({ run }: { run: Run }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </SmartTable>
         </div>
         {!orders.length && (
           <div className="empty-state">
@@ -654,7 +627,7 @@ function Customers({
           <button className="primary">Tìm khách</button>
         </form>
         <div className="table-wrap">
-          <table>
+          <SmartTable>
             <thead>
               <tr>
                 <th>Khách hàng</th>
@@ -704,7 +677,7 @@ function Customers({
                 </tr>
               ))}
             </tbody>
-          </table>
+          </SmartTable>
         </div>
       </section>
 
@@ -1116,7 +1089,7 @@ function PaymentSettings({ admin, run }: { admin: Admin; run: Run }) {
             <div>
               <h3>Khoản cần kiểm tra ({transactions.inbox.length})</h3>
               <div className="table-wrap">
-                <table>
+                <SmartTable>
                   <thead>
                     <tr>
                       <th>Mã</th>
@@ -1168,13 +1141,13 @@ function PaymentSettings({ admin, run }: { admin: Admin; run: Run }) {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </SmartTable>
               </div>
             </div>
             <div>
               <h3>Giao dịch ngân hàng gần nhất</h3>
               <div className="table-wrap">
-                <table>
+                <SmartTable>
                   <thead>
                     <tr>
                       <th>Mã giao dịch</th>
@@ -1199,7 +1172,7 @@ function PaymentSettings({ admin, run }: { admin: Admin; run: Run }) {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </SmartTable>
               </div>
             </div>
             <div>
@@ -1438,7 +1411,7 @@ function Finance({
             : "Số dư khớp với sổ cái"}
         </p>
         <div className="table-wrap">
-          <table>
+          <SmartTable>
             <thead>
               <tr>
                 <th>Thời gian</th>
@@ -1468,600 +1441,27 @@ function Finance({
                 </tr>
               ))}
             </tbody>
-          </table>
+          </SmartTable>
         </div>
       </section>
     </div>
   );
 }
 
-/**
- * Biên tập nội dung trang CMS, quản lý các khối nội dung/liên kết/ảnh và lịch sử phiên bản.
- */
-function Pages({ run }: { run: Run }) {
-  const [pages, setPages] = useState<Page[]>([]);
-  const [slug, setSlug] = useState("trang-chu");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [blocks, setBlocks] = useState<PageBlock[]>([
-    { type: "text", heading: "", text: "" },
-  ]);
-  const [versions, setVersions] = useState<
-    { id: string; title: string; created_at: number }[]
-  >([]);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const initializedRef = useRef(false);
-  const editorRef = useRef<HTMLElement | null>(null);
-
-  async function load() {
-    const loaded = (await api<{ pages: Page[] }>("/api/admin/pages")).pages;
-    setPages(loaded);
-    if (!initializedRef.current && loaded.length > 0) {
-      initializedRef.current = true;
-      const home = loaded.find((p) => p.slug === "trang-chu") ?? loaded[0];
-      setSlug(home.slug);
-      setTitle(home.title);
-      setDescription(home.description);
-      setBlocks(JSON.parse(home.blocks));
-    }
-  }
-
-  useEffect(() => {
-    void run(load);
-  }, [run]);
-
-  function edit(page: Page) {
-    setSlug(page.slug);
-    setTitle(page.title);
-    setDescription(page.description);
-    setBlocks(JSON.parse(page.blocks));
-    setEditorOpen(true);
-    focusPanel(editorRef.current);
-    void run(async () =>
-      setVersions(
-        (
-          await api<{ versions: typeof versions }>(
-            `/api/admin/pages/${page.slug}/versions`,
-          )
-        ).versions,
-      ),
-    );
-  }
-
-  function moveBlock(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= blocks.length) return;
-    const next = [...blocks];
-    const [item] = next.splice(index, 1);
-    next.splice(target, 0, item);
-    setBlocks(next);
-  }
-
-  const currentPage = pages.find((p) => p.slug === slug);
-
-  return (
-    <div className="admin-split-grid">
-      <div>
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>Nội dung website</h2>
-              <p className="muted">
-                Bấm vào dòng trang để chỉnh sửa hoặc xuất bản bản nháp ra giao
-                diện khách hàng.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => {
-                setSlug("");
-                setTitle("");
-                setDescription("");
-                setBlocks([{ type: "text", heading: "", text: "" }]);
-                setVersions([]);
-                setEditorOpen(true);
-                focusPanel(editorRef.current);
-              }}
-            >
-              Tạo trang mới
-            </button>
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Trang</th>
-                  <th>Đường dẫn</th>
-                  <th>Trạng thái</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pages.map((p) => (
-                  <tr
-                    key={p.slug}
-                    className={`clickable-row ${slug === p.slug ? "selected-row" : ""}`}
-                    onClick={() => edit(p)}
-                  >
-                    <td>
-                      <strong>{p.title}</strong>
-                      <br />
-                      <small className="muted">
-                        {p.description || "Chưa có mô tả"}
-                      </small>
-                    </td>
-                    <td className="mono">
-                      /{p.slug === "trang-chu" ? "" : p.slug}
-                    </td>
-                    <td>
-                      <span
-                        className={
-                          p.published_id === p.draft_id
-                            ? "status good"
-                            : "status"
-                        }
-                      >
-                        {p.published_id === p.draft_id
-                          ? "Đã xuất bản"
-                          : "Có bản nháp mới"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="panel">
-          <h3>Xem trước · {title || "Tiêu đề trang"}</h3>
-          <div className="preview">
-            <h2>{title || "Tiêu đề trang"}</h2>
-            <p className="muted">{description}</p>
-            {blocks.map((b, i) => (
-              <div key={i}>
-                {b.type === "image" ? (
-                  <img
-                    src={b.url}
-                    alt={b.alt ?? ""}
-                    style={{ maxWidth: "100%", borderRadius: 8 }}
-                  />
-                ) : b.type === "link" ? (
-                  <p>
-                    {b.label} · {b.url}
-                  </p>
-                ) : (
-                  <>
-                    <h3>{b.heading}</h3>
-                    <p style={{ whiteSpace: "pre-wrap" }}>{b.text}</p>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <aside
-        className={`admin-sticky-pane admin-detail-pane ${editorOpen ? "is-open" : ""}`}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) setEditorOpen(false);
-        }}
-      >
-        <section className="panel panel-focus-target" ref={editorRef}>
-          <div className="panel-heading">
-            <h2>{currentPage ? `Biên tập /${currentPage.slug}` : "Tạo trang mới"}</h2>
-            <div className="action-row">
-              {currentPage && (
-                <>
-                  <a
-                    className="admin-btn"
-                    href={
-                      currentPage.slug === "trang-chu"
-                        ? "/"
-                        : `/pages/${currentPage.slug}`
-                    }
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Xem trang ↗
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void run(async () => {
-                        await api(
-                          `/api/admin/pages/${currentPage.slug}/publish`,
-                          {
-                            body: { versionId: currentPage.draft_id },
-                          },
-                        );
-                        await load();
-                      })
-                    }
-                  >
-                    Xuất bản bản nháp
-                  </button>
-                  {currentPage.slug !== "trang-chu" && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void run(async () => {
-                          await api(`/api/admin/pages/${currentPage.slug}`, {
-                            method: "DELETE",
-                          });
-                          setSlug("trang-chu");
-                          setEditorOpen(false);
-                          await load();
-                        })
-                      }
-                    >
-                      Xóa trang
-                    </button>
-                  )}
-                </>
-              )}
-              <button
-                type="button"
-                className="admin-mobile-only"
-                onClick={() => setEditorOpen(false)}
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run(async () => {
-                await api("/api/admin/pages", {
-                  body: { slug, title, description, blocks },
-                });
-                await load();
-                setVersions(
-                  (
-                    await api<{ versions: typeof versions }>(
-                      `/api/admin/pages/${slug}/versions`,
-                    )
-                  ).versions,
-                );
-              });
-            }}
-          >
-            <div className="form-grid">
-              <label>
-                Slug
-                <input
-                  required
-                  pattern="[a-z0-9-]+"
-                  value={slug}
-                  onChange={(e) => setSlug(e.target.value)}
-                />
-              </label>
-              <label>
-                Tiêu đề
-                <input
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </label>
-            </div>
-            <label>
-              Mô tả trang
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                maxLength={500}
-              />
-            </label>
-            {blocks.map((b, i) => (
-              <div className="admin-detail" key={i}>
-                {b.type === "text" ? (
-                  <>
-                    <label>
-                      Tiêu đề khối
-                      <input
-                        value={b.heading ?? ""}
-                        onChange={(e) =>
-                          setBlocks(
-                            blocks.map((v, n) =>
-                              n === i ? { ...v, heading: e.target.value } : v,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      Nội dung
-                      <textarea
-                        value={b.text ?? ""}
-                        onChange={(e) =>
-                          setBlocks(
-                            blocks.map((v, n) =>
-                              n === i ? { ...v, text: e.target.value } : v,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                  </>
-                ) : b.type === "image" ? (
-                  <>
-                    <label>
-                      Ảnh
-                      <input disabled value={b.url ?? ""} />
-                    </label>
-                    <label>
-                      Mô tả ảnh
-                      <input
-                        value={b.alt ?? ""}
-                        onChange={(e) =>
-                          setBlocks(
-                            blocks.map((value, index) =>
-                              index === i
-                                ? { ...value, alt: e.target.value }
-                                : value,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                  </>
-                ) : (
-                  <>
-                    <label>
-                      Nhãn liên kết
-                      <input
-                        value={b.label ?? ""}
-                        onChange={(e) =>
-                          setBlocks(
-                            blocks.map((value, index) =>
-                              index === i
-                                ? { ...value, label: e.target.value }
-                                : value,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      URL HTTPS
-                      <input
-                        value={b.url ?? ""}
-                        onChange={(e) =>
-                          setBlocks(
-                            blocks.map((value, index) =>
-                              index === i
-                                ? { ...value, url: e.target.value }
-                                : value,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                  </>
-                )}
-                <div className="action-row">
-                  {i > 0 && (
-                    <button type="button" onClick={() => moveBlock(i, -1)}>
-                      ↑ Lên
-                    </button>
-                  )}
-                  {i < blocks.length - 1 && (
-                    <button type="button" onClick={() => moveBlock(i, 1)}>
-                      ↓ Xuống
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setBlocks(blocks.filter((_, n) => n !== i))}
-                  >
-                    Xóa khối
-                  </button>
-                </div>
-              </div>
-            ))}
-            <div className="action-row">
-              <button
-                type="button"
-                onClick={() =>
-                  setBlocks([
-                    ...blocks,
-                    { type: "text", heading: "", text: "" },
-                  ])
-                }
-              >
-                Thêm khối nội dung
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setBlocks([
-                    ...blocks,
-                    { type: "link", label: "", url: "https://" },
-                  ])
-                }
-              >
-                Thêm khối liên kết
-              </button>
-              <button className="primary">Lưu bản nháp</button>
-            </div>
-          </form>
-          <label style={{ marginTop: 14 }}>
-            Thêm ảnh vào page (PNG, JPEG, WebP; tối đa 2 MB)
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                void run(async () => {
-                  if (file.size > 2 * 1024 * 1024)
-                    throw new Error("Ảnh vượt quá 2 MB");
-                  const response = await fetch("/api/admin/media", {
-                    method: "POST",
-                    credentials: "same-origin",
-                    headers: { "Content-Type": file.type },
-                    body: file,
-                  });
-                  const result = await response.json();
-                  if (!response.ok) throw new Error(result.error);
-                  setBlocks((current) => [
-                    ...current,
-                    { type: "image", url: result.url, alt: "" },
-                  ]);
-                });
-                e.target.value = "";
-              }}
-            />
-          </label>
-          {versions.length > 0 && (
-            <div className="admin-detail">
-              <h3>Lịch sử & khôi phục</h3>
-              {versions.map((v) => (
-                <p key={v.id}>
-                  {v.title} · {timeLabel(v.created_at)}{" "}
-                  <button
-                    onClick={() =>
-                      void run(async () => {
-                        await api(`/api/admin/pages/${slug}/publish`, {
-                          body: { versionId: v.id },
-                        });
-                        await load();
-                      })
-                    }
-                  >
-                    Xuất bản phiên bản này
-                  </button>
-                </p>
-              ))}
-            </div>
-          )}
-        </section>
-      </aside>
-    </div>
-  );
-}
-
-/**
- * Hiển thị thông tin giám sát hệ thống Telegram/Outbox và nhật ký kiểm toán quản trị.
- */
-function ReadonlyPanel({ path, run }: { path: string; run: Run }) {
-  const [data, setData] = useState<Record<string, unknown> | null>(null);
-  useEffect(() => {
-    void run(async () => setData(await api(`/api/admin/${path}`)));
-  }, [path, run]);
-
-  const auditRows = Array.isArray(data?.audit)
-    ? (data.audit as Record<string, unknown>[])
-    : [];
-
-  return (
-    <section className="panel">
-      <div className="panel-heading">
-        <h2>{path === "audit" ? "Nhật ký quản trị" : "Trạng thái kết nối"}</h2>
-        {path === "status" && (
-          <button
-            className="primary"
-            onClick={() =>
-              void run(async () => {
-                await api("/api/admin/maintenance", { body: {} });
-                setData(await api("/api/admin/status"));
-              })
-            }
-          >
-            Khôi phục inbox và gửi thông báo tồn đọng
-          </button>
-        )}
-      </div>
-      {path === "audit" && auditRows.length > 0 && (
-        <div className="table-wrap" style={{ marginBottom: 18 }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Thời gian</th>
-                <th>Tác nhân</th>
-                <th>Hành động</th>
-                <th>Đối tượng</th>
-              </tr>
-            </thead>
-            <tbody>
-              {auditRows.slice(0, 50).map((row, idx) => (
-                <tr key={String(row.id ?? idx)}>
-                  <td>
-                    {row.created_at ? timeLabel(Number(row.created_at)) : "—"}
-                  </td>
-                  <td className="mono">{String(row.actor ?? "—")}</td>
-                  <td>
-                    <span className="status neutral">
-                      {String(row.action ?? "—")}
-                    </span>
-                  </td>
-                  <td className="mono">
-                    {String(row.target ?? row.meta ?? "—")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {path === "status" &&
-        Array.isArray(data?.outbox) &&
-        data.outbox.length > 0 && (
-          <div className="admin-detail">
-            <h3>Hàng đợi thông báo cần gửi lại ({data.outbox.length})</h3>
-            {data.outbox.map((event: { id: string; attempts: number }) => (
-              <p key={event.id}>
-                <span className="mono">{event.id}</span> · {event.attempts} lần
-                thử{" "}
-                <button
-                  onClick={() =>
-                    void run(async () => {
-                      await api(
-                        `/api/admin/outbox/${encodeURIComponent(event.id)}/retry`,
-                        { body: {} },
-                      );
-                      setData(await api("/api/admin/status"));
-                    })
-                  }
-                >
-                  Gửi lại thông báo
-                </button>
-              </p>
-            ))}
-          </div>
-        )}
-      <div className="admin-two-col">
-        {data &&
-          Object.entries(data).map(([key, value]) => (
-            <div key={key} className="receipt-lines">
-              <h3>{key}</h3>
-              <pre className="code-block">
-                {typeof value === "object"
-                  ? JSON.stringify(value, null, 2)
-                  : String(value)}
-              </pre>
-            </div>
-          ))}
-      </div>
-    </section>
-  );
+/** Nhật ký thao tác quản trị. */
+function AuditPanel({ run }: { run: Run }) {
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  useEffect(() => { void run(async () => setRows((await api<{ events: Record<string, unknown>[] }>("/api/admin/audit")).events)); }, [run]);
+  return <section className="panel">
+    <div className="panel-heading"><h2>Nhật ký quản trị</h2><button onClick={() => void run(async () => setRows((await api<{ events: Record<string, unknown>[] }>("/api/admin/audit")).events))}>Tải lại</button></div>
+    <div className="table-wrap"><SmartTable><thead><tr><th>Thời gian</th><th>Tác nhân</th><th>Hành động</th><th>Đối tượng</th></tr></thead><tbody>{rows.map((row, index) => <tr key={String(row.id ?? index)}><td>{row.created_at ? timeLabel(Number(row.created_at)) : "—"}</td><td className="mono">{String(row.actor ?? "—")}</td><td>{String(row.action ?? "—")}</td><td className="mono">{String(row.target ?? "—")}</td></tr>)}</tbody></SmartTable></div>
+  </section>;
 }
 
 /**
  * Hiển thị bảng điều khiển tổng quan, chỉ số vận hành và lối tắt thao tác nhanh.
  */
-function Overview({
-  run,
-  onNavigate,
-  isOwner,
-}: {
-  run: Run;
-  onNavigate: (tab: Tab) => void;
-  isOwner: boolean;
-}) {
+function Overview({ run, query }: { run: Run; query: string }) {
   const [data, setData] = useState<{
     payments: {
       currency: string;
@@ -2076,23 +1476,24 @@ function Overview({
   useEffect(() => {
     void run(async () => setData(await api("/api/admin/overview")));
   }, [run]);
+  const match = (value: string) => value.toLocaleLowerCase("vi").includes(query.toLocaleLowerCase("vi"));
   return (
     <>
       {data && (
         <div className="metric-grid">
-          <div className="metric">
+          {match("Tổng số dư khách hàng") && <div className="metric">
             <span>Tổng số dư khách hàng</span>
             <strong>{amountLabel(data.wallets.liability)}</strong>
-          </div>
-          <div className="metric">
+          </div>}
+          {match("Cần đối soát") && <div className="metric">
             <span>Cần đối soát</span>
             <strong>{data.review.count}</strong>
-          </div>
-          <div className="metric">
+          </div>}
+          {match("Thông báo đang chờ") && <div className="metric">
             <span>Thông báo đang chờ</span>
             <strong>{data.backlog.count}</strong>
-          </div>
-          {data.payments.map((p) => (
+          </div>}
+          {data.payments.filter((p) => match(`${p.channel === "telegram" ? "Telegram" : "Website"} ${p.currency} đơn đã thanh toán`)).map((p) => (
             <div className="metric" key={`${p.currency}:${p.channel}`}>
               <span>
                 {p.count} đơn đã thanh toán ·{" "}
@@ -2103,93 +1504,18 @@ function Overview({
           ))}
         </div>
       )}
-      <div className="admin-two-col">
-        <section className="panel">
-          <h2>Lối tắt vận hành nhanh</h2>
-          <p className="muted">
-            Truy cập nhanh các phân hệ quản trị thường dùng trong ca trực.
-          </p>
-          <div className="admin-quick-grid">
-            <button
-              type="button"
-              className="admin-quick-card"
-              onClick={() => onNavigate("orders")}
-            >
-              <strong>Xử lý đơn & giao hàng</strong>
-              <span>Kiểm tra cảnh báo giao hàng và đơn khách mua</span>
-            </button>
-            <button
-              type="button"
-              className="admin-quick-card"
-              onClick={() => onNavigate("products")}
-            >
-              <strong>Quản lý kho & sản phẩm</strong>
-              <span>Nhập key kho tự tạo và đồng bộ giá nhà cung cấp</span>
-            </button>
-            <button
-              type="button"
-              className="admin-quick-card"
-              onClick={() => onNavigate("payment")}
-            >
-              <strong>Đối soát ngân hàng</strong>
-              <span>Kiểm tra giao dịch ACB / SePay và xử lý inbox</span>
-            </button>
-            <button
-              type="button"
-              className="admin-quick-card"
-              onClick={() => onNavigate("customers")}
-            >
-              <strong>Hồ sơ khách hàng</strong>
-              <span>Tra cứu số dư, lịch sử mua và khóa phiên bảo mật</span>
-            </button>
-            {isOwner && (
-              <button
-                type="button"
-                className="admin-quick-card"
-                onClick={() => onNavigate("purchases")}
-              >
-                <strong>Đặt hàng nhà cung cấp</strong>
-                <span>Mua hàng MMO chủ động và nhập thẳng vào kho</span>
-              </button>
-            )}
-            <button
-              type="button"
-              className="admin-quick-card"
-              onClick={() => onNavigate("finance")}
-            >
-              <strong>Báo cáo & sổ cái</strong>
-              <span>Theo dõi lợi nhuận, bảo hành và duyệt số dư</span>
-            </button>
-          </div>
-        </section>
-
-        <section className="panel">
-          <h2>Vận hành cửa hàng</h2>
-          <p>
-            Kiểm tra giao dịch cần đối soát trước khi xử lý điều chỉnh tiền. Mọi
-            thay đổi cấu hình ngân hàng và số dư ví đều được ghi nhận đầy đủ vào
-            sổ cái và nhật ký kiểm toán.
-          </p>
-          <p className="muted">
-            Website và Telegram dùng chung tài khoản, giá VND và số dư. Cả hai
-            kênh nhận thanh toán bằng số dư hoặc QR ngân hàng.
-          </p>
-          <div className="admin-kv-grid">
-            <div className="admin-kv-item">
-              <small>Kênh bán đồng bộ</small>
-              <strong>Website & Telegram Bot</strong>
-            </div>
-            <div className="admin-kv-item">
-              <small>Cơ chế bảo vệ quỹ</small>
-              <strong>Sổ cái kép & Nhật ký kiểm toán</strong>
-            </div>
-            <div className="admin-kv-item">
-              <small>Bảo mật dữ liệu giao</small>
-              <strong>Mã hóa AES-GCM tại D1</strong>
-            </div>
-          </div>
-        </section>
-      </div>
+      {data && <section className="panel dashboard-breakdown">
+        <div className="panel-heading"><h2>Doanh thu theo kênh</h2><span className="muted">Đơn đã thanh toán</span></div>
+        {data.payments.filter((payment) => match(`${payment.channel === "telegram" ? "Telegram" : "Website"} ${payment.currency} đơn đã thanh toán`)).map((payment) => {
+          const maximum = Math.max(1, ...data.payments.filter((item) => item.currency === payment.currency).map((item) => item.total));
+          return <div className="dashboard-bar-row" key={`${payment.currency}:${payment.channel}`}>
+            <span>{payment.channel === "telegram" ? "Telegram" : "Website"} · {payment.currency}</span>
+            <div className="dashboard-track"><div style={{ width: `${Math.max(2, payment.total / maximum * 100)}%` }} /></div>
+            <strong>{amountLabel(payment.total, payment.currency)}</strong>
+          </div>;
+        })}
+        {data.payments.length === 0 && <p className="muted">Chưa có đơn đã thanh toán.</p>}
+      </section>}
     </>
   );
 }
@@ -2211,12 +1537,13 @@ export function AdminPage() {
     "customers" | "purchases" | "warranty"
   >("customers");
   const [prefillUserId, setPrefillUserId] = useState("");
+  const [purchaseSelection, setPurchaseSelection] = useState<VendorSelection | null>(null);
+  const [pageSearch, setPageSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState("session");
   const [adminUrl, setAdminUrl] = useState("/admin");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
   const [dark, setDark] = useState(() =>
     document.documentElement.classList.contains("dark"),
   );
@@ -2234,16 +1561,14 @@ export function AdminPage() {
     setTab(nextTab);
     window.history.replaceState(null, "", `/admin/${nextTab}`);
     setError("");
-    setMessage("");
+    setPageSearch("");
   }, []);
 
   const run = useCallback(async (task: () => Promise<void>) => {
     setBusy(true);
     setError("");
-    setMessage("");
     try {
       await task();
-      setMessage("Đã cập nhật dữ liệu.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -2344,7 +1669,7 @@ export function AdminPage() {
             {navGroups.map((group) => {
               const visibleItems = group.items.filter(
                 (id) =>
-                  !["providers", "purchases"].includes(id) ||
+                  !["providers", "purchases", "vendor-catalog", "finance-report", "finance-transactions"].includes(id) ||
                   admin.role === "owner",
               );
               if (!visibleItems.length) return null;
@@ -2370,38 +1695,21 @@ export function AdminPage() {
             })}
           </nav>
           <main className="content">
+            <TableSearchContext.Provider value={pageSearch}>
             <div className="admin-page-header">
-              <div>
-                <span className="eyebrow">Tiệm Digital · Khu vực quản trị</span>
-                <h1>{labels.find(([id]) => id === tab)?.[1]}</h1>
-                <p className="muted">{tabDescriptions[tab]}</p>
-              </div>
-              {busy && (
-                <p role="status" className="muted">
-                  Đang xử lý…
-                </p>
-              )}
+              <h1>{labels.find(([id]) => id === tab)?.[1]}</h1>
+              <input className="admin-page-search" type="search" aria-label={tab === "overview" ? "Lọc số liệu tổng quan" : "Tìm trong bảng của trang"} placeholder={tab === "overview" ? "Lọc chỉ số, kênh bán…" : "Tìm trong các bảng…"} value={pageSearch} onChange={(event) => setPageSearch(event.target.value)} />
+              {busy && <span role="status" className="muted">Đang xử lý…</span>}
             </div>
-            {(error || (message && !busy)) && (
+            {error && (
               <div className="admin-status-bar">
-                {error && (
                   <p role="alert" className="notice error">
                     {error}
                   </p>
-                )}
-                {message && !busy && (
-                  <p role="status" className="notice">
-                    {message}
-                  </p>
-                )}
               </div>
             )}
             {tab === "overview" && (
-              <Overview
-                run={run}
-                onNavigate={navigateTab}
-                isOwner={admin.role === "owner"}
-              />
+              <Overview run={run} query={pageSearch} />
             )}{" "}
             {tab === "customers" && (
               <Customers
@@ -2462,18 +1770,18 @@ export function AdminPage() {
               <PurchaseOrders
                 run={run}
                 ownerId={admin.userId ?? admin.email}
+                initialSelection={purchaseSelection}
               />
             )}{" "}
             {tab === "finance" && (
-              <>
-                {admin.role === "owner" && <BusinessFinance run={run} />}
-                <Finance
+              <Finance
                   admin={admin}
                   run={run}
                   initialUserId={prefillUserId}
-                />
-              </>
+              />
             )}{" "}
+            {tab === "finance-report" && admin.role === "owner" && <BusinessFinance run={run} reportOnly />}
+            {tab === "finance-transactions" && admin.role === "owner" && <BusinessFinance run={run} transactionsOnly />}
             {tab === "payment" && (
               <PaymentSettings admin={admin} run={run} />
             )}{" "}
@@ -2483,12 +1791,13 @@ export function AdminPage() {
               ) : (
                 <ReadOnlyProducts run={run} />
               ))}{" "}
-            {tab === "pages" && <Pages run={run} />}{" "}
-            {tab === "telegram" && <ReadonlyPanel path="status" run={run} />}{" "}
-            {tab === "audit" && <ReadonlyPanel path="audit" run={run} />}
+            {tab === "vendor-catalog" && admin.role === "owner" && <VendorCatalog run={run} onBuy={(selection) => { setPurchaseSelection(selection); navigateTab("purchases"); }} />}
+            {tab === "telegram" && <TelegramSettings run={run} owner={admin.role === "owner"} />}{" "}
+            {tab === "audit" && <AuditPanel run={run} />}
             {tab === "providers" && admin.role === "owner" && (
               <Providers run={run} />
             )}
+            </TableSearchContext.Provider>
           </main>
         </div>
       )}

@@ -109,6 +109,10 @@ a { text-decoration: none; }
 .shop-dialog-heading .shop-icon-button { flex-shrink: 0; margin-top: -6px; margin-right: -8px; }
 .product-description { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; margin-block: 20px; max-height: 45dvh; overflow-y: auto; padding-block: 16px; border-block: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 13px; }
 .product-description a { color: var(--color-accent); text-decoration: underline; }
+.product-description.formatted-description { white-space: normal; }
+.product-description.formatted-description p, .product-description.formatted-description ul { margin: 0 0 12px; }
+.product-description.formatted-description h3 { margin: 14px 0 8px; }
+.product-description.formatted-description ul { padding-left: 22px; }
 .detail-purchase { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 24px; }
 .detail-purchase label { display: grid; gap: 8px; font-size: 12px; color: var(--color-text-muted); }
 .detail-purchase input { width: 100px; }

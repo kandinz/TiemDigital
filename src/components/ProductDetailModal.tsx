@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Product } from '../types';
 import { formatVND } from '../utils/formatters';
 import { Dialog } from './Dialog';
+import { ProductDescription } from './ProductDescription';
 
 export function ProductDetailModal({ product, onClose, onBuyNow }: {
   product: Product;
@@ -11,8 +12,7 @@ export function ProductDetailModal({ product, onClose, onBuyNow }: {
   const [quantity, setQuantity] = useState(1);
   return <Dialog title={product.name} onClose={onClose}>
     <p className="muted">{product.category} · {product.in_stock ? 'Còn hàng' : 'Hết hàng'}</p>
-    <div className="product-description">{product.description.split(/(https?:\/\/[^\s)\],]+)/g).map((part, index) => /^https?:\/\//.test(part)
-      ? <a key={index} href={part} target="_blank" rel="noopener noreferrer">{part}</a> : part)}</div>
+    <ProductDescription text={product.description} />
     <div className="detail-purchase">
       <label>Số lượng<input type="number" min={1} max={100} step={1} value={quantity} onChange={(event) => setQuantity(Math.min(100, Math.max(1, Math.trunc(Number(event.target.value)) || 1)))} /></label>
       <strong>{formatVND(product.selling_price * quantity)}</strong>

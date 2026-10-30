@@ -19,8 +19,18 @@ export async function processOutbox(env: Env, eventId: string) {
     }>();
   if (!event) return;
   try {
+    const settings = await env.DB.prepare("SELECT order_paid,order_delivered,order_partial,admin_alert FROM telegram_notification_settings WHERE id=1")
+      .first<{ order_paid: number; order_delivered: number; order_partial: number; admin_alert: number }>();
+    const telegramAllowed = event.kind === "ORDER_PAID" ? Boolean(settings?.order_paid ?? 1)
+      : event.kind === "ORDER_DELIVERED" ? Boolean(settings?.order_delivered ?? 1)
+      : event.kind === "ORDER_PARTIAL" ? Boolean(settings?.order_partial ?? 1)
+      : true;
     if (event.kind === 'ORDER_PAID') await fulfillPaidOrders(env);
     if (event.kind === 'ADMIN_ALERT') {
+      if (settings?.admin_alert === 0) {
+        await env.DB.prepare("UPDATE outbox SET status='DONE',error=NULL WHERE id=?").bind(event.id).run();
+        return;
+      }
       const config = await catalogConfig(env);
       const { orderId, reason } = JSON.parse(event.body) as { orderId: string; reason: string };
       if (!config.telegramChatId || !env.TELEGRAM_BOT_TOKEN) throw new Error('ADMIN_TELEGRAM_NOT_CONFIGURED');
@@ -43,7 +53,7 @@ export async function processOutbox(env: Env, eventId: string) {
       event.kind === "ORDER_DELIVERED" || event.kind === 'ORDER_PARTIAL'
         ? `Đơn ${orderId} đã được giao. Đăng nhập ${env.APP_ORIGIN}/account để nhận sản phẩm.`
         : `Đơn ${orderId} đã thanh toán, đang chờ giao. Theo dõi tại ${env.APP_ORIGIN}/account.`;
-    if (!user || (user.emailVerified && !(env.EMAIL && env.EMAIL_FROM) && !(link && env.TELEGRAM_BOT_TOKEN)))
+    if (!user || (telegramAllowed && user.emailVerified && !(env.EMAIL && env.EMAIL_FROM) && !(link && env.TELEGRAM_BOT_TOKEN)))
       throw new Error('NOTIFICATION_NOT_CONFIGURED');
     // Each destination has its own checkpoint. A timeout can still duplicate a
     // notification; it never repeats settlement or creates another product key.
@@ -71,7 +81,7 @@ export async function processOutbox(env: Env, eventId: string) {
     }
     const telegramKey = `notification:${event.id}:telegram`;
     if (
-      link && env.TELEGRAM_BOT_TOKEN &&
+      telegramAllowed && link && env.TELEGRAM_BOT_TOKEN &&
       !(await env.DB.prepare("SELECT id FROM audit WHERE id=?")
         .bind(telegramKey)
         .first())
