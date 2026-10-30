@@ -105,10 +105,20 @@ const transaction = {
         return reply({
           products: [
             {
+              provider_product_id: "sku-expensive",
+              name: "Vendor premium fixture",
+              price_usd: 5,
+              in_stock: true,
+              category: "AI",
+              extra: { description: "Gói nâng cao từ NCC." },
+            },
+            {
               provider_product_id: "sku",
               name: "Vendor fixture",
               price_usd: 2,
               in_stock: true,
+              category: "AI",
+              extra: { description: "Mô tả chi tiết sản phẩm Vendor fixture." },
             },
           ],
           usd_rate: 25500,
@@ -345,11 +355,24 @@ const transaction = {
         .warranty_period,
       "12m",
     );
-    await page.getByRole("button", { name: "Mua hàng NCC", exact: true }).click();
-    await page.getByRole("button", { name: "Mua hàng từ NCC", exact: true }).click();
-    await page.getByLabel("NCC").selectOption("prodseller");
-    await page.getByRole("button", { name: "Tải sản phẩm", exact: true }).click();
-    await page.getByLabel("Sản phẩm").first().selectOption("sku");
+    assert.equal(
+      await page.getByRole("button", { name: "Mua hàng NCC", exact: true }).count(),
+      0,
+    );
+    await page.getByRole("button", { name: "Sản phẩm NCC", exact: true }).click();
+    await page.getByRole("row", { name: /Vendor fixture/ }).first().waitFor();
+    const firstVendorRowText = await page.locator("tbody tr").first().innerText();
+    assert.match(firstVendorRowText, /Vendor fixture/);
+    await page.locator(".dropdown-chip-trigger").first().click();
+    await page
+      .getByRole("group", { name: "Chọn nhanh Lọc nhà cung cấp" })
+      .getByRole("button", { name: /Supplier fixture/ })
+      .click();
+    await page.getByRole("row", { name: /Vendor fixture/ }).first().click();
+    await page.getByText("Mô tả chi tiết sản phẩm Vendor fixture.").waitFor();
+    await page
+      .getByRole("button", { name: "Chọn mua sản phẩm này", exact: true })
+      .click();
     await page.getByLabel("Mục đích mua").selectOption("stock");
     await page.getByLabel("Sản phẩm kho nhận hàng").last().selectOption("1");
     await Promise.all([

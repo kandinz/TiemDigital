@@ -1,6 +1,7 @@
+import { DropdownChipFilter } from "../components/admin/DropdownChipFilter";
 import { SmartTable } from "../components/admin/SmartTable";
 import { TableSearchContext } from "../components/admin/TableSearchContext";
-import { VendorCatalog, type VendorSelection } from "../components/admin/VendorCatalog";
+import { VendorCatalog } from "../components/admin/VendorCatalog";
 import { TelegramSettings } from "../components/admin/TelegramSettings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -154,7 +155,7 @@ const labels: [Tab, string][] = [
 const navGroups: { title: string; items: Tab[] }[] = [
   {
     title: "Vận hành & Bán hàng",
-    items: ["overview", "orders", "customers", "purchases"],
+    items: ["overview", "orders", "customers"],
   },
   {
     title: "Danh mục & Nguồn hàng",
@@ -300,23 +301,23 @@ function Orders({ run }: { run: Run }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <select
-            aria-label="Lọc trạng thái đơn"
+          <DropdownChipFilter
+            label="Lọc trạng thái đơn"
             value={statusFilter}
-            onChange={(e) => {
-              const next = e.target.value;
+            allLabel="Tất cả trạng thái"
+            options={[
+              { value: "PAID", label: "Đã thanh toán" },
+              { value: "UNPAID", label: "Chưa thanh toán" },
+              { value: "DELIVERED", label: "Đã giao" },
+              { value: "QUEUED", label: "Chờ giao" },
+              { value: "AWAITING", label: "Đã mua NCC · chờ giao" },
+              { value: "REVIEW", label: "Cần kiểm tra" },
+            ]}
+            onChange={(next) => {
               setStatusFilter(next);
               void run(() => load(search, next));
             }}
-          >
-            <option value="">Tất cả trạng thái</option>
-            <option value="PAID">Đã thanh toán</option>
-            <option value="UNPAID">Chưa thanh toán</option>
-            <option value="DELIVERED">Đã giao</option>
-            <option value="QUEUED">Chờ giao</option>
-            <option value="AWAITING">Đã mua NCC · chờ giao</option>
-            <option value="REVIEW">Cần kiểm tra</option>
-          </select>
+          />
           <button className="primary">Tìm đơn</button>
         </form>
         <div className="table-wrap">
@@ -1527,17 +1528,14 @@ export function AdminPage() {
   const [admin, setAdmin] = useState<Admin | null>(null);
   const [tab, setTab] = useState<Tab>(() => {
     const path = window.location.pathname.split("/")[2];
-    return path === "mmo"
-      ? "products"
-      : labels.some(([id]) => id === path)
-        ? (path as Tab)
-        : "overview";
+    if (path === "mmo") return "products";
+    if (path === "purchases") return "vendor-catalog";
+    return labels.some(([id]) => id === path) ? (path as Tab) : "overview";
   });
   const [orderSection, setOrderSection] = useState<
     "customers" | "purchases" | "warranty"
   >("customers");
   const [prefillUserId, setPrefillUserId] = useState("");
-  const [purchaseSelection, setPurchaseSelection] = useState<VendorSelection | null>(null);
   const [pageSearch, setPageSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState("session");
@@ -1567,8 +1565,17 @@ export function AdminPage() {
   useEffect(() => {
     const restore = () => {
       const path = window.location.pathname.split("/")[2];
-      setTab(path === "mmo" ? "products" : labels.some(([id]) => id === path) ? path as Tab : "overview");
-      setError(""); setPageSearch("");
+      const next =
+        path === "mmo"
+          ? "products"
+          : path === "purchases"
+            ? "vendor-catalog"
+            : labels.some(([id]) => id === path)
+              ? (path as Tab)
+              : "overview";
+      setTab(next);
+      setError("");
+      setPageSearch("");
     };
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
@@ -1776,22 +1783,19 @@ export function AdminPage() {
                 )}
               </>
             )}{" "}
-            {tab === "purchases" && admin.role === "owner" && (
-              <PurchaseOrders
-                run={run}
-                ownerId={admin.userId ?? admin.email}
-                initialSelection={purchaseSelection}
-              />
-            )}{" "}
             {tab === "finance" && (
               <Finance
-                  admin={admin}
-                  run={run}
-                  initialUserId={prefillUserId}
+                admin={admin}
+                run={run}
+                initialUserId={prefillUserId}
               />
             )}{" "}
-            {tab === "finance-report" && admin.role === "owner" && <BusinessFinance run={run} reportOnly />}
-            {tab === "finance-transactions" && admin.role === "owner" && <BusinessFinance run={run} transactionsOnly />}
+            {tab === "finance-report" && admin.role === "owner" && (
+              <BusinessFinance run={run} reportOnly />
+            )}
+            {tab === "finance-transactions" && admin.role === "owner" && (
+              <BusinessFinance run={run} transactionsOnly />
+            )}
             {tab === "payment" && (
               <PaymentSettings admin={admin} run={run} />
             )}{" "}
@@ -1801,7 +1805,13 @@ export function AdminPage() {
               ) : (
                 <ReadOnlyProducts run={run} />
               ))}{" "}
-            {tab === "vendor-catalog" && admin.role === "owner" && <VendorCatalog run={run} onBuy={(selection) => { setPurchaseSelection(selection); navigateTab("purchases"); }} />}
+            {(tab === "vendor-catalog" || tab === "purchases") &&
+              admin.role === "owner" && (
+                <VendorCatalog
+                  run={run}
+                  ownerId={admin.userId ?? admin.email}
+                />
+              )}
             {tab === "telegram" && <TelegramSettings run={run} owner={admin.role === "owner"} />}{" "}
             {tab === "audit" && <AuditPanel run={run} />}
             {tab === "providers" && admin.role === "owner" && (

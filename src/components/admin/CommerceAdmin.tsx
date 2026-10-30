@@ -1,3 +1,4 @@
+import { DropdownChipFilter } from "./DropdownChipFilter";
 import { SmartTable } from "./SmartTable";
 import type { VendorSelection } from "./VendorCatalog";
 import { ProductDescriptionEditor } from "../ProductDescription";
@@ -334,12 +335,22 @@ export function CatalogProducts({ run }: { run: Run }) {
                 </tr>
               </thead>
               <tbody>
-                {products
+                {[...products]
                   .filter((p) =>
                     `${p.name} ${p.category}`
                       .toLowerCase()
                       .includes(filter.toLowerCase()),
                   )
+                  .sort((a, b) => {
+                    const aInStock =
+                      a.source === "stock" ? a.available > 0 : Boolean(a.in_stock);
+                    const bInStock =
+                      b.source === "stock" ? b.available > 0 : Boolean(b.in_stock);
+                    if (aInStock !== bInStock) return aInStock ? -1 : 1;
+                    if (a.selling_price !== b.selling_price)
+                      return a.selling_price - b.selling_price;
+                    return a.name.localeCompare(b.name, "vi");
+                  })
                   .map((p) => (
                     <tr
                       key={p.id}
@@ -412,23 +423,18 @@ export function CatalogProducts({ run }: { run: Run }) {
             liên kết mở bán trên cửa hàng.
           </p>
           <div className="admin-toolbar">
-            <select
-              aria-label="Chọn nhà cung cấp"
+            <DropdownChipFilter
+              label="Chọn nhà cung cấp"
               value={providerId}
-              onChange={(e) => {
-                setProviderId(e.target.value);
+              allLabel="Chọn NCC…"
+              options={providers
+                .filter((p) => p.is_active)
+                .map((p) => ({ value: p.id, label: p.name }))}
+              onChange={(next) => {
+                setProviderId(next);
                 setVendorProducts([]);
               }}
-            >
-              <option value="">Chọn NCC…</option>
-              {providers
-                .filter((p) => p.is_active)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-            </select>
+            />
             <button
               className="primary"
               disabled={!providerId}
@@ -460,7 +466,14 @@ export function CatalogProducts({ run }: { run: Run }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {vendorProducts.map((v) => {
+                  {[...vendorProducts]
+                    .sort((a, b) => {
+                      if (a.in_stock !== b.in_stock) return a.in_stock ? -1 : 1;
+                      if (a.price_usd !== b.price_usd)
+                        return a.price_usd - b.price_usd;
+                      return a.name.localeCompare(b.name, "vi");
+                    })
+                    .map((v) => {
                     const alreadyLinked = products.some(
                       (p) =>
                         p.provider_id === providerId &&
@@ -503,6 +516,15 @@ export function CatalogProducts({ run }: { run: Run }) {
                       >
                         <td>
                           <strong>{v.name}</strong>
+                          {v.extra?.description && (
+                            <>
+                              <br />
+                              <small className="row-hint vendor-desc-snippet">
+                                {v.extra.description.slice(0, 90)}
+                                {v.extra.description.length > 90 ? "…" : ""}
+                              </small>
+                            </>
+                          )}
                         </td>
                         <td>{amountLabel(Math.ceil(v.price_usd * usdRate))}</td>
                         <td>
@@ -1871,22 +1893,19 @@ export function PurchaseOrders({
             placeholder="Tìm đơn nhập…"
             onChange={(e) => setSearch(e.target.value)}
           />
-          <select
-            aria-label="Lọc theo nhà cung cấp"
+          <DropdownChipFilter
+            label="Lọc theo nhà cung cấp"
             value={providerFilter}
-            onChange={(e) => {
-              const next = e.target.value;
+            allLabel="Tất cả NCC"
+            options={providers.map((p) => ({
+              value: p.id,
+              label: `${p.name} (${p.id})`,
+            }))}
+            onChange={(next) => {
               setProviderFilter(next);
               void run(() => load(search, next));
             }}
-          >
-            <option value="">Tất cả NCC</option>
-            {providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.id})
-              </option>
-            ))}
-          </select>
+          />
           <button className="primary">Tìm</button>
         </form>
         <div className="table-wrap">
@@ -3849,11 +3868,16 @@ export function BusinessFinance({
                 onChange={(e) => setSearch(e.target.value)}
               />
               {!warrantyOnly && (
-                <select
-                  aria-label="Lọc loại giao dịch"
+                <DropdownChipFilter
+                  label="Lọc loại giao dịch"
                   value={typeFilter}
-                  onChange={(e) => {
-                    const next = e.target.value;
+                  allLabel="Tất cả loại"
+                  options={[
+                    { value: "sale", label: "Bán hàng" },
+                    { value: "purchase", label: "Nhập hàng" },
+                    { value: "expense", label: "Chi phí" },
+                  ]}
+                  onChange={(next) => {
                     setTypeFilter(next);
                     void run(() =>
                       load(
@@ -3865,12 +3889,7 @@ export function BusinessFinance({
                       ),
                     );
                   }}
-                >
-                  <option value="">Tất cả loại</option>
-                  <option value="sale">Bán hàng</option>
-                  <option value="purchase">Nhập hàng</option>
-                  <option value="expense">Chi phí</option>
-                </select>
+                />
               )}
               <button className="primary">Tìm</button>
             </form>
