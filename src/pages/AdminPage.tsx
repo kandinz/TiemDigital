@@ -1559,9 +1559,19 @@ export function AdminPage() {
 
   const navigateTab = useCallback((nextTab: Tab) => {
     setTab(nextTab);
-    window.history.replaceState(null, "", `/admin/${nextTab}`);
+    window.history.pushState(null, "", `/admin/${nextTab}`);
     setError("");
     setPageSearch("");
+  }, []);
+
+  useEffect(() => {
+    const restore = () => {
+      const path = window.location.pathname.split("/")[2];
+      setTab(path === "mmo" ? "products" : labels.some(([id]) => id === path) ? path as Tab : "overview");
+      setError(""); setPageSearch("");
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
   }, []);
 
   const run = useCallback(async (task: () => Promise<void>) => {

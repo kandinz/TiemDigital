@@ -8,15 +8,23 @@ import {
 export function PaymentQr({
   intent: initial,
   onPaid,
+  onRenew,
+  renewing = false,
 }: {
   intent: PaymentIntent;
   onPaid?: () => void;
+  onRenew?: () => void;
+  renewing?: boolean;
 }) {
   const [intent, setIntent] = useState(initial);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
   const [time, setTime] = useState(() => Date.now());
   const onPaidRef = useRef(onPaid);
+  useEffect(() => {
+    const timer = setInterval(() => setTime(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   useEffect(() => {
     onPaidRef.current = onPaid;
   }, [onPaid]);
@@ -55,8 +63,8 @@ export function PaymentQr({
       clearTimeout(timer);
     };
   }, [initial.id]);
-  const expired =
-    time >= intent.expiresAt * 1000 || intent.status === "EXPIRED";
+  const expired = intent.status !== "SUCCEEDED" &&
+    (time >= intent.expiresAt * 1000 || intent.status === "EXPIRED");
   async function copy(value: string) {
     try {
       await navigator.clipboard.writeText(value);
@@ -82,6 +90,8 @@ export function PaymentQr({
         />
       )}
       <h3>{amountLabel(intent.amount)}</h3>
+      {intent.status === "PENDING" && !expired && <p className="muted">QR còn hiệu lực {Math.ceil((intent.expiresAt * 1000 - time) / 60000)} phút</p>}
+      {expired && onRenew && <button type="button" disabled={renewing} onClick={onRenew}>{renewing ? "Đang kiểm tra…" : "Tạo QR mới"}</button>}
       <dl>
         <dt>Ngân hàng</dt>
         <dd>{intent.bankName}</dd>
@@ -104,7 +114,7 @@ export function PaymentQr({
         </dd>
       </dl>
       <p className="muted">
-        {expired
+        {intent.status === "SUCCEEDED" ? "Đã xác nhận thanh toán." : expired
           ? "Yêu cầu đã hết hạn. Không tiếp tục chuyển tiền; khoản đến muộn cần đối soát."
           : "Chuyển đúng số tiền và giữ nguyên nội dung. Hệ thống tự xác nhận khi nhận được giao dịch."}
       </p>

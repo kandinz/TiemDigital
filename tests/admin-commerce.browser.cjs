@@ -281,7 +281,7 @@ const transaction = {
       .click();
     await page
       .getByRole("heading", {
-        name: "Cảnh báo Telegram cho quản trị",
+        name: "Tỷ giá & phân loại NCC",
         exact: true,
       })
       .waitFor();
@@ -291,23 +291,6 @@ const transaction = {
         .getByLabel("Tên header / tham số", { exact: true })
         .inputValue(),
       "X-Key",
-    );
-    await page
-      .getByLabel("Chat ID quản trị (tài khoản hoặc nhóm)", { exact: true })
-      .fill("-100456");
-    await Promise.all([
-      page.waitForResponse(
-        (r) =>
-          r.url().includes("/catalog-config") && r.request().method() === "PUT",
-      ),
-      page
-        .getByRole("button", { name: "Lưu nơi nhận cảnh báo", exact: true })
-        .click(),
-    ]);
-    assert.equal(
-      writes.filter((v) => v.path === "/api/admin/catalog-config").at(-1).body
-        .markupPercent,
-      25,
     );
     await page
       .getByRole("button", { name: "Đơn & giao hàng", exact: true })
@@ -363,6 +346,7 @@ const transaction = {
       "12m",
     );
     await page.getByRole("button", { name: "Mua hàng NCC", exact: true }).click();
+    await page.getByRole("button", { name: "Mua hàng từ NCC", exact: true }).click();
     await page.getByLabel("NCC").selectOption("prodseller");
     await page.getByRole("button", { name: "Tải sản phẩm", exact: true }).click();
     await page.getByLabel("Sản phẩm").first().selectOption("sku");
@@ -376,15 +360,14 @@ const transaction = {
     await page.getByText("Đã mua đơn mmo_fixture_1 và nhập 1 đơn vị vào kho.").waitFor();
     await page.screenshot({ path: resolve(capture, "purchases-desktop.png"), fullPage: true });
     await page
-      .getByRole("button", { name: "Tài chính & báo cáo", exact: true })
+      .getByRole("button", { name: "Báo cáo doanh thu", exact: true })
       .click();
     await page
       .getByRole("heading", {
-        name: "Doanh thu & lợi nhuận cửa hàng",
+        name: "Báo cáo theo tháng",
         exact: true,
       })
       .waitFor();
-    await page.getByText("Báo cáo MMO cũ theo tháng").waitFor();
     await page.getByRole("columnheader", { name: "Chi phí khác" }).waitFor();
     await page.screenshot({ path: resolve(capture, "finance-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });

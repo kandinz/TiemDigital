@@ -629,6 +629,7 @@ export function CatalogProducts({ run }: { run: Run }) {
                         type="button"
                         onClick={() =>
                           void run(async () => {
+                            if (!window.confirm(`Xóa hẳn sản phẩm "${product.name}" (#${product.id})? Thao tác này không thể hoàn tác. Để chỉ ẩn sản phẩm, hãy hủy và giữ trạng thái ngừng bán.`)) return;
                             await api(
                               `/api/admin/products/${product.id}?permanent=1`,
                               { method: "DELETE" },
@@ -1818,7 +1819,7 @@ export function PurchaseOrders({
           <div className="action-row">
             <button
               type="button"
-              className="primary admin-mobile-only"
+              className="primary"
               onClick={() => setPurchaseFormOpen(true)}
             >
               Mua hàng từ NCC

@@ -31,9 +31,11 @@ export function CheckoutModal({
   const [phone, setPhone] = useState("");
   const [order, setOrder] = useState<PlatformOrder | null>(null);
   const [intent, setIntent] = useState<PaymentIntent | null>(null);
+  const [balance, setBalance] = useState<number | null>(null);
   const createKey = useRef(crypto.randomUUID());
   const payKey = useRef(crypto.randomUUID());
   const qrKey = useRef(crypto.randomUUID());
+  const renewalKeys = useRef<Record<string, string>>({});
   const completed = useRef(false);
   useEffect(() => {
     let stopped = false;
@@ -42,6 +44,9 @@ export function CheckoutModal({
         if (stopped) return;
         setActor(user);
         setName(user.name);
+        void api<{ balance: number }>("/api/me/wallet").then((wallet) => {
+          if (!stopped) setBalance(wallet.balance);
+        }).catch(() => { /* Wallet payment remains available if balance lookup fails. */ });
       })
       .catch((e: Error & { status?: number }) => {
         if (stopped) return;
@@ -50,6 +55,23 @@ export function CheckoutModal({
       }).finally(() => { if (!stopped) setLoading(false); });
     return () => { stopped = true; };
   }, [authVersion]);
+  useEffect(() => {
+    if (!actor) return;
+    let stopped = false;
+    const refreshBalance = () => {
+      if (document.hidden) return;
+      void api<{ balance: number }>("/api/me/wallet").then((wallet) => {
+        if (!stopped) setBalance(wallet.balance);
+      }).catch(() => { if (!stopped) setBalance(null); });
+    };
+    window.addEventListener("focus", refreshBalance);
+    document.addEventListener("visibilitychange", refreshBalance);
+    return () => {
+      stopped = true;
+      window.removeEventListener("focus", refreshBalance);
+      document.removeEventListener("visibilitychange", refreshBalance);
+    };
+  }, [actor]);
   function finish(value: PlatformOrder) {
     if (value.payment_status !== "PAID" || completed.current) return;
     completed.current = true;
@@ -159,9 +181,10 @@ export function CheckoutModal({
                   <span>{order.id}</span>
                   <strong>{amountLabel(order.total)}</strong>
                 </div>
+                <p className="muted">Số dư khả dụng: {balance === null ? "Chưa tải được" : amountLabel(balance)}{balance !== null && balance < order.total ? ` · Còn thiếu ${amountLabel(order.total - balance)}. Bạn có thể trả toàn bộ đơn bằng QR ngân hàng.` : ""}</p>
                 <div className="action-row">
                   <button
-                    disabled={busy || !!intent}
+                    disabled={busy || !!intent || (balance !== null && balance < order.total)}
                     className="primary"
                     onClick={() =>
                       void run(async () =>
@@ -196,6 +219,18 @@ export function CheckoutModal({
                   <PaymentQr
                     key={intent.id}
                     intent={intent}
+                    renewing={busy}
+                    onRenew={() => void run(async () => {
+                      const currentOrder = await api<PlatformOrder>(`/api/orders/${order.id}`);
+                      if (currentOrder.payment_status === "PAID") { finish(currentOrder); return; }
+                      const currentIntent = await api<PaymentIntent>(`/api/intents/${intent.id}`);
+                      if (currentIntent.status !== "EXPIRED") {
+                        setError("QR chưa được xác nhận hết hạn. Vui lòng chờ cập nhật trạng thái.");
+                        return;
+                      }
+                      const key = renewalKeys.current[intent.id] ??= crypto.randomUUID();
+                      setIntent(await api<PaymentIntent>(`/api/orders/${order.id}/payments/qr`, { key, body: {} }));
+                    })}
                     onPaid={() =>
                       void run(async () =>
                         finish(

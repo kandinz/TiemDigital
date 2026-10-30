@@ -507,7 +507,7 @@
 .platform .auth-modes button {
   flex: 1;
   background: transparent;
-  color: var(--muted);
+  color: var(--ink);
 }
 .platform .auth-modes button[aria-pressed="true"] {
   background: var(--color-subtle);
@@ -1078,6 +1078,7 @@ html.dark .platform tr.selected-row {
   .admin-toolbar input,
   .admin-toolbar select {
     width: 100%;
+    flex-basis: 100%;
     min-width: 0;
   }
   .admin-shell th,
