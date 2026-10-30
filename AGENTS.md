@@ -42,3 +42,14 @@ This project is indexed by GitNexus as **TiemDigital** (2780 symbols, 5964 relat
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## Tự động commit và push — chỉ áp dụng cho TiemDigital
+
+- Sau khi hoàn tất mỗi yêu cầu có thay đổi mã hoặc cấu hình của dự án này, tự động commit và push lên Git, không cần người dùng nhắc lại. Yêu cầu rõ ràng của người dùng về việc chưa commit/push được ưu tiên.
+- Thực hiện quy trình của skill `push-code`, dùng lệnh build phù hợp với dự án (`npm run build`), chạy typecheck và các test liên quan trước khi commit.
+- Bắt buộc hoàn thành phân tích GitNexus `detect_changes({scope: "all"})` trước khi commit theo quy định ở trên.
+- Chỉ stage các file thuộc công việc đang xử lý; giữ nguyên thay đổi không liên quan. Viết commit message mô tả đúng thay đổi.
+- Push nhánh hiện tại lên upstream đã cấu hình, hoặc `origin` với cùng tên nhánh nếu chưa có upstream. Không force push, không amend hoặc viết lại lịch sử Git nếu chưa được yêu cầu.
+- Nếu build, kiểm tra bắt buộc hoặc thao tác Git thất bại: dừng quy trình, báo lỗi cụ thể; không tự sửa mã chỉ để vượt qua bước push.
+- Sau khi push thành công, báo nhánh và commit ID; cập nhật GitNexus trong nền theo skill `push-code`.
+- Quy tắc này chỉ có hiệu lực trong repository `D:\Project\TiemDigital`; không tạo hoặc sửa rule global.

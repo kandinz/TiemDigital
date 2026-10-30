@@ -785,6 +785,18 @@
 .description-field { margin-bottom: 14px; }
 .admin-shell .table-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .vendor-filters { justify-content: flex-start; }
+.vendor-load-progress { margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--color-subtle); }
+.vendor-load-summary { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.vendor-load-progress progress { display: block; width: 100%; height: 5px; margin: 8px 0; accent-color: var(--accent); }
+.vendor-load-list { display: flex; flex-wrap: wrap; gap: 5px; list-style: none; padding: 0; margin: 8px 0 0; }
+.vendor-load-item { display: flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); font-size: 11px; }
+.vendor-load-item span { color: var(--muted); }
+.vendor-load-item.loading { border-color: var(--accent); }
+.vendor-load-item.done { color: var(--accent); }
+.vendor-load-item.error { color: #b91c1c; }
+.vendor-spinner { animation: vendor-spin .85s linear infinite; flex-shrink: 0; }
+@keyframes vendor-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .vendor-spinner { animation: none; } }
 .vendor-filters input, .vendor-filters select { flex: 1 1 170px; }
 .vendor-filters .inline-check { display: inline-flex; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
 .vendor-filters .inline-check input { min-width: auto; width: auto; flex: none; }
