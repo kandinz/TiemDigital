@@ -17,6 +17,7 @@ const runtime = {
   EMAIL: undefined,
 } as Env;
 let owner = "";
+let ownerId = "";
 let buyer = "";
 let buyerId = "";
 async function account(username: string) {
@@ -67,6 +68,7 @@ async function body(
 beforeAll(async () => {
   const admin = await account("unified_owner");
   owner = admin.cookie;
+  ownerId = admin.id;
   await env.DB.prepare(
     "INSERT INTO admin_accounts(user_id,role) VALUES(?,'owner')",
   )
@@ -80,6 +82,38 @@ beforeAll(async () => {
   )
     .bind(buyerId, `wallet:${buyerId}`)
     .run();
+});
+
+it("imports a completed personal supplier purchase into stock once and keeps customer purchases out", async () => {
+  for (const id of [88010, 88011]) {
+    await body("/api/admin/products", owner, { id, name: `Warehouse ${id}`, source: "stock", selling_price: 50000 });
+  }
+  await env.DB.prepare(
+    "INSERT INTO mmo_orders(id,user_id,provider_id,product_id,product_name,quantity,status,delivered_items,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))",
+  ).bind("manual_fixture", ownerId, "fixture", "sku", "Fixture item", 2, "completed", JSON.stringify(["secret-one", "secret-two"])).run();
+
+  const path = "/api/admin/supplier-purchases/manual_fixture/import";
+  expect((await call(path, buyer, { productId: 88010 })).status).toBe(403);
+  expect(await body(path, owner, { productId: 88010 })).toMatchObject({ added: 2, total: 2 });
+  expect(await body(path, owner, { productId: 88010 })).toMatchObject({ added: 0, total: 2 });
+  expect((await call(path, owner, { productId: 88011 })).status).toBe(409);
+  const inventory = (await body("/api/admin/products/88010/inventory")).inventory;
+  expect(inventory.filter((row: { id: string }) => row.id.startsWith("supplier:manual_fixture:"))).toHaveLength(2);
+  const stored = await env.DB.prepare("SELECT payload FROM product_inventory WHERE id='supplier:manual_fixture:0'").first<{ payload: string }>();
+  expect(stored?.payload).not.toContain("secret-one");
+
+  await env.DB.prepare("UPDATE mmo_orders SET status='processing' WHERE id='manual_fixture'").run();
+  expect((await call(path, owner, { productId: 88010 })).status).toBe(409);
+  await env.DB.prepare("UPDATE mmo_orders SET status='completed',user_id=? WHERE id='manual_fixture'").bind(buyerId).run();
+  expect((await call(path, owner, { productId: 88010 })).status).toBe(404);
+
+  expect(await body("/api/admin/products/88010", owner, undefined, "DELETE")).toMatchObject({ ok: true });
+  const archived = (await body("/api/admin/products")).products.find((p: { id: number }) => p.id === 88010);
+  expect(archived.active).toBe(0);
+  expect(inventory).toHaveLength(2);
+  await env.DB.prepare("INSERT INTO products(id,name,selling_price,updated_at) VALUES(88012,'Legacy product',10000,'2026-10-30')").run();
+  await body("/api/admin/products/88012", owner, undefined, "DELETE");
+  expect((await body("/api/admin/products")).products.find((p: { id: number }) => p.id === 88012).active).toBe(0);
 });
 
 it("uses the configured markup and raises manual sale prices proportionally, once, without lowering them on supplier discounts", async () => {

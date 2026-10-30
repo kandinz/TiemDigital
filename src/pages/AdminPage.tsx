@@ -57,6 +57,7 @@ type Tab =
   | "overview"
   | "customers"
   | "orders"
+  | "purchases"
   | "finance"
   | "payment"
   | "products"
@@ -86,7 +87,8 @@ const labels: [Tab, string][] = [
   ["overview", "Tổng quan"],
   ["customers", "Khách hàng"],
   ["orders", "Đơn & giao hàng"],
-  ["finance", "Sổ cái & phê duyệt"],
+  ["purchases", "Mua hàng NCC"],
+  ["finance", "Tài chính & báo cáo"],
   ["payment", "Thanh toán ngân hàng"],
   ["products", "Sản phẩm"],
   ["pages", "Nội dung website"],
@@ -1083,7 +1085,7 @@ export function AdminPage() {
       ) : (
         <div className="workspace">
           <nav className="navigation" aria-label="Quản trị">
-            {labels.filter(([id]) => id !== "providers" || admin.role === "owner").map(([id, label]) => (
+            {labels.filter(([id]) => !["providers", "purchases"].includes(id) || admin.role === "owner").map(([id, label]) => (
               <button
                 key={id}
                 className={tab === id ? "active" : ""}
@@ -1121,10 +1123,11 @@ export function AdminPage() {
             {tab === "orders" && <>
               {admin.role === 'owner' && <div className="action-row admin-section-nav" aria-label="Các loại đơn hàng">{([['customers', 'Đơn khách & giao hàng'], ['purchases', 'Đơn nhập NCC'], ['warranty', 'Bảo hành']] as const).map(([id, label]) => <button key={id} className={orderSection === id ? 'primary' : ''} onClick={() => setOrderSection(id)}>{label}</button>)}</div>}
               {(admin.role !== 'owner' || orderSection === 'customers') && <>{['owner', 'support', 'auditor'].includes(admin.role) && <FulfillmentAlerts run={run} canResolve={admin.role === 'owner'} />}<Orders run={run} /></>}
-              {admin.role === 'owner' && orderSection === 'purchases' && <PurchaseOrders run={run} />}
+              {admin.role === 'owner' && orderSection === 'purchases' && <PurchaseOrders run={run} ownerId={admin.userId ?? admin.email} />}
               {admin.role === 'owner' && orderSection === 'warranty' && <BusinessFinance run={run} warrantyOnly />}
             </>}{" "}
-            {tab === "finance" && <><Finance admin={admin} run={run} />{admin.role === 'owner' && <BusinessFinance run={run} />}</>}{" "}
+            {tab === "purchases" && admin.role === "owner" && <PurchaseOrders run={run} ownerId={admin.userId ?? admin.email} />}{" "}
+            {tab === "finance" && <>{admin.role === 'owner' && <BusinessFinance run={run} />}<Finance admin={admin} run={run} /></>}{" "}
             {tab === "payment" && <PaymentSettings run={run} />}{" "}
             {tab === "products" && (admin.role === 'owner' ? <CatalogProducts run={run} /> : <ReadOnlyProducts run={run} />)}{" "}
             {tab === "pages" && <Pages run={run} />}{" "}

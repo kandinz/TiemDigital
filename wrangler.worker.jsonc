@@ -43,6 +43,7 @@
         "APP_ORIGIN": "https://tiemdigital.pages.dev",
         "ADMIN_ORIGIN": "https://tiemdigital-production.kandin-cs.workers.dev",
         "TELEGRAM_BOT_USERNAME": "tiemdigital_bot",
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAFsCa13WAXY7NDlx",
         "ADMIN_AUTH_MODE": "session"
       },
       "d1_databases": [

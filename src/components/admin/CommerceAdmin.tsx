@@ -222,6 +222,11 @@ export function CatalogProducts({ run }: { run: Run }) {
                       <small>
                         {p.category} · #{p.id}
                       </small>
+                      {Boolean(p.active) && <><br /><button type="button" onClick={() => void run(async () => {
+                        await api(`/api/admin/products/${p.id}`, { method: "DELETE" });
+                        if (product.id === p.id) setProduct(emptyProduct());
+                        await load();
+                      })}>Ngừng bán</button></>}
                     </td>
                     <td>
                       {p.source === "stock" ? "Kho tự tạo" : p.provider_id}
@@ -1118,6 +1123,8 @@ export function FulfillmentAlerts({
 
 interface SupplierOrder {
   id: string;
+  user_id: string | null;
+  linked_transaction_id?: number | null;
   provider_id: string;
   product_name: string;
   quantity: number;
@@ -1129,7 +1136,7 @@ interface SupplierOrder {
   can_check_status: boolean;
   created_at: string;
 }
-export function PurchaseOrders({ run }: { run: Run }) {
+export function PurchaseOrders({ run, ownerId }: { run: Run; ownerId: string }) {
   const [orders, setOrders] = useState<SupplierOrder[]>([]);
   const [selected, setSelected] = useState<SupplierOrder | null>(null);
   const [search, setSearch] = useState("");
@@ -1139,15 +1146,22 @@ export function PurchaseOrders({ run }: { run: Run }) {
   const [item, setItem] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [email, setEmail] = useState("");
+  const [destination, setDestination] = useState<"self" | "stock">("self");
+  const [stockProductId, setStockProductId] = useState("");
+  const [stockProducts, setStockProducts] = useState<Product[]>([]);
+  const [purchaseNotice, setPurchaseNotice] = useState("");
+  const [buying, setBuying] = useState(false);
   async function load(query = "") {
-    const [history, directory] = await Promise.all([
+    const [history, directory, catalog] = await Promise.all([
       api<{ orders: SupplierOrder[] }>(
         `${supplierApi}/orders?limit=100&search=${encodeURIComponent(query)}`,
       ),
       api<{ providers: Provider[] }>(`${supplierApi}/providers`),
+      api<{ products: Product[] }>("/api/admin/products"),
     ]);
     setOrders(history.orders);
     setProviders(directory.providers);
+    setStockProducts(catalog.products.filter((product) => product.source === "stock"));
   }
   useEffect(() => {
     void run(load);
@@ -1167,6 +1181,8 @@ export function PurchaseOrders({ run }: { run: Run }) {
           Đồng bộ lịch sử NCC
         </button>
       </div>
+      <p className="muted">Mua trực tiếp để sử dụng hoặc nhập dữ liệu NCC giao vào kho sản phẩm tự tạo. Đơn chờ giao chỉ được nhập kho sau khi NCC hoàn tất.</p>
+      {purchaseNotice && <p role="status" className="notice">{purchaseNotice}</p>}
       <form
         className="action-row"
         onSubmit={(e) => {
@@ -1235,6 +1251,16 @@ export function PurchaseOrders({ run }: { run: Run }) {
               "Chưa có dữ liệu giao hàng"}
           </pre>
           <div className="action-row">
+            {selected.user_id === ownerId && !selected.linked_transaction_id && selected.status === "completed" && selected.delivered_items?.length > 0 && (
+              <button onClick={() => void run(async () => {
+                if (!stockProductId) throw new Error("Chọn sản phẩm kho trước khi nhập");
+                const result = await api<{ added: number; total: number }>(`/api/admin/supplier-purchases/${encodeURIComponent(selected.id)}/import`, {
+                  body: { productId: Number(stockProductId) },
+                });
+                setPurchaseNotice(result.added ? `Đã nhập ${result.added} đơn vị từ đơn ${selected.id} vào kho.` : `Đơn ${selected.id} đã có ${result.total} đơn vị trong kho; không nhập trùng.`);
+                await load(search);
+              })}>Nhập đơn này vào kho</button>
+            )}
             {selected.can_check_status && (
               <button
                 onClick={() =>
@@ -1253,10 +1279,18 @@ export function PurchaseOrders({ run }: { run: Run }) {
             )}
             <button onClick={() => setSelected(null)}>Đóng chi tiết</button>
           </div>
+          {selected.user_id === ownerId && !selected.linked_transaction_id && selected.status === "completed" && selected.delivered_items?.length > 0 && (
+            <label>Sản phẩm kho nhận hàng
+              <select value={stockProductId} onChange={(e) => setStockProductId(e.target.value)}>
+                <option value="">Chọn sản phẩm kho</option>
+                {stockProducts.map((product) => <option key={product.id} value={product.id}>{product.name} · #{product.id}</option>)}
+              </select>
+            </label>
+          )}
         </div>
       )}
-      <details>
-        <summary>Đặt mua NCC thủ công</summary>
+      <details open>
+        <summary>Mua hàng từ nhà cung cấp</summary>
         <p className="muted">
           Đơn khách đã thanh toán được mua tự động. Chỉ dùng mục này để nhập
           hàng chủ động; đơn lỗi hoặc timeout cần đối soát tại cảnh báo trước
@@ -1265,12 +1299,15 @@ export function PurchaseOrders({ run }: { run: Run }) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (buying) return;
+            setBuying(true);
             void run(async () => {
               const selectedProduct = vendorProducts.find(
                 (v) => v.provider_product_id === item,
               );
               if (!selectedProduct) throw new Error("Chọn sản phẩm NCC");
-              await api(`${supplierApi}/order`, {
+              if (destination === "stock" && !stockProductId) throw new Error("Chọn sản phẩm kho nhận hàng");
+              const purchase = await api<{ order_id: string; status: string; persisted: boolean }>(`${supplierApi}/order`, {
                 body: {
                   provider_id: provider,
                   product_id: item,
@@ -1281,8 +1318,23 @@ export function PurchaseOrders({ run }: { run: Run }) {
                   total_price: selectedProduct.price_usd * quantity,
                 },
               });
-              await load();
-            });
+              setPurchaseNotice(`Đã gửi yêu cầu mua NCC. Mã đơn: ${purchase.order_id}. ${purchase.persisted ? "" : "NCC đã xử lý nhưng chưa lưu được đơn; cần đối soát, không mua lại."}`);
+              if (!purchase.persisted) return;
+              await load(search);
+              const detail = await api<{ order: SupplierOrder }>(`${supplierApi}/orders/${encodeURIComponent(purchase.order_id)}`);
+              setSelected(detail.order);
+              if (destination === "stock") {
+                if (purchase.status !== "completed") {
+                  setPurchaseNotice(`Đơn ${purchase.order_id} đang chờ NCC giao. Sau khi hoàn tất, mở đơn và chọn Nhập đơn này vào kho.`);
+                  return;
+                }
+                const imported = await api<{ added: number; total: number }>(`/api/admin/supplier-purchases/${encodeURIComponent(purchase.order_id)}/import`, {
+                  body: { productId: Number(stockProductId) },
+                });
+                setPurchaseNotice(`Đã mua đơn ${purchase.order_id} và nhập ${imported.added} đơn vị vào kho.`);
+                await load(search);
+              }
+            }).finally(() => setBuying(false));
           }}
         >
           <div className="form-grid">
@@ -1363,8 +1415,20 @@ export function PurchaseOrders({ run }: { run: Run }) {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </label>
+            <label>Mục đích mua
+              <select value={destination} onChange={(e) => setDestination(e.target.value as "self" | "stock")}>
+                <option value="self">Dùng riêng · xem dữ liệu trong chi tiết đơn</option>
+                <option value="stock">Nhập vào kho của tôi</option>
+              </select>
+            </label>
+            {destination === "stock" && <label>Sản phẩm kho nhận hàng
+              <select required value={stockProductId} onChange={(e) => setStockProductId(e.target.value)}>
+                <option value="">Chọn sản phẩm kho</option>
+                {stockProducts.map((product) => <option key={product.id} value={product.id}>{product.name} · #{product.id}</option>)}
+              </select>
+            </label>}
           </div>
-          <button className="primary">Đặt mua NCC</button>
+          <button className="primary" disabled={buying}>{buying ? "Đang gửi đơn mua…" : "Mua từ NCC"}</button>
         </form>
       </details>
     </section>
@@ -1432,31 +1496,33 @@ const emptyTransaction = () => ({
 
 function MonthlyReport({ run }: { run: Run }) {
   const [year, setYear] = useState(() => new Date().getFullYear());
+  const [yearSummary, setYearSummary] = useState<{ totalRevenue: number; totalCost: number; totalOtherExpense: number; totalExpense: number; netProfit: number } | null>(null);
   const [months, setMonths] = useState<
     {
       month: number;
       label: string;
       revenue: number;
+      cost: number;
+      otherExpense: number;
       totalExpense: number;
       profit: number;
     }[]
   >([]);
   async function load(reportYear: number) {
-    setMonths(
-      (
-        await api<{ months: typeof months }>(
-          `${supplierApi}/reports/monthly?year=${reportYear}`,
-        )
-      ).months,
+    const report = await api<{ months: typeof months; yearSummary: typeof yearSummary }>(
+      `${supplierApi}/reports/monthly?year=${reportYear}`,
     );
+    setMonths(report.months);
+    setYearSummary(report.yearSummary);
   }
   useEffect(() => {
     void run(() => load(new Date().getFullYear()));
   }, [run]);
   return (
     <section className="panel">
-      <details>
-        <summary>Báo cáo giao dịch theo tháng</summary>
+      <details open>
+        <summary>Báo cáo MMO cũ theo tháng</summary>
+        <p className="muted">Dữ liệu giao dịch đã chuyển từ hệ thống MMO cũ. Giá vốn của đơn bán và chi phí khác được trình bày riêng.</p>
         <form
           className="action-row"
           onSubmit={(e) => {
@@ -1476,13 +1542,20 @@ function MonthlyReport({ run }: { run: Run }) {
           </label>
           <button>Xem báo cáo năm</button>
         </form>
+        {yearSummary && <div className="metric-grid">
+          {[["Doanh thu", yearSummary.totalRevenue], ["Giá vốn", yearSummary.totalCost], ["Chi phí khác", yearSummary.totalOtherExpense], ["Lợi nhuận", yearSummary.netProfit]].map(([label, value]) =>
+            <div className="metric" key={String(label)}><span>{label}</span><strong>{amountLabel(Number(value) || 0)}</strong></div>,
+          )}
+        </div>}
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Tháng</th>
                 <th>Doanh thu</th>
-                <th>Chi phí</th>
+                <th>Giá vốn</th>
+                <th>Chi phí khác</th>
+                <th>Tổng chi phí</th>
                 <th>Lợi nhuận</th>
               </tr>
             </thead>
@@ -1491,6 +1564,8 @@ function MonthlyReport({ run }: { run: Run }) {
                 <tr key={m.month}>
                   <td>{m.label}</td>
                   <td>{amountLabel(m.revenue)}</td>
+                  <td>{amountLabel(m.cost)}</td>
+                  <td>{amountLabel(m.otherExpense)}</td>
                   <td>{amountLabel(m.totalExpense)}</td>
                   <td>{amountLabel(m.profit)}</td>
                 </tr>
@@ -1572,7 +1647,7 @@ export function BusinessFinance({
             </div>
           </section>
           <section className="panel">
-            <h2>Giao dịch nhập tay & chi phí</h2>
+            <h2>Giao dịch và chi phí MMO cũ</h2>
             <div className="metric-grid">
               {[
                 ["Doanh thu nhập tay", summary.totalRevenue],

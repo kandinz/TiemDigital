@@ -6,6 +6,7 @@ import { encryptDelivery } from "./delivery";
 import { createD1Stores } from "./mmo/services/mmoStores";
 import { openSession } from "./mmo/services/providerSession";
 import type { UnifiedProduct } from "./mmo/services/adapters/types";
+import { deliveredItemsOfRow, normalizeStatus } from "./mmo/services/orderNormalization";
 
 export interface CatalogProduct {
   id: number;
@@ -282,6 +283,65 @@ export async function catalogAdmin(
       ),
     ]);
     return json({ ok: true, id: (result[0].results[0] as { id: number }).id });
+  }
+  const archive = path.match(/^\/products\/(\d+)$/);
+  if (archive && request.method === "DELETE") {
+    requireRole(admin, ["owner"]);
+    const productId = Number(archive[1]);
+    if (!await env.DB.prepare("SELECT id FROM products WHERE id=?").bind(productId).first())
+      throw new HttpError(404, "Không tìm thấy sản phẩm");
+    await env.DB.prepare(
+      "INSERT INTO product_sources(product_id,source,active) VALUES(?,'stock',0) ON CONFLICT(product_id) DO UPDATE SET active=0",
+    ).bind(productId).run();
+    await audit(env, admin.email, "PRODUCT_ARCHIVE", archive[1]);
+    return json({ ok: true });
+  }
+  const supplierImport = path.match(/^\/supplier-purchases\/([a-zA-Z0-9_-]+)\/import$/);
+  if (supplierImport && request.method === "POST") {
+    requireRole(admin, ["owner"]);
+    const { productId } = await readBody(request, z.object({ productId: z.number().int().positive() }));
+    const orderId = supplierImport[1];
+    const order = await env.DB.prepare(
+      "SELECT id,user_id,status,quantity,delivered_items FROM mmo_orders WHERE id=?",
+    ).bind(orderId).first<{
+      id: string; user_id: string | null; status: string; quantity: number; delivered_items: string | null;
+    }>();
+    if (!order || order.user_id !== (admin.userId ?? admin.email))
+      throw new HttpError(404, "Không tìm thấy đơn mua riêng của quản trị viên");
+    if (normalizeStatus(order.status) !== "completed")
+      throw new HttpError(409, "Đơn NCC chưa hoàn tất; kiểm tra trạng thái trước khi nhập kho");
+    const linkedSale = await env.DB.prepare(
+      "SELECT id FROM mmo_transactions WHERE purchase_order_id=? AND type='sale' AND is_deleted=0",
+    ).bind(orderId).first();
+    if (linkedSale) throw new HttpError(409, "Đơn đã gắn với giao dịch bán, không thể nhập kho");
+    const product = await env.DB.prepare(
+      "SELECT s.source FROM products p JOIN product_sources s ON s.product_id=p.id WHERE p.id=?",
+    ).bind(productId).first<{ source: string }>();
+    if (product?.source !== "stock")
+      throw new HttpError(400, "Chọn sản phẩm dùng kho tự tạo");
+    const items = deliveredItemsOfRow(order).map((value) => value.trim()).filter(Boolean);
+    if (!items.length || items.length > 500 || items.length > order.quantity)
+      throw new HttpError(409, "Dữ liệu NCC giao chưa đủ rõ để nhập kho; kiểm tra chi tiết đơn");
+    const inventoryIds = items.map((_, index) => `supplier:${orderId}:${index}`);
+    const placeholders = inventoryIds.map(() => "?").join(",");
+    const existing = await env.DB.prepare(
+      `SELECT DISTINCT product_id FROM product_inventory WHERE id IN (${placeholders})`,
+    ).bind(...inventoryIds).all<{ product_id: number }>();
+    if (existing.results.some((row) => row.product_id !== productId))
+      throw new HttpError(409, "Đơn NCC đã được nhập vào sản phẩm kho khác");
+    const rows = await Promise.all(items.map(async (value, index) =>
+      env.DB.prepare("INSERT OR IGNORE INTO product_inventory(id,product_id,payload) VALUES(?,?,?)")
+        .bind(inventoryIds[index], productId, await encryptDelivery(env, inventoryIds[index], value)),
+    ));
+    const results = await env.DB.batch(rows);
+    const imported = await env.DB.prepare(
+      `SELECT DISTINCT product_id FROM product_inventory WHERE id IN (${placeholders})`,
+    ).bind(...inventoryIds).all<{ product_id: number }>();
+    if (imported.results.some((row) => row.product_id !== productId))
+      throw new HttpError(409, "Đơn NCC đã được nhập vào sản phẩm kho khác");
+    const added = results.reduce((count, result) => count + (result.meta.changes ?? 0), 0);
+    if (added) await audit(env, admin.email, "SUPPLIER_PURCHASE_IMPORT", orderId, { productId, count: added });
+    return json({ ok: true, added, total: items.length });
   }
   const inventory = path.match(/^\/products\/(\d+)\/inventory$/);
   if (inventory) {

@@ -48,6 +48,7 @@ const transaction = {
       unexpected = [],
       writes = [];
     let products = [product],
+      supplierOrders = [],
       config = { markupPercent: 20, telegramChatId: "-100123" };
     await context.route("**/api/**", async (route) => {
       const req = route.request(),
@@ -161,7 +162,17 @@ const transaction = {
             },
           ],
         });
-      if (path === "/api/admin/mmo/orders") return reply({ orders: [] });
+      if (path === "/api/admin/mmo/orders") return reply({ orders: supplierOrders });
+      if (path === "/api/admin/mmo/order") {
+        const input = req.postDataJSON();
+        const id = `mmo_fixture_${supplierOrders.length + 1}`;
+        supplierOrders = [...supplierOrders, { id, user_id: "fixture-owner", provider_id: input.provider_id, product_name: "Vendor fixture", quantity: input.quantity, status: "completed", total_price: 2, currency: "USD", provider_order_id: "vendor-fixture", delivered_items: [`key-${id}`], can_check_status: false, created_at: "2026-10-30" }];
+        return reply({ order_id: id, status: "completed", persisted: true });
+      }
+      if (/^\/api\/admin\/mmo\/orders\/mmo_fixture_\d+$/.test(path))
+        return reply({ order: supplierOrders.find((order) => path.endsWith(order.id)) });
+      if (/^\/api\/admin\/supplier-purchases\/mmo_fixture_\d+\/import$/.test(path))
+        return reply({ ok: true, added: 1, total: 1 });
       if (path === "/api/admin/mmo/transactions")
         return reply({ transactions: [transaction] });
       if (/^\/api\/admin\/mmo\/transactions\/\d+$/.test(path))
@@ -178,11 +189,14 @@ const transaction = {
         });
       if (path === "/api/admin/mmo/reports/monthly")
         return reply({
+          yearSummary: { totalRevenue: 20000, totalCost: 8000, totalOtherExpense: 2000, totalExpense: 10000, netProfit: 10000 },
           months: [
             {
               month: 10,
               label: "Tháng 10",
               revenue: 20000,
+              cost: 8000,
+              otherExpense: 2000,
               totalExpense: 10000,
               profit: 10000,
             },
@@ -356,8 +370,21 @@ const transaction = {
         .warranty_period,
       "12m",
     );
+    await page.getByRole("button", { name: "Mua hàng NCC", exact: true }).click();
+    await page.getByLabel("NCC").selectOption("prodseller");
+    await page.getByRole("button", { name: "Tải sản phẩm", exact: true }).click();
+    await page.getByLabel("Sản phẩm").first().selectOption("sku");
+    await page.getByLabel("Mục đích mua").selectOption("stock");
+    await page.getByLabel("Sản phẩm kho nhận hàng").last().selectOption("1");
+    await Promise.all([
+      page.waitForResponse((r) => r.url().includes("/supplier-purchases/mmo_fixture_1/import")),
+      page.getByRole("button", { name: "Mua từ NCC", exact: true }).click(),
+    ]);
+    assert.equal(writes.find((v) => v.path.endsWith("/supplier-purchases/mmo_fixture_1/import")).body.productId, 1);
+    await page.getByText("Đã mua đơn mmo_fixture_1 và nhập 1 đơn vị vào kho.").waitFor();
+    await page.screenshot({ path: resolve(capture, "purchases-desktop.png"), fullPage: true });
     await page
-      .getByRole("button", { name: "Sổ cái & phê duyệt", exact: true })
+      .getByRole("button", { name: "Tài chính & báo cáo", exact: true })
       .click();
     await page
       .getByRole("heading", {
@@ -365,6 +392,9 @@ const transaction = {
         exact: true,
       })
       .waitFor();
+    await page.getByText("Báo cáo MMO cũ theo tháng").waitFor();
+    await page.getByRole("columnheader", { name: "Chi phí khác" }).waitFor();
+    await page.screenshot({ path: resolve(capture, "finance-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Sản phẩm", exact: true }).click();
     await page.waitForLoadState("networkidle");

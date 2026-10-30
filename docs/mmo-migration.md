@@ -14,6 +14,8 @@ Local bỏ `--remote --env=production`. Script báo lỗi nếu username không 
 
 Các chức năng NCC dùng chung admin React: `/admin/products`, `/admin/providers`, `/admin/orders` và `/admin/finance`. Không có tab MMO hoặc iframe riêng. Đường dẫn iframe cũ chuyển hướng về mục Sản phẩm; `/admin/mmo` mở mục Sản phẩm trong admin chung. Quyền Owner của các thao tác NCC được giữ nguyên. Backend adapter/đơn nhập/giao dịch cũ vẫn dùng namespace `/api/admin/mmo/*` để bảo toàn tích hợp và lịch sử. Các API ghi kiểm tra origin; danh tính Gum Tool/JWT Bearer không được dùng. Audit không ghi API key hoặc dữ liệu giao hàng.
 
+Owner có lối vào `/admin/purchases` để tự mua từ NCC. Chọn **Dùng riêng** để xem dữ liệu giao trong chi tiết đơn, hoặc **Nhập vào kho** và chọn sản phẩm kho tự tạo. Đơn hoàn tất được nhập kho bằng dữ liệu mã hóa; nếu NCC giao muộn, mở chi tiết đơn, kiểm tra trạng thái rồi chọn **Nhập đơn này vào kho**. Thao tác nhập lại cùng đơn không tạo thêm hàng, và đơn đã gắn giao dịch bán không được nhập kho. **Ngừng bán** ẩn sản phẩm khỏi cửa hàng nhưng giữ lịch sử đơn và kho. Báo cáo MMO cũ hiển thị ở **Tài chính & báo cáo**, tách doanh thu, giá vốn, chi phí khác và lợi nhuận theo năm/tháng.
+
 ## Mã nguồn
 
 - `workers/mmo`: API NCC, adapter, đơn mua, giao dịch, báo cáo, bảo hành và kệ bán lẻ từ Gum Tool.
