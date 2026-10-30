@@ -164,7 +164,7 @@ const tabDescriptions: Record<Tab, string> = {
   purchases:
     "Đặt mua hàng chủ động từ nhà cung cấp, đồng bộ lịch sử đơn nhập và đẩy dữ liệu thẳng vào kho tự tạo.",
   finance:
-    "Báo cáo doanh thu - lợi nhuận thực tế, sổ giao dịch MMO, phê duyệt điều chỉnh số dư 2 lớp và đối chiếu sổ cái.",
+    "Báo cáo doanh thu - lợi nhuận thực tế, sổ giao dịch MMO, điều chỉnh số dư ví và đối chiếu sổ cái.",
   payment:
     "Cấu hình tài khoản ngân hàng ACB nhận tiền tự động qua SePay và chạy đối soát giao dịch.",
   products:
@@ -865,10 +865,9 @@ function Customers({
 }
 
 /**
- * Cấu hình tài khoản ngân hàng nhận tiền, phê duyệt thay đổi cấu hình và đối soát giao dịch SePay.
+ * Cấu hình tài khoản ngân hàng nhận tiền và đối soát giao dịch SePay.
  */
 function PaymentSettings({ admin, run }: { admin: Admin; run: Run }) {
-  const submit = useAdminCommand();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [config, setConfig] = useState<Config | null>(null);
@@ -905,8 +904,9 @@ function PaymentSettings({ admin, run }: { admin: Admin; run: Run }) {
           <div>
             <h2>Tài khoản nhận tiền</h2>
             <p className="muted">
-              Thay đổi tạo yêu cầu chờ một Owner khác phê duyệt. QR đã phát hành
-              giữ nguyên thông tin ban đầu.
+              Cấu hình tài khoản ACB nhận tiền tự động qua SePay. Thay đổi của
+              Owner được áp dụng ngay lập tức. QR đã phát hành giữ nguyên thông
+              tin ban đầu.
             </p>
           </div>
           {config && (
@@ -921,9 +921,9 @@ function PaymentSettings({ admin, run }: { admin: Admin; run: Run }) {
               e.preventDefault();
               void run(async () => {
                 const { version, ...body } = config;
-                await submit("/api/admin/approvals", {
+                await api("/api/admin/payment-config", {
+                  method: "PUT",
                   body: {
-                    kind: "PAYMENT_CONFIG",
                     config: { ...body, bankName: "ACB", bankBin: "970416" },
                     expectedVersion: version,
                   },
@@ -1014,21 +1014,19 @@ function PaymentSettings({ admin, run }: { admin: Admin; run: Run }) {
                 />
               </label>
             </div>
-            <button className="primary">Gửi yêu cầu thay đổi</button>
+            <button className="primary">Lưu cấu hình nhận tiền</button>
           </form>
         )}
         {approvals.length > 0 && (
           <div className="admin-detail">
             <h3>
-              Yêu cầu thay đổi cấu hình đang chờ duyệt ({approvals.length})
+              Yêu cầu thay đổi cấu hình cũ đang chờ ({approvals.length})
             </h3>
             {approvals.map((a) => (
               <div key={a.id} style={{ marginTop: 10 }}>
                 <p className="muted">
-                  Người tạo: {a.requested_by} ·{" "}
-                  {a.requested_by === admin.email
-                    ? "Cần một Owner khác phê duyệt yêu cầu này"
-                    : "Sẵn sàng phê duyệt"}
+                  Người tạo: {a.requested_by} · Bấm Lưu cấu hình ở trên để áp
+                  dụng trực tiếp hoặc hủy yêu cầu cũ này.
                 </p>
                 <div className="action-row">
                   {a.requested_by !== admin.email && (
@@ -1220,7 +1218,7 @@ function PaymentSettings({ admin, run }: { admin: Admin; run: Run }) {
 }
 
 /**
- * Quản lý yêu cầu điều chỉnh/hoàn số dư khách hàng, phê duyệt 2 lớp và đối chiếu sổ cái.
+ * Quản lý điều chỉnh/hoàn số dư khách hàng và đối chiếu sổ cái.
  */
 function Finance({
   admin,
@@ -1232,6 +1230,7 @@ function Finance({
   initialUserId?: string;
 }) {
   const submit = useAdminCommand();
+  const isOwner = admin.role === "owner";
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [ledger, setLedger] = useState<{
     journals: Record<string, unknown>[];
@@ -1263,18 +1262,30 @@ function Finance({
     <div className="admin-two-col">
       <div>
         <section className="panel">
-          <h2>Yêu cầu điều chỉnh số dư</h2>
+          <h2>
+            {isOwner
+              ? "Điều chỉnh & hoàn số dư ví"
+              : "Yêu cầu điều chỉnh số dư"}
+          </h2>
           <p className="muted">
-            Không sửa số dư trực tiếp. Một người khác phải duyệt; mọi thay đổi
-            được ghi vào sổ cái.
+            {isOwner
+              ? "Thay đổi của Owner được áp dụng trực tiếp và ghi nhận ngay vào sổ cái."
+              : "Không sửa số dư trực tiếp. Một người khác phải duyệt; mọi thay đổi được ghi vào sổ cái."}
           </p>
           <form
             onSubmit={(e) => {
               e.preventDefault();
               void run(async () => {
-                await submit("/api/admin/approvals", {
-                  body: { kind: "WALLET_ADJUSTMENT", userId, delta, reason },
-                });
+                if (isOwner) {
+                  await api("/api/admin/wallet-adjustments", {
+                    body: { userId, delta, reason },
+                  });
+                  setReason("");
+                } else {
+                  await submit("/api/admin/approvals", {
+                    body: { kind: "WALLET_ADJUSTMENT", userId, delta, reason },
+                  });
+                }
                 await load();
               });
             }}
@@ -1307,16 +1318,26 @@ function Finance({
                 onChange={(e) => setReason(e.target.value)}
               />
             </label>
-            <button className="primary">Gửi yêu cầu điều chỉnh</button>
+            <button className="primary">
+              {isOwner ? "Thực hiện điều chỉnh số dư" : "Gửi yêu cầu điều chỉnh"}
+            </button>
           </form>
           <form
             className="admin-detail"
             onSubmit={(e) => {
               e.preventDefault();
               void run(async () => {
-                await submit("/api/admin/approvals", {
-                  body: { kind: "WALLET_REFUND", orderId, reason },
-                });
+                if (isOwner) {
+                  await api("/api/admin/wallet-refunds", {
+                    body: { orderId, reason },
+                  });
+                  setOrderId("");
+                  setReason("");
+                } else {
+                  await submit("/api/admin/approvals", {
+                    body: { kind: "WALLET_REFUND", orderId, reason },
+                  });
+                }
                 await load();
               });
             }}
@@ -1334,7 +1355,9 @@ function Finance({
               Dùng lý do ở trên. Hoàn chuyển khoản cần xử lý theo ngân hàng,
               không ghi giả là đã hoàn.
             </p>
-            <button disabled={reason.length < 5}>Gửi yêu cầu hoàn số dư</button>
+            <button disabled={reason.length < 5}>
+              {isOwner ? "Thực hiện hoàn số dư" : "Gửi yêu cầu hoàn số dư"}
+            </button>
           </form>
         </section>
 
@@ -2143,8 +2166,9 @@ function Overview({
         <section className="panel">
           <h2>Vận hành cửa hàng</h2>
           <p>
-            Kiểm tra giao dịch cần đối soát trước khi xử lý điều chỉnh tiền. Cấu
-            hình ngân hàng và thay đổi số dư cần hai người phê duyệt.
+            Kiểm tra giao dịch cần đối soát trước khi xử lý điều chỉnh tiền. Mọi
+            thay đổi cấu hình ngân hàng và số dư ví đều được ghi nhận đầy đủ vào
+            sổ cái và nhật ký kiểm toán.
           </p>
           <p className="muted">
             Website và Telegram dùng chung tài khoản, giá VND và số dư. Cả hai
@@ -2157,7 +2181,7 @@ function Overview({
             </div>
             <div className="admin-kv-item">
               <small>Cơ chế bảo vệ quỹ</small>
-              <strong>Phê duyệt 2 quản trị viên</strong>
+              <strong>Sổ cái kép & Nhật ký kiểm toán</strong>
             </div>
             <div className="admin-kv-item">
               <small>Bảo mật dữ liệu giao</small>

@@ -806,4 +806,38 @@ it("supports complete admin CRUD for warehouse inventory, product lifecycle, syn
       (p: any) => p.slug === "trang-thu-nghiem",
     ),
   ).toBe(false);
+
+  const currentPayCfg = await body("/api/admin/payment-config", owner);
+  const updatedPayCfg = await body(
+    "/api/admin/payment-config",
+    owner,
+    {
+      config: {
+        enabled: false,
+        provider: "sepay",
+        bankBin: "970416",
+        bankName: "ACB",
+        accountNumber: "88889999",
+        accountHolder: "NGUYEN VAN OWNER",
+        minTopup: 20000,
+        maxTopup: 5000000,
+        intentTtl: 900,
+      },
+      expectedVersion: currentPayCfg.version,
+    },
+    "PUT",
+  );
+  expect(updatedPayCfg.accountNumber).toBe("88889999");
+  expect(updatedPayCfg.version).toBe(currentPayCfg.version + 1);
+
+  const beforeWallet = (await body(`/api/admin/customers/${buyerId}`, owner))
+    .customer.balance;
+  await body("/api/admin/wallet-adjustments", owner, {
+    userId: buyerId,
+    delta: 50000,
+    reason: "Owner direct wallet credit",
+  });
+  const afterWallet = (await body(`/api/admin/customers/${buyerId}`, owner))
+    .customer.balance;
+  expect(afterWallet).toBe(beforeWallet + 50000);
 });

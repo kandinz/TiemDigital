@@ -345,6 +345,169 @@ export async function adminApi(request: Request, env: Env) {
     return json(await paymentConfig(env));
   }
 
+  if (path === "/payment-config" && request.method === "PUT") {
+    requireRole(admin, ["owner"]);
+    const body = await readBody(
+      request,
+      z.object({
+        config: configSchema,
+        expectedVersion: z.number().int().positive(),
+      }),
+    );
+    if (
+      body.config.enabled &&
+      (!env.SEPAY_WEBHOOK_SECRET || !env.SEPAY_API_TOKEN)
+    )
+      throw new HttpError(
+        409,
+        "Cần cấu hình webhook secret và API đối soát trước khi bật nhận tiền",
+      );
+    const updated = await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE settings SET body=?,version=version+1,updated_at=unixepoch() WHERE id='payment' AND version=? RETURNING version",
+      ).bind(JSON.stringify(body.config), body.expectedVersion),
+      env.DB.prepare(
+        "DELETE FROM admin_commands WHERE result_id IN (SELECT id FROM approvals WHERE kind='PAYMENT_CONFIG' AND status='PENDING')",
+      ),
+      env.DB.prepare(
+        "DELETE FROM approvals WHERE kind='PAYMENT_CONFIG' AND status='PENDING'",
+      ),
+      env.DB.prepare(
+        "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
+      ).bind(
+        id(),
+        admin.email,
+        "UPDATE_PAYMENT_CONFIG",
+        "payment",
+        JSON.stringify({ expectedVersion: body.expectedVersion }),
+      ),
+    ]);
+    if (!updated[0].results.length)
+      throw new HttpError(409, "Cấu hình đã cũ, vui lòng tải lại trang");
+    return json(await paymentConfig(env));
+  }
+
+  if (path === "/wallet-adjustments" && request.method === "POST") {
+    requireRole(admin, ["owner"]);
+    const body = await readBody(
+      request,
+      z.object({
+        userId: z.string().min(1).max(100),
+        delta: z
+          .number()
+          .int()
+          .min(-100000000)
+          .max(100000000)
+          .refine((n) => n !== 0),
+        reason: z.string().min(5).max(300),
+      }),
+    );
+    const journalId = id();
+    const debitAccount = body.delta > 0 ? "adjustments" : `wallet:${body.userId}`;
+    const creditAccount = body.delta > 0 ? `wallet:${body.userId}` : "adjustments";
+    try {
+      await env.DB.batch([
+        env.DB.prepare(
+          "INSERT INTO journals(id,source,user_id,kind,amount,wallet_delta,debit_account,credit_account,memo) VALUES(?,?,?,?,?,?,?,?,?)",
+        ).bind(
+          journalId,
+          `adjustment:${journalId}`,
+          body.userId,
+          "ADJUSTMENT",
+          Math.abs(body.delta),
+          body.delta,
+          debitAccount,
+          creditAccount,
+          body.reason,
+        ),
+        env.DB.prepare(
+          "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
+        ).bind(
+          id(),
+          admin.email,
+          "WALLET_ADJUSTMENT",
+          body.userId,
+          JSON.stringify({ journalId, delta: body.delta, reason: body.reason }),
+        ),
+      ]);
+    } catch (error) {
+      if (
+        /INSUFFICIENT_BALANCE|LEDGER_MISMATCH|ACCOUNT_DISABLED|FOREIGN KEY|CHECK constraint/.test(
+          String(error),
+        )
+      )
+        throw new HttpError(
+          409,
+          "Không thể điều chỉnh số dư: khách hàng không tồn tại, đang bị khóa hoặc số dư không đủ",
+        );
+      throw error;
+    }
+    return json({ id: journalId, ok: true }, 201);
+  }
+
+  if (path === "/wallet-refunds" && request.method === "POST") {
+    requireRole(admin, ["owner"]);
+    const body = await readBody(
+      request,
+      z.object({
+        orderId: z.string().min(1).max(100),
+        reason: z.string().min(5).max(300),
+      }),
+    );
+    const order = await env.DB.prepare(
+      "SELECT o.id,o.user_id,o.total FROM orders o JOIN settlements s ON s.order_id=o.id WHERE o.id=? AND o.payment_status='PAID' AND s.source='WALLET'",
+    )
+      .bind(body.orderId)
+      .first<{ id: string; user_id: string; total: number }>();
+    if (!order)
+      throw new HttpError(
+        409,
+        "Đơn hàng không tồn tại, chưa thanh toán bằng ví hoặc đã được hoàn tiền",
+      );
+    const journalId = id();
+    try {
+      await env.DB.batch([
+        env.DB.prepare(
+          "INSERT INTO journals(id,source,user_id,kind,amount,wallet_delta,debit_account,credit_account,memo) VALUES(?,?,?,?,?,?,?,?,?)",
+        ).bind(
+          journalId,
+          `refund:${order.id}`,
+          order.user_id,
+          "REFUND",
+          order.total,
+          order.total,
+          "sales",
+          `wallet:${order.user_id}`,
+          body.reason,
+        ),
+        env.DB.prepare(
+          "UPDATE orders SET payment_status='REFUNDED' WHERE id=? AND payment_status='PAID'",
+        ).bind(order.id),
+        env.DB.prepare(
+          "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
+        ).bind(
+          id(),
+          admin.email,
+          "WALLET_REFUND",
+          order.id,
+          JSON.stringify({ journalId, reason: body.reason }),
+        ),
+      ]);
+    } catch (error) {
+      if (
+        /INSUFFICIENT_BALANCE|LEDGER_MISMATCH|ACCOUNT_DISABLED|UNIQUE|CHECK constraint/.test(
+          String(error),
+        )
+      )
+        throw new HttpError(
+          409,
+          "Không thể hoàn tiền đơn hàng này hoặc đơn đã được hoàn trước đó",
+        );
+      throw error;
+    }
+    return json({ id: journalId, ok: true }, 201);
+  }
+
   if (path === "/approvals" && request.method === "GET") {
     requireRole(admin, ["owner", "finance", "auditor"]);
     const { results } = await env.DB.prepare(
