@@ -265,12 +265,37 @@ export async function fulfillmentAdmin(
 ): Promise<Response | null> {
   if (path === "/commerce-report" && request.method === "GET") {
     requireRole(admin, ["owner", "finance", "auditor"]);
-    const revenue = await env.DB.prepare(
-      "SELECT COALESCE(SUM(total),0) AS revenue FROM orders WHERE payment_status='PAID'",
-    ).first<{ revenue: number }>();
-    const fulfillment = await env.DB.prepare(
-      "SELECT COALESCE(SUM(f.cost_vnd*1.0*f.delivered_quantity/f.quantity),0) AS cost,COALESCE(SUM(f.price*f.delivered_quantity-f.cost_vnd*1.0*f.delivered_quantity/f.quantity),0) AS profit FROM fulfillments f JOIN orders o ON o.id=f.order_id WHERE o.payment_status='PAID'",
+    const url = new URL(request.url);
+    const fromDate = url.searchParams.get("from_date");
+    const toDate = url.searchParams.get("to_date");
+    const validFrom = fromDate && /^\d{4}-\d{2}-\d{2}$/.test(fromDate);
+    const validTo = toDate && /^\d{4}-\d{2}-\d{2}$/.test(toDate);
+    const fromEpoch = validFrom
+      ? Math.floor(Date.parse(`${fromDate}T00:00:00+07:00`) / 1000)
+      : null;
+    const toEpoch = validTo
+      ? Math.floor(Date.parse(`${toDate}T23:59:59+07:00`) / 1000)
+      : null;
+    const hasBounds = fromEpoch !== null && toEpoch !== null;
+
+    const revenue = await (hasBounds
+      ? env.DB.prepare(
+          "SELECT COALESCE(SUM(total),0) AS revenue, COUNT(*) AS orderCount FROM orders WHERE payment_status='PAID' AND created_at>=? AND created_at<=?",
+        ).bind(fromEpoch, toEpoch)
+      : env.DB.prepare(
+          "SELECT COALESCE(SUM(total),0) AS revenue, COUNT(*) AS orderCount FROM orders WHERE payment_status='PAID'",
+        )
+    ).first<{ revenue: number; orderCount: number }>();
+
+    const fulfillment = await (hasBounds
+      ? env.DB.prepare(
+          "SELECT COALESCE(SUM(f.cost_vnd*1.0*f.delivered_quantity/f.quantity),0) AS cost,COALESCE(SUM(f.price*f.delivered_quantity-f.cost_vnd*1.0*f.delivered_quantity/f.quantity),0) AS profit FROM fulfillments f JOIN orders o ON o.id=f.order_id WHERE o.payment_status='PAID' AND o.created_at>=? AND o.created_at<=?",
+        ).bind(fromEpoch, toEpoch)
+      : env.DB.prepare(
+          "SELECT COALESCE(SUM(f.cost_vnd*1.0*f.delivered_quantity/f.quantity),0) AS cost,COALESCE(SUM(f.price*f.delivered_quantity-f.cost_vnd*1.0*f.delivered_quantity/f.quantity),0) AS profit FROM fulfillments f JOIN orders o ON o.id=f.order_id WHERE o.payment_status='PAID'",
+        )
     ).first<{ cost: number; profit: number }>();
+
     const review = await env.DB.prepare(
       "SELECT COUNT(DISTINCT order_id) AS review FROM admin_alerts WHERE resolved_at IS NULL",
     ).first<{ review: number }>();

@@ -113,6 +113,27 @@ function formatTransaction(row: MmoTransactionRow) {
 }
 
 /**
+ * Xác định ngày đầu tuần (Thứ Hai) và cuối tuần (Chủ Nhật) theo ngày tham chiếu.
+ */
+function resolveWeekBounds(anchorDate?: string): { from: string; to: string } {
+  const baseStr =
+    anchorDate && /^\d{4}-\d{2}-\d{2}$/.test(anchorDate)
+      ? anchorDate
+      : new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+  const base = new Date(`${baseStr}T00:00:00Z`);
+  const day = base.getUTCDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(base);
+  monday.setUTCDate(base.getUTCDate() + diffToMonday);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  return {
+    from: monday.toISOString().split("T")[0],
+    to: sunday.toISOString().split("T")[0],
+  };
+}
+
+/**
  * Lấy danh sách giao dịch MMO theo bộ lọc kỳ, từ khóa, loại và bảo hành
  */
 app.get("/transactions", async (c) => {
@@ -136,6 +157,11 @@ app.get("/transactions", async (c) => {
   if (period === "day" && date) {
     sql += " AND date = ?";
     params.push(date);
+  } else if (period === "week") {
+    const bounds =
+      fromDate && toDate ? { from: fromDate, to: toDate } : resolveWeekBounds(date);
+    sql += " AND date >= ? AND date <= ?";
+    params.push(bounds.from, bounds.to);
   } else if (period === "month" && month) {
     sql += " AND date LIKE ?";
     params.push(`${month}-%`);
@@ -428,8 +454,10 @@ app.get("/reports/summary", async (c) => {
       SUM(CASE WHEN type = 'sale' THEN sale_price ELSE 0 END) as total_revenue,
       SUM(CASE WHEN type = 'sale' THEN cost_price ELSE 0 END) as total_cost,
       SUM(CASE WHEN type = 'expense' THEN cost_price ELSE 0 END) as total_other_expense,
+      SUM(CASE WHEN type = 'purchase' THEN cost_price ELSE 0 END) as total_purchase_cost,
       COUNT(CASE WHEN type = 'sale' THEN 1 END) as count_sales,
       COUNT(CASE WHEN type = 'expense' THEN 1 END) as count_expenses,
+      COUNT(CASE WHEN type = 'purchase' THEN 1 END) as count_purchases,
       COUNT(id) as total_count
     FROM mmo_transactions
     WHERE ${isAdmin ? "is_deleted = 0" : "user_id = ? AND is_deleted = 0"}
@@ -439,6 +467,11 @@ app.get("/reports/summary", async (c) => {
   if (period === "day" && date) {
     sql += " AND date = ?";
     params.push(date);
+  } else if (period === "week") {
+    const bounds =
+      fromDate && toDate ? { from: fromDate, to: toDate } : resolveWeekBounds(date);
+    sql += " AND date >= ? AND date <= ?";
+    params.push(bounds.from, bounds.to);
   } else if (period === "month" && month) {
     sql += " AND date LIKE ?";
     params.push(`${month}-%`);
@@ -456,11 +489,13 @@ app.get("/reports/summary", async (c) => {
     const totalRevenue = Number(row?.total_revenue) || 0;
     const totalCost = Number(row?.total_cost) || 0;
     const totalOtherExpense = Number(row?.total_other_expense) || 0;
+    const totalPurchaseCost = Number(row?.total_purchase_cost) || 0;
     const totalExpense = totalCost + totalOtherExpense;
     const netProfit = totalRevenue - totalExpense;
     const profitMargin = totalRevenue > 0 ? Number(((netProfit / totalRevenue) * 100).toFixed(2)) : 0;
     const countSales = Number(row?.count_sales) || 0;
     const countExpenses = Number(row?.count_expenses) || 0;
+    const countPurchases = Number(row?.count_purchases) || 0;
     const totalCount = Number(row?.total_count) || 0;
 
     return c.json({
@@ -469,11 +504,13 @@ app.get("/reports/summary", async (c) => {
         totalRevenue,
         totalCost,
         totalOtherExpense,
+        totalPurchaseCost,
         totalExpense,
         netProfit,
         profitMargin,
         countSales,
         countExpenses,
+        countPurchases,
         totalCount,
       },
     });

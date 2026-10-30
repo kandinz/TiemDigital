@@ -369,6 +369,19 @@ const transaction = {
       })
       .waitFor();
     await page.getByRole("columnheader", { name: "Chi phí khác" }).waitFor();
+    const reportTypeGroup = page.getByRole("group", { name: "Loại báo cáo" });
+    await reportTypeGroup.getByRole("button", { name: "Đơn cửa hàng", exact: true }).click();
+    assert.equal(await page.getByText("Doanh thu MMO cũ").count(), 0);
+    await reportTypeGroup.getByRole("button", { name: "Tất cả báo cáo", exact: true }).click();
+    const reportTimeGroup = page.getByRole("group", { name: "Thời gian báo cáo" });
+    await reportTimeGroup.getByRole("button", { name: "Theo ngày", exact: true }).click();
+    await page.getByLabel("Chọn ngày báo cáo").waitFor();
+    await reportTimeGroup.getByRole("button", { name: "Theo tuần", exact: true }).click();
+    await page.getByLabel("Chọn ngày trong tuần báo cáo").waitFor();
+    await reportTimeGroup.getByRole("button", { name: "Theo tháng", exact: true }).click();
+    await page.getByLabel("Chọn tháng báo cáo").waitFor();
+    await reportTimeGroup.getByRole("button", { name: "Theo năm", exact: true }).click();
+    await page.getByLabel("Chọn năm báo cáo").waitFor();
     await page.screenshot({ path: resolve(capture, "finance-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Sản phẩm", exact: true }).click();

@@ -50,6 +50,7 @@ it('keeps every MMO route private, uses TiệmDigital identity, and supports ret
   expect(sale.status).toBe(200);
   expect((await (await request('/transactions', owner.cookie)).text())).toContain('2026-11-05');
   expect((await request('/reports/summary', owner.cookie)).status).toBe(200);
+  expect((await request('/reports/summary?period=week&date=2026-10-29', owner.cookie)).status).toBe(200);
   expect((await request('/reports/monthly?year=2026', owner.cookie)).status).toBe(200);
   expect((await request('/warranty/lookup?search=Test', owner.cookie)).status).toBe(200);
   expect((await request('/catalog', owner.cookie, { provider_id: 'prodseller', provider_product_id: 'p1', original_name: 'Test key', selling_price: 40000 })).status).toBe(200);

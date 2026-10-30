@@ -2398,27 +2398,119 @@ const emptyTransaction = () => ({
   purchase_order_id: null as string | null,
 });
 
+type ReportTypeChip =
+  | "all"
+  | "overview"
+  | "store"
+  | "mmo"
+  | "expense"
+  | "monthly";
+
+type ReportPeriodChip = "all" | "day" | "week" | "month" | "year" | "custom";
+
+type MonthQuickScope = "all" | "q1" | "q2" | "q3" | "q4" | "active";
+
+/**
+ * Lấy chuỗi ngày hiện tại định dạng YYYY-MM-DD theo múi giờ Việt Nam.
+ */
+function getTodayIso(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+}
+
+/**
+ * Dịch chuyển một ngày YYYY-MM-DD theo số ngày cộng/trừ.
+ */
+function shiftIsoDate(baseIso: string, deltaDays: number): string {
+  const d = new Date(`${baseIso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return getTodayIso();
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().split("T")[0];
+}
+
+/**
+ * Xác định ngày đầu tuần (Thứ Hai) và cuối tuần (Chủ Nhật) của một ngày YYYY-MM-DD.
+ */
+function getIsoWeekBounds(anchorIso: string): { from: string; to: string } {
+  const d = new Date(`${anchorIso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) {
+    const fallback = getTodayIso();
+    return { from: fallback, to: fallback };
+  }
+  const day = d.getUTCDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setUTCDate(d.getUTCDate() + diffToMonday);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  return {
+    from: monday.toISOString().split("T")[0],
+    to: sunday.toISOString().split("T")[0],
+  };
+}
+
+/**
+ * Xác định ngày đầu tháng và cuối tháng từ chuỗi YYYY-MM.
+ */
+function getIsoMonthBounds(monthIso: string): { from: string; to: string } {
+  const [yStr, mStr] = monthIso.split("-");
+  const y = Number(yStr);
+  const m = Number(mStr);
+  if (!y || !m) {
+    const today = getTodayIso();
+    return { from: today, to: today };
+  }
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const padM = String(m).padStart(2, "0");
+  return {
+    from: `${y}-${padM}-01`,
+    to: `${y}-${padM}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+/**
+ * Định dạng chuỗi YYYY-MM-DD sang dd/MM/yyyy dễ đọc cho quản trị viên.
+ */
+function formatViDate(iso: string): string {
+  const parts = iso.split("-");
+  if (parts.length !== 3) return iso;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
 /**
  * Hiển thị báo cáo doanh thu, giá vốn và lợi nhuận theo từng tháng của hệ thống MMO.
  */
-function MonthlyReport({ run }: { run: Run }) {
-  const [year, setYear] = useState(() => new Date().getFullYear());
+function MonthlyReport({
+  run,
+  selectedMonthKey,
+  onSelectMonth,
+}: {
+  run: Run;
+  selectedMonthKey?: string;
+  onSelectMonth?: (monthKey: string) => void;
+}) {
+  const [currentYear] = useState(() => Number(getTodayIso().slice(0, 4)));
+  const [year, setYear] = useState(() => Number(getTodayIso().slice(0, 4)));
+  const [monthScope, setMonthScope] = useState<MonthQuickScope>("all");
   const [yearSummary, setYearSummary] = useState<{
     totalRevenue: number;
     totalCost: number;
     totalOtherExpense: number;
     totalExpense: number;
     netProfit: number;
+    profitMargin?: number;
   } | null>(null);
   const [months, setMonths] = useState<
     {
       month: number;
       label: string;
+      shortLabel?: string;
+      monthKey?: string;
       revenue: number;
       cost: number;
       otherExpense: number;
       totalExpense: number;
       profit: number;
+      countSales?: number;
     }[]
   >([]);
 
@@ -2435,9 +2527,33 @@ function MonthlyReport({ run }: { run: Run }) {
     void run(() => load(new Date().getFullYear()));
   }, [run]);
 
+  const quickYears = [currentYear, currentYear - 1, currentYear - 2];
+
+  const visibleMonths = months.filter((m) => {
+    if (monthScope === "q1") return m.month >= 1 && m.month <= 3;
+    if (monthScope === "q2") return m.month >= 4 && m.month <= 6;
+    if (monthScope === "q3") return m.month >= 7 && m.month <= 9;
+    if (monthScope === "q4") return m.month >= 10 && m.month <= 12;
+    if (monthScope === "active")
+      return m.revenue > 0 || m.totalExpense > 0 || m.profit !== 0;
+    return true;
+  });
+
+  const maxPeak = Math.max(
+    1,
+    ...months.map((m) => Math.max(m.revenue, m.totalExpense)),
+  );
+
   return (
     <section className="panel">
-      <div className="panel-heading"><h2>Báo cáo theo tháng</h2></div>
+      <div className="panel-heading">
+        <div>
+          <h2>Báo cáo theo tháng</h2>
+          <p className="muted">
+            Chọn nhanh năm hoặc quý bên dưới. Bấm vào dòng tháng để lọc nhanh
+            báo cáo chi tiết theo tháng đó.
+          </p>
+        </div>
         <form
           className="action-row"
           onSubmit={(e) => {
@@ -2457,39 +2573,160 @@ function MonthlyReport({ run }: { run: Run }) {
           </label>
           <button className="primary">Xem báo cáo năm</button>
         </form>
-        <div className="table-wrap">
-          <SmartTable>
-            <thead>
-              <tr>
-                <th>Tháng</th>
-                <th>Doanh thu</th>
-                <th>Giá vốn</th>
-                <th>Chi phí khác</th>
-                <th>Tổng chi phí</th>
-                <th>Lợi nhuận</th>
-              </tr>
-            </thead>
-            <tbody>
-              {months.map((m) => (
-                <tr key={m.month}>
+      </div>
+
+      <div className="report-chip-stack" style={{ marginBottom: 12 }}>
+        <div
+          className="report-chip-row"
+          role="group"
+          aria-label="Chọn nhanh năm báo cáo tháng"
+        >
+          <span className="report-chip-label">Năm nhanh:</span>
+          {quickYears.map((y) => (
+            <button
+              key={y}
+              type="button"
+              className={`report-chip ${year === y ? "primary" : ""}`}
+              onClick={() => {
+                setYear(y);
+                void run(() => load(y));
+              }}
+            >
+              Năm {y}
+            </button>
+          ))}
+        </div>
+        <div
+          className="report-chip-row"
+          role="group"
+          aria-label="Lọc nhanh chu kỳ tháng"
+        >
+          <span className="report-chip-label">Chu kỳ tháng:</span>
+          {(
+            [
+              ["all", "Cả 12 tháng"],
+              ["q1", "Quý 1 (T1–T3)"],
+              ["q2", "Quý 2 (T4–T6)"],
+              ["q3", "Quý 3 (T7–T9)"],
+              ["q4", "Quý 4 (T10–T12)"],
+              ["active", "Có phát sinh"],
+            ] as const
+          ).map(([scopeKey, label]) => (
+            <button
+              key={scopeKey}
+              type="button"
+              className={`report-chip ${monthScope === scopeKey ? "primary" : ""}`}
+              onClick={() => setMonthScope(scopeKey)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <SmartTable>
+          <thead>
+            <tr>
+              <th>Tháng</th>
+              <th>Doanh thu</th>
+              <th>Giá vốn</th>
+              <th>Chi phí khác</th>
+              <th>Tổng chi phí</th>
+              <th>Lợi nhuận</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleMonths.map((m) => {
+              const monthKey =
+                m.monthKey ?? `${year}-${String(m.month).padStart(2, "0")}`;
+              const isSelected = selectedMonthKey === monthKey;
+              const revPct = Math.round((m.revenue / maxPeak) * 100);
+              const expPct = Math.round((m.totalExpense / maxPeak) * 100);
+              return (
+                <tr
+                  key={m.month}
+                  className={
+                    onSelectMonth
+                      ? `clickable-row ${isSelected ? "selected-row" : ""}`
+                      : ""
+                  }
+                  onClick={() => onSelectMonth?.(monthKey)}
+                >
                   <td>
                     <strong>{m.label}</strong>
+                    {typeof m.countSales === "number" && m.countSales > 0 && (
+                      <>
+                        {" "}
+                        <span className="status neutral">
+                          {m.countSales} đơn
+                        </span>
+                      </>
+                    )}
                   </td>
-                  <td>{amountLabel(m.revenue)}</td>
+                  <td>
+                    <strong className={m.revenue > 0 ? "positive" : ""}>
+                      {amountLabel(m.revenue)}
+                    </strong>
+                    {m.revenue > 0 && (
+                      <div className="report-mini-track" aria-hidden="true">
+                        <div
+                          className="report-mini-fill good"
+                          style={{ width: `${Math.max(4, revPct)}%` }}
+                        />
+                      </div>
+                    )}
+                  </td>
                   <td>{amountLabel(m.cost)}</td>
                   <td>{amountLabel(m.otherExpense)}</td>
-                  <td>{amountLabel(m.totalExpense)}</td>
+                  <td>
+                    <span>{amountLabel(m.totalExpense)}</span>
+                    {m.totalExpense > 0 && (
+                      <div className="report-mini-track" aria-hidden="true">
+                        <div
+                          className="report-mini-fill danger"
+                          style={{ width: `${Math.max(4, expPct)}%` }}
+                        />
+                      </div>
+                    )}
+                  </td>
                   <td>
                     <strong className={m.profit >= 0 ? "positive" : "danger"}>
+                      {m.profit > 0 ? "+" : ""}
                       {amountLabel(m.profit)}
                     </strong>
                   </td>
                 </tr>
-              ))}
-            </tbody>
-            {yearSummary && <tfoot><tr><th>Tổng năm {year}</th><td>{amountLabel(yearSummary.totalRevenue)}</td><td>{amountLabel(yearSummary.totalCost)}</td><td>{amountLabel(yearSummary.totalOtherExpense)}</td><td>{amountLabel(yearSummary.totalExpense)}</td><td><strong>{amountLabel(yearSummary.netProfit)}</strong></td></tr></tfoot>}
-          </SmartTable>
-        </div>
+              );
+            })}
+          </tbody>
+          {yearSummary && (
+            <tfoot>
+              <tr>
+                <th>Tổng năm {year}</th>
+                <td>
+                  <strong className="positive">
+                    {amountLabel(yearSummary.totalRevenue)}
+                  </strong>
+                </td>
+                <td>{amountLabel(yearSummary.totalCost)}</td>
+                <td>{amountLabel(yearSummary.totalOtherExpense)}</td>
+                <td>{amountLabel(yearSummary.totalExpense)}</td>
+                <td>
+                  <strong
+                    className={
+                      yearSummary.netProfit >= 0 ? "positive" : "danger"
+                    }
+                  >
+                    {yearSummary.netProfit > 0 ? "+" : ""}
+                    {amountLabel(yearSummary.netProfit)}
+                  </strong>
+                </td>
+              </tr>
+            </tfoot>
+          )}
+        </SmartTable>
+      </div>
     </section>
   );
 }
@@ -2508,6 +2745,10 @@ export function BusinessFinance({
   reportOnly?: boolean;
   transactionsOnly?: boolean;
 }) {
+  const [today] = useState(getTodayIso);
+  const currentMonth = today.slice(0, 7);
+  const currentYear = today.slice(0, 4);
+
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState<Record<string, number>>({});
   const [automatic, setAutomatic] = useState<Record<string, number>>({});
@@ -2526,11 +2767,83 @@ export function BusinessFinance({
   const [editorOpen, setEditorOpen] = useState(false);
   const formRef = useRef<HTMLElement | null>(null);
 
+  const [reportType, setReportType] = useState<ReportTypeChip>("all");
+  const [periodChip, setPeriodChip] = useState<ReportPeriodChip>("all");
+  const [quickPreset, setQuickPreset] = useState<string>("all");
+  const [dayValue, setDayValue] = useState<string>(today);
+  const [weekAnchor, setWeekAnchor] = useState<string>(today);
+  const [monthValue, setMonthValue] = useState<string>(currentMonth);
+  const [yearValue, setYearValue] = useState<string>(currentYear);
+  const [customFrom, setCustomFrom] = useState<string>(shiftIsoDate(today, -6));
+  const [customTo, setCustomTo] = useState<string>(today);
+
+  function buildPeriodQuery(
+    period: ReportPeriodChip,
+    opts?: {
+      day?: string;
+      week?: string;
+      month?: string;
+      year?: string;
+      from?: string;
+      to?: string;
+    },
+  ): { mmoQuery: string; commerceQuery: string } {
+    const d = opts?.day ?? dayValue;
+    const w = opts?.week ?? weekAnchor;
+    const m = opts?.month ?? monthValue;
+    const y = opts?.year ?? yearValue;
+    const cf = opts?.from ?? customFrom;
+    const ct = opts?.to ?? customTo;
+
+    if (period === "day" && d) {
+      return {
+        mmoQuery: `period=day&date=${encodeURIComponent(d)}`,
+        commerceQuery: `?from_date=${encodeURIComponent(d)}&to_date=${encodeURIComponent(d)}`,
+      };
+    }
+    if (period === "week" && w) {
+      const bounds = getIsoWeekBounds(w);
+      return {
+        mmoQuery: `period=week&date=${encodeURIComponent(w)}&from_date=${encodeURIComponent(bounds.from)}&to_date=${encodeURIComponent(bounds.to)}`,
+        commerceQuery: `?from_date=${encodeURIComponent(bounds.from)}&to_date=${encodeURIComponent(bounds.to)}`,
+      };
+    }
+    if (period === "month" && m) {
+      const bounds = getIsoMonthBounds(m);
+      return {
+        mmoQuery: `period=month&month=${encodeURIComponent(m)}`,
+        commerceQuery: `?from_date=${encodeURIComponent(bounds.from)}&to_date=${encodeURIComponent(bounds.to)}`,
+      };
+    }
+    if (period === "year" && y) {
+      return {
+        mmoQuery: `period=year&year=${encodeURIComponent(y)}`,
+        commerceQuery: `?from_date=${encodeURIComponent(`${y}-01-01`)}&to_date=${encodeURIComponent(`${y}-12-31`)}`,
+      };
+    }
+    if (period === "custom" && cf && ct) {
+      return {
+        mmoQuery: `period=custom&from_date=${encodeURIComponent(cf)}&to_date=${encodeURIComponent(ct)}`,
+        commerceQuery: `?from_date=${encodeURIComponent(cf)}&to_date=${encodeURIComponent(ct)}`,
+      };
+    }
+    return { mmoQuery: "", commerceQuery: "" };
+  }
+
   async function load(
     query = search,
     onlyWarranty = warrantyOnly,
     txType = typeFilter,
     wStatus = warrantyStatusFilter,
+    periodOverride?: ReportPeriodChip,
+    periodOpts?: {
+      day?: string;
+      week?: string;
+      month?: string;
+      year?: string;
+      from?: string;
+      to?: string;
+    },
   ) {
     if (onlyWarranty) {
       const res = await api<{
@@ -2543,15 +2856,23 @@ export function BusinessFinance({
       setWarrantyCounts(res.counts ?? null);
       return;
     }
+    const activePeriod = periodOverride ?? periodChip;
+    const { mmoQuery, commerceQuery } = buildPeriodQuery(
+      activePeriod,
+      periodOpts,
+    );
     const typeParam = txType ? `&type=${encodeURIComponent(txType)}` : "";
+    const periodParam = mmoQuery ? `&${mmoQuery}` : "";
+    const summaryUrl = mmoQuery
+      ? `${supplierApi}/reports/summary?${mmoQuery}`
+      : `${supplierApi}/reports/summary`;
+
     const [data, report, commerce] = await Promise.all([
       api<{ transactions: TransactionResponse[] }>(
-        `${supplierApi}/transactions?q=${encodeURIComponent(query)}${typeParam}`,
+        `${supplierApi}/transactions?q=${encodeURIComponent(query)}${typeParam}${periodParam}`,
       ),
-      api<{ summary: Record<string, number> }>(
-        `${supplierApi}/reports/summary`,
-      ),
-      api<Record<string, number>>("/api/admin/commerce-report"),
+      api<{ summary: Record<string, number> }>(summaryUrl),
+      api<Record<string, number>>(`/api/admin/commerce-report${commerceQuery}`),
     ]);
     setTransactions(data.transactions.map(transactionRow));
     setSummary(report.summary);
@@ -2559,112 +2880,1000 @@ export function BusinessFinance({
   }
 
   useEffect(() => {
-    void run(() => load("", warrantyOnly, "", "all"));
+    void run(() => load("", warrantyOnly, "", "all", "all"));
   }, [run, warrantyOnly]);
+
+  function applyTimePreset(presetId: string) {
+    setQuickPreset(presetId);
+    const nowIso = getTodayIso();
+    if (presetId === "all") {
+      setPeriodChip("all");
+      void run(() => load(search, warrantyOnly, typeFilter, warrantyStatusFilter, "all"));
+      return;
+    }
+    if (presetId === "today") {
+      setPeriodChip("day");
+      setDayValue(nowIso);
+      void run(() =>
+        load(search, warrantyOnly, typeFilter, warrantyStatusFilter, "day", {
+          day: nowIso,
+        }),
+      );
+      return;
+    }
+    if (presetId === "yesterday") {
+      const yest = shiftIsoDate(nowIso, -1);
+      setPeriodChip("day");
+      setDayValue(yest);
+      void run(() =>
+        load(search, warrantyOnly, typeFilter, warrantyStatusFilter, "day", {
+          day: yest,
+        }),
+      );
+      return;
+    }
+    if (presetId === "this_week") {
+      setPeriodChip("week");
+      setWeekAnchor(nowIso);
+      void run(() =>
+        load(search, warrantyOnly, typeFilter, warrantyStatusFilter, "week", {
+          week: nowIso,
+        }),
+      );
+      return;
+    }
+    if (presetId === "last_week") {
+      const prevWeek = shiftIsoDate(nowIso, -7);
+      setPeriodChip("week");
+      setWeekAnchor(prevWeek);
+      void run(() =>
+        load(search, warrantyOnly, typeFilter, warrantyStatusFilter, "week", {
+          week: prevWeek,
+        }),
+      );
+      return;
+    }
+    if (presetId === "last_7d") {
+      const from7 = shiftIsoDate(nowIso, -6);
+      setPeriodChip("custom");
+      setCustomFrom(from7);
+      setCustomTo(nowIso);
+      void run(() =>
+        load(search, warrantyOnly, typeFilter, warrantyStatusFilter, "custom", {
+          from: from7,
+          to: nowIso,
+        }),
+      );
+      return;
+    }
+    if (presetId === "this_month") {
+      const m = nowIso.slice(0, 7);
+      setPeriodChip("month");
+      setMonthValue(m);
+      void run(() =>
+        load(search, warrantyOnly, typeFilter, warrantyStatusFilter, "month", {
+          month: m,
+        }),
+      );
+      return;
+    }
+    if (presetId === "last_month") {
+      const d = new Date(`${nowIso.slice(0, 7)}-01T00:00:00Z`);
+      d.setUTCMonth(d.getUTCMonth() - 1);
+      const prevM = d.toISOString().slice(0, 7);
+      setPeriodChip("month");
+      setMonthValue(prevM);
+      void run(() =>
+        load(search, warrantyOnly, typeFilter, warrantyStatusFilter, "month", {
+          month: prevM,
+        }),
+      );
+      return;
+    }
+    if (presetId === "last_30d") {
+      const from30 = shiftIsoDate(nowIso, -29);
+      setPeriodChip("custom");
+      setCustomFrom(from30);
+      setCustomTo(nowIso);
+      void run(() =>
+        load(search, warrantyOnly, typeFilter, warrantyStatusFilter, "custom", {
+          from: from30,
+          to: nowIso,
+        }),
+      );
+      return;
+    }
+    if (presetId === "this_year") {
+      const y = nowIso.slice(0, 4);
+      setPeriodChip("year");
+      setYearValue(y);
+      void run(() =>
+        load(search, warrantyOnly, typeFilter, warrantyStatusFilter, "year", {
+          year: y,
+        }),
+      );
+      return;
+    }
+    if (presetId === "last_year") {
+      const y = String(Number(nowIso.slice(0, 4)) - 1);
+      setPeriodChip("year");
+      setYearValue(y);
+      void run(() =>
+        load(search, warrantyOnly, typeFilter, warrantyStatusFilter, "year", {
+          year: y,
+        }),
+      );
+    }
+  }
+
+  function selectPeriodMode(mode: ReportPeriodChip) {
+    setPeriodChip(mode);
+    setQuickPreset(mode);
+    void run(() =>
+      load(search, warrantyOnly, typeFilter, warrantyStatusFilter, mode),
+    );
+  }
+
+  const weekBounds = getIsoWeekBounds(weekAnchor);
+  const activePeriodText =
+    periodChip === "day"
+      ? `Ngày ${formatViDate(dayValue)}`
+      : periodChip === "week"
+        ? `Tuần ${formatViDate(weekBounds.from)} – ${formatViDate(weekBounds.to)}`
+        : periodChip === "month"
+          ? `Tháng ${monthValue.split("-").reverse().join("/")}`
+          : periodChip === "year"
+            ? `Năm ${yearValue}`
+            : periodChip === "custom"
+              ? `${formatViDate(customFrom)} – ${formatViDate(customTo)}`
+              : "Toàn thời gian";
+
+  const storeRevenue = Number(automatic.revenue) || 0;
+  const storeCost = Number(automatic.cost) || 0;
+  const storeProfit = Number(automatic.profit) || 0;
+  const storeReview = Number(automatic.review) || 0;
+
+  const mmoRevenue = Number(summary.totalRevenue) || 0;
+  const mmoCost = Number(summary.totalCost) || 0;
+  const mmoOtherExpense = Number(summary.totalOtherExpense) || 0;
+  const mmoExpense = Number(summary.totalExpense) || 0;
+  const mmoProfit = Number(summary.netProfit) || 0;
+  const mmoSalesCount = Number(summary.countSales) || 0;
+  const mmoMargin =
+    summary.profitMargin !== undefined
+      ? Number(summary.profitMargin)
+      : mmoRevenue > 0
+        ? Number(((mmoProfit / mmoRevenue) * 100).toFixed(1))
+        : 0;
+
+  const combinedRevenue = storeRevenue + mmoRevenue;
+  const combinedExpense = storeCost + mmoExpense;
+  const combinedProfit = storeProfit + mmoProfit;
+  const combinedMargin =
+    combinedRevenue > 0
+      ? Number(((combinedProfit / combinedRevenue) * 100).toFixed(1))
+      : 0;
+
+  const detailMetrics: {
+    label: string;
+    value: number;
+    isCount?: boolean;
+    badge: string;
+    tone?: "positive" | "danger" | "default";
+    groups: ReportTypeChip[];
+  }[] = [
+    {
+      label: "Doanh thu cửa hàng",
+      value: storeRevenue,
+      badge: "Cửa hàng",
+      tone: "positive",
+      groups: ["all", "overview", "store"],
+    },
+    {
+      label: "Giá vốn đã giao",
+      value: storeCost,
+      badge: "Cửa hàng",
+      groups: ["all", "store", "expense"],
+    },
+    {
+      label: "Lợi nhuận đã giao",
+      value: storeProfit,
+      badge: "Cửa hàng",
+      tone: storeProfit >= 0 ? "positive" : "danger",
+      groups: ["all", "overview", "store"],
+    },
+    {
+      label: "Đơn cần xử lý",
+      value: storeReview,
+      isCount: true,
+      badge: "Vận hành",
+      tone: storeReview > 0 ? "danger" : "default",
+      groups: ["all", "overview", "store"],
+    },
+    {
+      label: "Doanh thu MMO cũ",
+      value: mmoRevenue,
+      badge: "Sổ MMO",
+      tone: "positive",
+      groups: ["all", "overview", "mmo"],
+    },
+    {
+      label: "Chi phí MMO cũ",
+      value: mmoExpense,
+      badge: "Sổ MMO",
+      groups: ["all", "overview", "mmo", "expense"],
+    },
+    {
+      label: "Lợi nhuận MMO cũ",
+      value: mmoProfit,
+      badge: "Sổ MMO",
+      tone: mmoProfit >= 0 ? "positive" : "danger",
+      groups: ["all", "overview", "mmo"],
+    },
+    {
+      label: "Giá vốn bán MMO",
+      value: mmoCost,
+      badge: "Chi phí MMO",
+      groups: ["mmo", "expense"],
+    },
+    {
+      label: "Chi phí khác MMO",
+      value: mmoOtherExpense,
+      badge: "Chi phí MMO",
+      groups: ["mmo", "expense"],
+    },
+    {
+      label: "Đơn bán MMO",
+      value: mmoSalesCount,
+      isCount: true,
+      badge: "Sổ MMO",
+      groups: ["mmo"],
+    },
+  ];
+
+  const visibleDetailMetrics = detailMetrics.filter((m) =>
+    m.groups.includes(reportType),
+  );
+
+  const txRevenueTotal = transactions
+    .filter((t) => t.type === "sale")
+    .reduce((sum, t) => sum + (Number(t.sale_price) || 0), 0);
+  const txCostTotal = transactions.reduce(
+    (sum, t) => sum + (Number(t.cost_price) || 0),
+    0,
+  );
+  const txProfitTotal = txRevenueTotal - txCostTotal;
 
   return (
     <>
-      {!warrantyOnly && !transactionsOnly && <div className="metric-grid finance-summary">
-        {[
-          ["Doanh thu cửa hàng", automatic.revenue],
-          ["Giá vốn đã giao", automatic.cost],
-          ["Lợi nhuận đã giao", automatic.profit],
-          ["Đơn cần xử lý", automatic.review],
-          ["Doanh thu MMO cũ", summary.totalRevenue],
-          ["Chi phí MMO cũ", summary.totalExpense],
-          ["Lợi nhuận MMO cũ", summary.netProfit],
-        ].map(([label, value]) => <div className="metric" key={String(label)}><span>{label}</span><strong>{label === "Đơn cần xử lý" ? (value ?? 0) : amountLabel(Number(value) || 0)}</strong></div>)}
-      </div>}
-      {!warrantyOnly && reportOnly && <MonthlyReport run={run} />}
-      {!reportOnly && <div className="admin-split-grid">
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>
-                {warrantyOnly ? "Tra cứu & xử lý bảo hành" : "Sổ giao dịch"}
-              </h2>
-              <p className="muted">
-                Bấm vào dòng giao dịch để xem chi tiết, chỉnh sửa hoặc cập nhật
-                bảo hành.
-              </p>
-            </div>
-            <button
-              className="primary"
-              onClick={() => {
-                setSelected(null);
-                setForm(emptyTransaction());
-                setEditorOpen(true);
-                focusPanel(formRef.current);
-              }}
-            >
-              Ghi giao dịch mới
-            </button>
-          </div>
-          {warrantyOnly && warrantyCounts && (
-            <div className="admin-filter-pills">
-              {(
-                [
-                  ["all", `Tất cả (${warrantyCounts.all})`],
-                  ["valid", `Còn hạn (${warrantyCounts.valid})`],
-                  [
-                    "expiring_soon",
-                    `Sắp hết hạn (${warrantyCounts.expiringSoon})`,
-                  ],
-                  ["expired", `Hết hạn (${warrantyCounts.expired})`],
-                  ["lifetime", `Trọn đời (${warrantyCounts.lifetime})`],
-                ] as const
-              ).map(([statusKey, label]) => (
+      {!warrantyOnly && !transactionsOnly && (
+        <>
+          <section className="panel report-control-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>Bộ lọc & Chọn nhanh báo cáo</h2>
+                <p className="muted">
+                  Chọn nhanh loại báo cáo và mốc thời gian ngày, tuần, tháng,
+                  năm để đối soát số liệu tức thì.
+                </p>
+              </div>
+              <div className="action-row">
+                <span className="status good">{activePeriodText}</span>
                 <button
-                  key={statusKey}
                   type="button"
-                  className={warrantyStatusFilter === statusKey ? "primary" : ""}
-                  onClick={() => {
-                    setWarrantyStatusFilter(statusKey);
+                  onClick={() =>
                     void run(() =>
-                      load(search, warrantyOnly, typeFilter, statusKey),
-                    );
-                  }}
+                      load(
+                        search,
+                        warrantyOnly,
+                        typeFilter,
+                        warrantyStatusFilter,
+                        periodChip,
+                      ),
+                    )
+                  }
                 >
-                  {label}
+                  Cập nhật số liệu
                 </button>
+              </div>
+            </div>
+
+            <div className="report-chip-stack">
+              <div
+                className="report-chip-row"
+                role="group"
+                aria-label="Loại báo cáo"
+              >
+                <span className="report-chip-label">Loại báo cáo:</span>
+                {(
+                  [
+                    ["all", "Tất cả báo cáo"],
+                    ["overview", "Tổng hợp Lãi / Lỗ"],
+                    ["store", "Đơn cửa hàng"],
+                    ["mmo", "Sổ giao dịch MMO"],
+                    ["expense", "Chi phí & Giá vốn"],
+                    ["monthly", "Chu kỳ 12 tháng"],
+                  ] as const
+                ).map(([typeId, label]) => (
+                  <button
+                    key={typeId}
+                    type="button"
+                    className={`report-chip ${reportType === typeId ? "primary" : ""}`}
+                    onClick={() => setReportType(typeId)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div
+                className="report-chip-row"
+                role="group"
+                aria-label="Thời gian báo cáo"
+              >
+                <span className="report-chip-label">Thời gian:</span>
+                {(
+                  [
+                    ["all", "Tất cả"],
+                    ["day", "Theo ngày"],
+                    ["week", "Theo tuần"],
+                    ["month", "Theo tháng"],
+                    ["year", "Theo năm"],
+                    ["custom", "Tùy chọn"],
+                  ] as const
+                ).map(([pId, label]) => (
+                  <button
+                    key={pId}
+                    type="button"
+                    className={`report-chip ${periodChip === pId ? "primary" : ""}`}
+                    onClick={() => selectPeriodMode(pId)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div
+                className="report-chip-row"
+                role="group"
+                aria-label="Chọn nhanh mốc thời gian"
+              >
+                <span className="report-chip-label">Chọn nhanh:</span>
+                {(
+                  [
+                    ["today", "Hôm nay"],
+                    ["yesterday", "Hôm qua"],
+                    ["this_week", "Tuần này"],
+                    ["last_week", "Tuần trước"],
+                    ["last_7d", "7 ngày qua"],
+                    ["this_month", "Tháng này"],
+                    ["last_month", "Tháng trước"],
+                    ["last_30d", "30 ngày qua"],
+                    ["this_year", `Năm nay (${currentYear})`],
+                    ["last_year", `Năm ${Number(currentYear) - 1}`],
+                    ["all", "Toàn thời gian"],
+                  ] as const
+                ).map(([presetId, label]) => (
+                  <button
+                    key={presetId}
+                    type="button"
+                    className={`report-chip subtle-chip ${quickPreset === presetId ? "active-preset" : ""}`}
+                    onClick={() => applyTimePreset(presetId)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {periodChip === "day" && (
+                <div className="report-period-picker">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prev = shiftIsoDate(dayValue, -1);
+                      setDayValue(prev);
+                      setQuickPreset("custom_day");
+                      void run(() =>
+                        load(
+                          search,
+                          warrantyOnly,
+                          typeFilter,
+                          warrantyStatusFilter,
+                          "day",
+                          { day: prev },
+                        ),
+                      );
+                    }}
+                  >
+                    ‹ Ngày trước
+                  </button>
+                  <input
+                    type="date"
+                    aria-label="Chọn ngày báo cáo"
+                    value={dayValue}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setDayValue(next);
+                      setQuickPreset("custom_day");
+                      if (next) {
+                        void run(() =>
+                          load(
+                            search,
+                            warrantyOnly,
+                            typeFilter,
+                            warrantyStatusFilter,
+                            "day",
+                            { day: next },
+                          ),
+                        );
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = shiftIsoDate(dayValue, 1);
+                      setDayValue(next);
+                      setQuickPreset("custom_day");
+                      void run(() =>
+                        load(
+                          search,
+                          warrantyOnly,
+                          typeFilter,
+                          warrantyStatusFilter,
+                          "day",
+                          { day: next },
+                        ),
+                      );
+                    }}
+                  >
+                    Ngày sau ›
+                  </button>
+                </div>
+              )}
+
+              {periodChip === "week" && (
+                <div className="report-period-picker">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prev = shiftIsoDate(weekAnchor, -7);
+                      setWeekAnchor(prev);
+                      setQuickPreset("custom_week");
+                      void run(() =>
+                        load(
+                          search,
+                          warrantyOnly,
+                          typeFilter,
+                          warrantyStatusFilter,
+                          "week",
+                          { week: prev },
+                        ),
+                      );
+                    }}
+                  >
+                    ‹ Tuần trước
+                  </button>
+                  <input
+                    type="date"
+                    aria-label="Chọn ngày trong tuần báo cáo"
+                    value={weekAnchor}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setWeekAnchor(next);
+                      setQuickPreset("custom_week");
+                      if (next) {
+                        void run(() =>
+                          load(
+                            search,
+                            warrantyOnly,
+                            typeFilter,
+                            warrantyStatusFilter,
+                            "week",
+                            { week: next },
+                          ),
+                        );
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = shiftIsoDate(weekAnchor, 7);
+                      setWeekAnchor(next);
+                      setQuickPreset("custom_week");
+                      void run(() =>
+                        load(
+                          search,
+                          warrantyOnly,
+                          typeFilter,
+                          warrantyStatusFilter,
+                          "week",
+                          { week: next },
+                        ),
+                      );
+                    }}
+                  >
+                    Tuần sau ›
+                  </button>
+                  <span className="muted">
+                    ({formatViDate(weekBounds.from)} →{" "}
+                    {formatViDate(weekBounds.to)})
+                  </span>
+                </div>
+              )}
+
+              {periodChip === "month" && (
+                <div className="report-period-picker">
+                  <input
+                    type="month"
+                    aria-label="Chọn tháng báo cáo"
+                    value={monthValue}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setMonthValue(next);
+                      setQuickPreset("custom_month");
+                      if (next) {
+                        void run(() =>
+                          load(
+                            search,
+                            warrantyOnly,
+                            typeFilter,
+                            warrantyStatusFilter,
+                            "month",
+                            { month: next },
+                          ),
+                        );
+                      }
+                    }}
+                  />
+                  <div
+                    className="report-chip-row"
+                    role="group"
+                    aria-label="Chọn nhanh tháng trong năm"
+                  >
+                    {Array.from({ length: 12 }, (_, idx) => {
+                      const mNum = idx + 1;
+                      const mKey = `${monthValue.slice(0, 4) || currentYear}-${String(mNum).padStart(2, "0")}`;
+                      return (
+                        <button
+                          key={mKey}
+                          type="button"
+                          className={`report-chip ${monthValue === mKey ? "primary" : ""}`}
+                          onClick={() => {
+                            setMonthValue(mKey);
+                            setQuickPreset("custom_month");
+                            void run(() =>
+                              load(
+                                search,
+                                warrantyOnly,
+                                typeFilter,
+                                warrantyStatusFilter,
+                                "month",
+                                { month: mKey },
+                              ),
+                            );
+                          }}
+                        >
+                          T{mNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {periodChip === "year" && (
+                <div className="report-period-picker">
+                  {[
+                    Number(currentYear),
+                    Number(currentYear) - 1,
+                    Number(currentYear) - 2,
+                  ].map((y) => (
+                    <button
+                      key={y}
+                      type="button"
+                      className={`report-chip ${yearValue === String(y) ? "primary" : ""}`}
+                      onClick={() => {
+                        const nextY = String(y);
+                        setYearValue(nextY);
+                        setQuickPreset("custom_year");
+                        void run(() =>
+                          load(
+                            search,
+                            warrantyOnly,
+                            typeFilter,
+                            warrantyStatusFilter,
+                            "year",
+                            { year: nextY },
+                          ),
+                        );
+                      }}
+                    >
+                      Năm {y}
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    aria-label="Chọn năm báo cáo"
+                    min={2000}
+                    max={2100}
+                    value={yearValue}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setYearValue(next);
+                      setQuickPreset("custom_year");
+                      if (/^\d{4}$/.test(next)) {
+                        void run(() =>
+                          load(
+                            search,
+                            warrantyOnly,
+                            typeFilter,
+                            warrantyStatusFilter,
+                            "year",
+                            { year: next },
+                          ),
+                        );
+                      }
+                    }}
+                  />
+                </div>
+              )}
+
+              {periodChip === "custom" && (
+                <div className="report-period-picker">
+                  <input
+                    type="date"
+                    aria-label="Từ ngày báo cáo"
+                    value={customFrom}
+                    onChange={(e) => {
+                      const nextFrom = e.target.value;
+                      setCustomFrom(nextFrom);
+                      setQuickPreset("custom_range");
+                      if (nextFrom && customTo) {
+                        void run(() =>
+                          load(
+                            search,
+                            warrantyOnly,
+                            typeFilter,
+                            warrantyStatusFilter,
+                            "custom",
+                            { from: nextFrom, to: customTo },
+                          ),
+                        );
+                      }
+                    }}
+                  />
+                  <span className="muted">→</span>
+                  <input
+                    type="date"
+                    aria-label="Đến ngày báo cáo"
+                    value={customTo}
+                    onChange={(e) => {
+                      const nextTo = e.target.value;
+                      setCustomTo(nextTo);
+                      setQuickPreset("custom_range");
+                      if (customFrom && nextTo) {
+                        void run(() =>
+                          load(
+                            search,
+                            warrantyOnly,
+                            typeFilter,
+                            warrantyStatusFilter,
+                            "custom",
+                            { from: customFrom, to: nextTo },
+                          ),
+                        );
+                      }
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </section>
+
+          {["all", "overview", "expense"].includes(reportType) && (
+            <div className="report-highlight-grid">
+              <div className="report-highlight-card">
+                <div className="report-card-top">
+                  <span>Tổng doanh thu hợp nhất</span>
+                  <span className="status good">{activePeriodText}</span>
+                </div>
+                <strong className="positive">
+                  {amountLabel(combinedRevenue)}
+                </strong>
+                <small className="muted">
+                  Cửa hàng: {amountLabel(storeRevenue)} · MMO:{" "}
+                  {amountLabel(mmoRevenue)}
+                </small>
+              </div>
+              <div className="report-highlight-card">
+                <div className="report-card-top">
+                  <span>Tổng chi phí & giá vốn</span>
+                  <span className="status neutral">Chi & Vốn</span>
+                </div>
+                <strong>{amountLabel(combinedExpense)}</strong>
+                <small className="muted">
+                  Vốn giao: {amountLabel(storeCost)} · Chi MMO:{" "}
+                  {amountLabel(mmoExpense)}
+                </small>
+              </div>
+              <div className="report-highlight-card">
+                <div className="report-card-top">
+                  <span>Lợi nhuận ròng thực tế</span>
+                  <span
+                    className={
+                      combinedProfit >= 0 ? "status good" : "status danger-badge"
+                    }
+                  >
+                    {combinedProfit >= 0 ? "Lãi ròng" : "Lỗ ròng"}
+                  </span>
+                </div>
+                <strong className={combinedProfit >= 0 ? "positive" : "danger"}>
+                  {combinedProfit > 0 ? "+" : ""}
+                  {amountLabel(combinedProfit)}
+                </strong>
+                <small className="muted">
+                  Lãi cửa hàng: {amountLabel(storeProfit)} · Lãi MMO:{" "}
+                  {amountLabel(mmoProfit)}
+                </small>
+              </div>
+              <div className="report-highlight-card">
+                <div className="report-card-top">
+                  <span>Tỷ suất lãi & Vận hành</span>
+                  <span className="status neutral">Hiệu suất</span>
+                </div>
+                <strong>{combinedMargin}%</strong>
+                <small className="muted">
+                  Biên MMO: {mmoMargin}% · {mmoSalesCount} đơn MMO ·{" "}
+                  {storeReview} đơn cần xử lý
+                </small>
+              </div>
+            </div>
+          )}
+
+          {visibleDetailMetrics.length > 0 && (
+            <div className="metric-grid finance-summary">
+              {visibleDetailMetrics.map((m) => (
+                <div className="metric" key={m.label}>
+                  <div className="report-card-top">
+                    <span>{m.label}</span>
+                    <small className="status neutral">{m.badge}</small>
+                  </div>
+                  <strong
+                    className={
+                      m.tone === "positive"
+                        ? "positive"
+                        : m.tone === "danger"
+                          ? "danger"
+                          : ""
+                    }
+                  >
+                    {m.isCount ? m.value : amountLabel(m.value)}
+                  </strong>
+                </div>
               ))}
             </div>
           )}
-          <form
-            className="admin-toolbar"
-            onSubmit={(e) => {
-              e.preventDefault();
+        </>
+      )}
+      {!warrantyOnly &&
+        reportOnly &&
+        (reportType === "all" || reportType === "monthly") && (
+          <MonthlyReport
+            run={run}
+            selectedMonthKey={periodChip === "month" ? monthValue : undefined}
+            onSelectMonth={(monthKey) => {
+              setPeriodChip("month");
+              setMonthValue(monthKey);
+              setQuickPreset("custom_month");
               void run(() =>
-                load(search, warrantyOnly, typeFilter, warrantyStatusFilter),
+                load(
+                  search,
+                  warrantyOnly,
+                  typeFilter,
+                  warrantyStatusFilter,
+                  "month",
+                  { month: monthKey },
+                ),
               );
             }}
-          >
-            <input
-              aria-label="Tìm giao dịch bảo hành"
-              placeholder="Tên sản phẩm, khách hàng…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            {!warrantyOnly && (
-              <select
-                aria-label="Lọc loại giao dịch"
-                value={typeFilter}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setTypeFilter(next);
-                  void run(() =>
-                    load(search, warrantyOnly, next, warrantyStatusFilter),
-                  );
+          />
+        )}
+      {!reportOnly && (
+        <div className="admin-split-grid">
+          <section className="panel">
+            <div className="panel-heading">
+              <div>
+                <h2>
+                  {warrantyOnly ? "Tra cứu & xử lý bảo hành" : "Sổ giao dịch"}
+                </h2>
+                <p className="muted">
+                  Bấm vào dòng giao dịch để xem chi tiết, chỉnh sửa hoặc cập nhật
+                  bảo hành.
+                </p>
+              </div>
+              <button
+                className="primary"
+                onClick={() => {
+                  setSelected(null);
+                  setForm(emptyTransaction());
+                  setEditorOpen(true);
+                  focusPanel(formRef.current);
                 }}
               >
-                <option value="">Tất cả loại</option>
-                <option value="sale">Bán hàng</option>
-                <option value="purchase">Nhập hàng</option>
-                <option value="expense">Chi phí</option>
-              </select>
+                Ghi giao dịch mới
+              </button>
+            </div>
+            {warrantyOnly && warrantyCounts && (
+              <div className="admin-filter-pills">
+                {(
+                  [
+                    ["all", `Tất cả (${warrantyCounts.all})`],
+                    ["valid", `Còn hạn (${warrantyCounts.valid})`],
+                    [
+                      "expiring_soon",
+                      `Sắp hết hạn (${warrantyCounts.expiringSoon})`,
+                    ],
+                    ["expired", `Hết hạn (${warrantyCounts.expired})`],
+                    ["lifetime", `Trọn đời (${warrantyCounts.lifetime})`],
+                  ] as const
+                ).map(([statusKey, label]) => (
+                  <button
+                    key={statusKey}
+                    type="button"
+                    className={warrantyStatusFilter === statusKey ? "primary" : ""}
+                    onClick={() => {
+                      setWarrantyStatusFilter(statusKey);
+                      void run(() =>
+                        load(search, warrantyOnly, typeFilter, statusKey),
+                      );
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             )}
-            <button className="primary">Tìm</button>
-          </form>
+            {!warrantyOnly && (
+              <>
+                <div className="report-chip-stack" style={{ marginBottom: 12 }}>
+                  <div
+                    className="report-chip-row"
+                    role="group"
+                    aria-label="Chip loại giao dịch"
+                  >
+                    <span className="report-chip-label">Loại giao dịch:</span>
+                    {(
+                      [
+                        ["", "Tất cả loại"],
+                        ["sale", "Bán hàng"],
+                        ["purchase", "Nhập hàng"],
+                        ["expense", "Chi phí"],
+                      ] as const
+                    ).map(([tKey, tLabel]) => (
+                      <button
+                        key={tKey || "all"}
+                        type="button"
+                        className={`report-chip ${typeFilter === tKey ? "primary" : ""}`}
+                        onClick={() => {
+                          setTypeFilter(tKey);
+                          void run(() =>
+                            load(
+                              search,
+                              warrantyOnly,
+                              tKey,
+                              warrantyStatusFilter,
+                              periodChip,
+                            ),
+                          );
+                        }}
+                      >
+                        {tLabel}
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    className="report-chip-row"
+                    role="group"
+                    aria-label="Chip thời gian giao dịch"
+                  >
+                    <span className="report-chip-label">Thời gian:</span>
+                    {(
+                      [
+                        ["all", "Tất cả"],
+                        ["today", "Hôm nay"],
+                        ["yesterday", "Hôm qua"],
+                        ["this_week", "Tuần này"],
+                        ["this_month", "Tháng này"],
+                        ["this_year", "Năm nay"],
+                      ] as const
+                    ).map(([presetKey, label]) => (
+                      <button
+                        key={presetKey}
+                        type="button"
+                        className={`report-chip subtle-chip ${quickPreset === presetKey ? "active-preset" : ""}`}
+                        onClick={() => applyTimePreset(presetKey)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="admin-kv-grid">
+                  <div className="admin-kv-item">
+                    <small>Bản ghi hiển thị ({activePeriodText})</small>
+                    <strong>{transactions.length}</strong>
+                  </div>
+                  <div className="admin-kv-item">
+                    <small>Doanh thu hiển thị</small>
+                    <strong className="positive">
+                      {amountLabel(txRevenueTotal)}
+                    </strong>
+                  </div>
+                  <div className="admin-kv-item">
+                    <small>Tổng vốn & chi phí</small>
+                    <strong>{amountLabel(txCostTotal)}</strong>
+                  </div>
+                  <div className="admin-kv-item">
+                    <small>Lợi nhuận ròng hiển thị</small>
+                    <strong
+                      className={txProfitTotal >= 0 ? "positive" : "danger"}
+                    >
+                      {txProfitTotal > 0 ? "+" : ""}
+                      {amountLabel(txProfitTotal)}
+                    </strong>
+                  </div>
+                </div>
+              </>
+            )}
+            <form
+              className="admin-toolbar"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(() =>
+                  load(
+                    search,
+                    warrantyOnly,
+                    typeFilter,
+                    warrantyStatusFilter,
+                    periodChip,
+                  ),
+                );
+              }}
+            >
+              <input
+                aria-label="Tìm giao dịch bảo hành"
+                placeholder="Tên sản phẩm, khách hàng…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              {!warrantyOnly && (
+                <select
+                  aria-label="Lọc loại giao dịch"
+                  value={typeFilter}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setTypeFilter(next);
+                    void run(() =>
+                      load(
+                        search,
+                        warrantyOnly,
+                        next,
+                        warrantyStatusFilter,
+                        periodChip,
+                      ),
+                    );
+                  }}
+                >
+                  <option value="">Tất cả loại</option>
+                  <option value="sale">Bán hàng</option>
+                  <option value="purchase">Nhập hàng</option>
+                  <option value="expense">Chi phí</option>
+                </select>
+              )}
+              <button className="primary">Tìm</button>
+            </form>
           <div className="table-wrap">
             <SmartTable>
               <thead>
@@ -2940,7 +4149,7 @@ export function BusinessFinance({
             </form>
           </section>
         </aside>
-      </div>}
+      </div>)}
     </>
   );
 }
