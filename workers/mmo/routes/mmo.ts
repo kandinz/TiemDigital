@@ -17,12 +17,11 @@ const app = new Hono<{ Bindings: Env; Variables: MmoVariables }>();
 // Mount subrouter quản lý giao dịch, bán hàng, chi phí và bảo hành
 app.route("/", mmoTransactions);
 
-
 // GET /api/mmo/providers
 app.get("/providers", async (c) => {
   const user = c.get("user");
   const isAdmin = user?.role === "admin";
-  
+
   const rows = await c.get("mmoStores").providers.listProviders();
 
   const providers = rows.map((p: any) => {
@@ -34,7 +33,7 @@ app.get("/providers", async (c) => {
         maskedKey = "***";
       }
     }
-    
+
     let balance = null;
     let currency = null;
     if (p.balance_cache) {
@@ -61,7 +60,7 @@ app.get("/providers", async (c) => {
       api_key_masked: maskedKey,
       balance,
       balance_currency: currency,
-      balance_cached_at: p.balance_cached_at
+      balance_cached_at: p.balance_cached_at,
     };
   });
 
@@ -71,11 +70,11 @@ app.get("/providers", async (c) => {
 function parseTelegramUsername(botUrl?: string | null): string | null {
   if (!botUrl) return null;
   let u = botUrl.trim();
-  if (u.startsWith('https://t.me/')) u = u.replace('https://t.me/', '');
-  else if (u.startsWith('http://t.me/')) u = u.replace('http://t.me/', '');
-  else if (u.startsWith('t.me/')) u = u.replace('t.me/', '');
-  else if (u.startsWith('@')) u = u.slice(1);
-  u = u.split('/')[0].split('?')[0].trim();
+  if (u.startsWith("https://t.me/")) u = u.replace("https://t.me/", "");
+  else if (u.startsWith("http://t.me/")) u = u.replace("http://t.me/", "");
+  else if (u.startsWith("t.me/")) u = u.replace("t.me/", "");
+  else if (u.startsWith("@")) u = u.slice(1);
+  u = u.split("/")[0].split("?")[0].trim();
   return u || null;
 }
 
@@ -85,9 +84,10 @@ async function extractTelegramInfo(botUrl?: string | null): Promise<{ name?: str
   try {
     const res = await fetch(`https://t.me/${username}`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      }
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
     });
     if (!res.ok) return null;
     const html = await res.text();
@@ -95,20 +95,22 @@ async function extractTelegramInfo(botUrl?: string | null): Promise<{ name?: str
     let name: string | undefined;
     let avatar_url: string | undefined;
 
-    const titleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["'](.*?)["']/i) ||
-                       html.match(/<meta\s+content=["'](.*?)["']\s+property=["']og:title["']/i);
+    const titleMatch =
+      html.match(/<meta\s+property=["']og:title["']\s+content=["'](.*?)["']/i) ||
+      html.match(/<meta\s+content=["'](.*?)["']\s+property=["']og:title["']/i);
     if (titleMatch && titleMatch[1]) {
       const rawTitle = titleMatch[1].trim();
-      if (!rawTitle.startsWith('Telegram: Contact @') && rawTitle !== 'Telegram') {
+      if (!rawTitle.startsWith("Telegram: Contact @") && rawTitle !== "Telegram") {
         name = rawTitle;
       }
     }
 
-    const imgMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["'](.*?)["']/i) ||
-                     html.match(/<meta\s+content=["'](.*?)["']\s+property=["']og:image["']/i);
+    const imgMatch =
+      html.match(/<meta\s+property=["']og:image["']\s+content=["'](.*?)["']/i) ||
+      html.match(/<meta\s+content=["'](.*?)["']\s+property=["']og:image["']/i);
     if (imgMatch && imgMatch[1]) {
       const rawImg = imgMatch[1].trim();
-      if (!rawImg.includes('t_logo_2x.png') && !rawImg.endsWith('/t_logo.png')) {
+      if (!rawImg.includes("t_logo_2x.png") && !rawImg.endsWith("/t_logo.png")) {
         avatar_url = rawImg;
       }
     }
@@ -123,7 +125,7 @@ async function extractTelegramInfo(botUrl?: string | null): Promise<{ name?: str
 // POST /api/mmo/providers/sync-telegram
 app.post("/providers/sync-telegram", requireAdmin, async (c) => {
   const providersRes = await c.env.DB.prepare(
-    "SELECT id, name, bot_url, avatar_url FROM mmo_providers WHERE bot_url IS NOT NULL AND TRIM(bot_url) != ''"
+    "SELECT id, name, bot_url, avatar_url FROM mmo_providers WHERE bot_url IS NOT NULL AND TRIM(bot_url) != ''",
   ).all();
 
   const providers = providersRes.results || [];
@@ -137,13 +139,15 @@ app.post("/providers/sync-telegram", requireAdmin, async (c) => {
       const newAvatar = info.avatar_url || prov.avatar_url;
 
       await c.env.DB.prepare(
-        "UPDATE mmo_providers SET name = ?, avatar_url = ?, updated_at = datetime('now') WHERE id = ?"
-      ).bind(newName, newAvatar, prov.id).run();
+        "UPDATE mmo_providers SET name = ?, avatar_url = ?, updated_at = datetime('now') WHERE id = ?",
+      )
+        .bind(newName, newAvatar, prov.id)
+        .run();
 
       updatedCount++;
-      syncResults.push({ id: prov.id, name: newName, avatar_url: newAvatar, status: 'updated' });
+      syncResults.push({ id: prov.id, name: newName, avatar_url: newAvatar, status: "updated" });
     } else {
-      syncResults.push({ id: prov.id, name: prov.name, status: 'skipped' });
+      syncResults.push({ id: prov.id, name: prov.name, status: "skipped" });
     }
   }
 
@@ -151,7 +155,7 @@ app.post("/providers/sync-telegram", requireAdmin, async (c) => {
     success: true,
     total: providers.length,
     updated: updatedCount,
-    results: syncResults
+    results: syncResults,
   });
 });
 
@@ -166,27 +170,38 @@ app.post("/providers/extract-telegram", requireAdmin, async (c) => {
 app.put("/providers/:id", requireAdmin, async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
-  
+
   const updates = [];
   const params = [];
-  
-  const allowedFields = ["name", "base_url", "auth_type", "auth_key_name", "api_key", "is_active", "sort_order", "bot_url", "avatar_url", "badge_color"];
+
+  const allowedFields = [
+    "name",
+    "base_url",
+    "auth_type",
+    "auth_key_name",
+    "api_key",
+    "is_active",
+    "sort_order",
+    "bot_url",
+    "avatar_url",
+    "badge_color",
+  ];
   for (const field of allowedFields) {
     if (body[field] !== undefined) {
       updates.push(`${field} = ?`);
-      params.push(field === 'is_active' ? Number(Boolean(body[field])) : body[field]);
+      params.push(field === "is_active" ? Number(Boolean(body[field])) : body[field]);
     }
   }
-  
+
   if (updates.length > 0) {
     updates.push("updated_at = datetime('now')");
     params.push(id);
-    
+
     await c.env.DB.prepare(`UPDATE mmo_providers SET ${updates.join(", ")} WHERE id = ?`)
       .bind(...params)
       .run();
   }
-  
+
   return c.json({ success: true, message: "Provider updated" });
 });
 
@@ -196,24 +211,38 @@ app.post("/providers", requireAdmin, async (c) => {
   if (!body.id || !body.name || !body.base_url) {
     return c.json({ success: false, message: "Missing required fields (id, name, base_url)" }, 400);
   }
-  
+
   try {
     await c.env.DB.prepare(
       `INSERT INTO mmo_providers (id, name, base_url, auth_type, auth_key_name, api_key, is_active, sort_order, bot_url, avatar_url, badge_color, created_at, updated_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
-    ).bind(
-      body.id,
-      body.name,
-      body.base_url,
-      body.auth_type || "header",
-      body.auth_key_name || "Authorization",
-      body.api_key || "",
-      body.is_active !== undefined ? (body.is_active ? 1 : 0) : 1,
-      body.sort_order || 99,
-      body.bot_url || null,
-      body.avatar_url || null,
-      body.badge_color || null
-    ).run();
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+       ON CONFLICT(id) DO UPDATE SET
+         name = excluded.name,
+         base_url = excluded.base_url,
+         auth_type = excluded.auth_type,
+         auth_key_name = excluded.auth_key_name,
+         api_key = CASE WHEN excluded.api_key != '' THEN excluded.api_key ELSE mmo_providers.api_key END,
+         is_active = excluded.is_active,
+         sort_order = excluded.sort_order,
+         bot_url = COALESCE(excluded.bot_url, mmo_providers.bot_url),
+         avatar_url = COALESCE(excluded.avatar_url, mmo_providers.avatar_url),
+         badge_color = COALESCE(excluded.badge_color, mmo_providers.badge_color),
+         updated_at = datetime('now')`,
+    )
+      .bind(
+        body.id,
+        body.name,
+        body.base_url,
+        body.auth_type || "header",
+        body.auth_key_name || "Authorization",
+        body.api_key || "",
+        body.is_active !== undefined ? (body.is_active ? 1 : 0) : 1,
+        body.sort_order || 99,
+        body.bot_url || null,
+        body.avatar_url || null,
+        body.badge_color || null,
+      )
+      .run();
     return c.json({ success: true, message: "Provider created" });
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500);
@@ -259,14 +288,14 @@ app.get("/settings", requireAdmin, async (c) => {
       settings[r.key] = r.value;
     });
   }
-  
+
   const catRes = await c.env.DB.prepare("SELECT * FROM mmo_categories ORDER BY sort_order").all();
   const categories = (catRes.results || []).map((row: any) => ({
     id: row.id,
     name: row.name,
-    keywords: row.keywords ? row.keywords.split(',') : []
+    keywords: row.keywords ? row.keywords.split(",") : [],
   }));
-  
+
   settings.categories = categories;
 
   return c.json({ success: true, settings });
@@ -275,23 +304,33 @@ app.get("/settings", requireAdmin, async (c) => {
 app.put("/settings", requireAdmin, async (c) => {
   const body = await c.req.json();
   const stmts = [];
-  
+
   if (body.usd_rate !== undefined) {
-    stmts.push(c.env.DB.prepare("INSERT INTO mmo_settings (key, value) VALUES ('usd_rate', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')").bind(String(body.usd_rate)));
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO mmo_settings (key, value) VALUES ('usd_rate', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')",
+      ).bind(String(body.usd_rate)),
+    );
   }
-  
+
   if (body.categories !== undefined) {
     stmts.push(c.env.DB.prepare("DELETE FROM mmo_categories"));
     body.categories.forEach((cat: any, index: number) => {
-      const kw = Array.isArray(cat.keywords) ? cat.keywords.join(',') : '';
-      stmts.push(c.env.DB.prepare("INSERT INTO mmo_categories (name, keywords, sort_order) VALUES (?, ?, ?)").bind(cat.name, kw, index + 1));
+      const kw = Array.isArray(cat.keywords) ? cat.keywords.join(",") : "";
+      stmts.push(
+        c.env.DB.prepare("INSERT INTO mmo_categories (name, keywords, sort_order) VALUES (?, ?, ?)").bind(
+          cat.name,
+          kw,
+          index + 1,
+        ),
+      );
     });
   }
-  
+
   if (stmts.length > 0) {
     await c.env.DB.batch(stmts);
   }
-  
+
   return c.json({ success: true, message: "Settings updated" });
 });
 
@@ -317,7 +356,6 @@ app.get("/products", async (c) => {
   let liveBalance: BalanceResult | undefined;
 
   if (session.hasKey) {
-    // Số dư ví được cập nhật cache ngầm; lỗi số dư không chặn việc tải sản phẩm
     try {
       liveBalance = await session.fetchBalance();
     } catch {
@@ -330,7 +368,7 @@ app.get("/products", async (c) => {
       providerErrors.push({
         provider_id: provider.id,
         error: true,
-        message: err.message
+        message: err.message,
       });
     }
   }
@@ -342,16 +380,18 @@ app.get("/products", async (c) => {
     } catch {}
   }
   const bal = liveBalance ?? cached;
-  const provider_balances = [{
-    provider_id: provider.id,
-    name: provider.name,
-    bot_url: provider.bot_url || null,
-    avatar_url: provider.avatar_url || null,
-    balance: bal.balance !== undefined ? bal.balance : 0,
-    currency: bal.currency || 'USD',
-    balance_original: bal.balance_original,
-    currency_original: bal.currency_original
-  }];
+  const provider_balances = [
+    {
+      provider_id: provider.id,
+      name: provider.name,
+      bot_url: provider.bot_url || null,
+      avatar_url: provider.avatar_url || null,
+      balance: bal.balance !== undefined ? bal.balance : 0,
+      currency: bal.currency || "USD",
+      balance_original: bal.balance_original,
+      currency_original: bal.currency_original,
+    },
+  ];
 
   return c.json({
     success: true,
@@ -360,7 +400,7 @@ app.get("/products", async (c) => {
     provider_errors: providerErrors,
     usd_rate: usdRate,
     fetched_at: new Date().toISOString(),
-    categories: categories.map((cat) => cat.name)
+    categories: categories.map((cat) => cat.name),
   });
 });
 
@@ -384,7 +424,7 @@ app.post("/order", async (c) => {
       product_name: body.product_name,
       quantity: body.quantity,
       unit_price: body.unit_price,
-      total_price: body.total_price
+      total_price: body.total_price,
     });
 
     if (!outcome.ok) {
@@ -398,7 +438,7 @@ app.post("/order", async (c) => {
       order_id: outcome.order_id,
       status: outcome.status,
       delivered_items: outcome.delivered_items,
-      persisted: outcome.persisted
+      persisted: outcome.persisted,
     });
   } catch (err: any) {
     if (err instanceof SessionError) return c.json({ success: false, message: err.message }, err.status);
@@ -418,7 +458,7 @@ app.get("/orders", async (c) => {
     providerId: providerId && providerId !== "Tất cả" ? providerId : undefined,
     search: search?.trim() || undefined,
     page,
-    limit
+    limit,
   });
 
   return c.json({ success: true, orders, total, page, limit });
@@ -475,7 +515,11 @@ app.post("/orders/sync-provider/:id", async (c) => {
 
   try {
     const syncedCount = await syncProvider(session, c.get("mmoStores").orders);
-    return c.json({ success: true, message: `Synced ${syncedCount} orders from ${session.provider.name}`, synced_count: syncedCount });
+    return c.json({
+      success: true,
+      message: `Synced ${syncedCount} orders from ${session.provider.name}`,
+      synced_count: syncedCount,
+    });
   } catch (err: any) {
     if (err instanceof SessionError) return c.json({ success: false, message: err.message }, err.status);
     return c.json({ success: false, message: `Sync failed: ${err.message}` }, 500);
@@ -498,7 +542,7 @@ app.post("/orders/:id/check-status", async (c) => {
 });
 
 /**
- * Cập nhật thủ công trạng thái đơn hàng (ví dụ: chuyển thành Đã hoàn thành)
+ * Cập nhật thủ công trạng thái đơn hàng (ví dụ: chuyển thành Đã hoàn thành và cập nhật dữ liệu nhận được)
  */
 app.patch("/orders/:id/status", async (c) => {
   const id = c.req.param("id");
@@ -513,7 +557,20 @@ app.patch("/orders/:id/status", async (c) => {
   if (!order) {
     return c.json({ success: false, message: "Order not found" }, 404);
   }
-  await orderStore.updateOrder(id, { status });
+  const change: { status: string; delivered_items?: string; delivered_data?: string | null } = { status };
+  if (Array.isArray(body?.delivered_items)) {
+    const cleaned = body.delivered_items.map((x: unknown) => String(x).trim()).filter(Boolean);
+    change.delivered_items = JSON.stringify(cleaned);
+    change.delivered_data = JSON.stringify(cleaned);
+  } else if (typeof body?.delivered_items === "string") {
+    const cleaned = body.delivered_items
+      .split(/\r?\n/)
+      .map((x: string) => x.trim())
+      .filter(Boolean);
+    change.delivered_items = JSON.stringify(cleaned);
+    change.delivered_data = JSON.stringify(cleaned);
+  }
+  await orderStore.updateOrder(id, change);
   return c.json({ success: true, message: "Order status updated", status });
 });
 

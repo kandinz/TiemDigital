@@ -9,15 +9,14 @@ import {
   json,
   readBody,
   limitedBytes,
+  sha256,
 } from "./http";
 import { configSchema, paymentConfig, reconcile } from "./payments";
-
 import { encryptDelivery } from "./delivery";
-import { sha256 } from "./http";
 import { sweep } from "./operations";
-import { mmoApi } from './mmo';
-import { catalogAdmin } from './catalog';
-import { fulfillmentAdmin, orderProgress } from './fulfillment';
+import { mmoApi } from "./mmo";
+import { catalogAdmin } from "./catalog";
+import { fulfillmentAdmin, orderProgress, receivedDelivery } from "./fulfillment";
 
 const blockSchema = z.discriminatedUnion("type", [
   z.object({
@@ -36,28 +35,38 @@ const blockSchema = z.discriminatedUnion("type", [
     alt: z.string().max(150),
   }),
 ]);
+
 const pageSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]{1,80}$/),
   title: z.string().min(1).max(150),
   description: z.string().max(500),
   blocks: z.array(blockSchema).max(30),
 });
+
+/**
+ * Điều phối toàn bộ API quản trị cho cửa hàng, khách hàng, đơn hàng, tài chính và CMS.
+ */
 export async function adminApi(request: Request, env: Env) {
   const admin = await administrator(request, env);
   checkOrigin(request, env, true);
   const url = new URL(request.url);
   const path = url.pathname.slice("/api/admin".length);
+
   const catalogResponse = await catalogAdmin(request, env, admin, path);
   if (catalogResponse) return catalogResponse;
+
   const fulfillmentResponse = await fulfillmentAdmin(request, env, admin, path);
   if (fulfillmentResponse) return fulfillmentResponse;
-  if (path === '/mmo' || path.startsWith('/mmo/')) {
-    requireRole(admin, ['owner']);
-    if (!['GET', 'HEAD'].includes(request.method))
-      await audit(env, admin.email, 'MMO_REQUEST', path, { method: request.method });
+
+  if (path === "/mmo" || path.startsWith("/mmo/")) {
+    requireRole(admin, ["owner"]);
+    if (!["GET", "HEAD"].includes(request.method))
+      await audit(env, admin.email, "MMO_REQUEST", path, { method: request.method });
     return mmoApi(request, env, admin);
   }
+
   if (path === "/me" && request.method === "GET") return json(admin);
+
   if (path === "/media" && request.method === "POST") {
     requireRole(admin, ["owner", "editor"]);
     if (!env.MEDIA) throw new HttpError(503, "Chưa cấu hình kho ảnh R2");
@@ -92,6 +101,7 @@ export async function adminApi(request: Request, env: Env) {
     });
     return json({ url: `/media/${mediaId}` }, 201);
   }
+
   if (path === "/overview" && request.method === "GET") {
     requireRole(admin, ["owner", "finance", "support", "auditor"]);
     const [payments, wallets, review, backlog, reconciliation] =
@@ -120,16 +130,99 @@ export async function adminApi(request: Request, env: Env) {
       reconciliation,
     });
   }
+
   if (path === "/customers" && request.method === "GET") {
     requireRole(admin, ["owner", "finance", "support", "auditor"]);
-    const { results } = await env.DB.prepare(
-      "SELECT u.id,u.name,u.email,COALESCE(c.disabled,0) AS disabled,COALESCE(w.balance,0) AS balance FROM user u LEFT JOIN customers c ON c.id=u.id LEFT JOIN wallets w ON w.user_id=u.id ORDER BY u.createdAt DESC LIMIT 100",
+    const q = url.searchParams.get("q")?.trim();
+    const pattern = q ? `%${q}%` : null;
+    const { results } = await (pattern
+      ? env.DB.prepare(
+          "SELECT u.id,u.name,u.email,u.username,u.createdAt,COALESCE(c.phone,'') AS phone,COALESCE(c.disabled,0) AS disabled,COALESCE(w.balance,0) AS balance,(SELECT COUNT(*) FROM orders o WHERE o.user_id=u.id) AS order_count FROM user u LEFT JOIN customers c ON c.id=u.id LEFT JOIN wallets w ON w.user_id=u.id WHERE u.name LIKE ? OR u.email LIKE ? OR COALESCE(u.username,'') LIKE ? OR u.id LIKE ? OR COALESCE(c.phone,'') LIKE ? ORDER BY u.createdAt DESC LIMIT 100",
+        ).bind(pattern, pattern, pattern, pattern, pattern)
+      : env.DB.prepare(
+          "SELECT u.id,u.name,u.email,u.username,u.createdAt,COALESCE(c.phone,'') AS phone,COALESCE(c.disabled,0) AS disabled,COALESCE(w.balance,0) AS balance,(SELECT COUNT(*) FROM orders o WHERE o.user_id=u.id) AS order_count FROM user u LEFT JOIN customers c ON c.id=u.id LEFT JOIN wallets w ON w.user_id=u.id ORDER BY u.createdAt DESC LIMIT 100",
+        )
     ).all();
     return json({ customers: results });
   }
+
+  const customerDetail = path.match(/^\/customers\/([^/]+)$/);
+  if (customerDetail && request.method === "GET") {
+    requireRole(admin, ["owner", "finance", "support", "auditor"]);
+    const customerId = decodeURIComponent(customerDetail[1]);
+    const userRow = await env.DB.prepare(
+      "SELECT u.id,u.name,u.email,u.username,u.createdAt,COALESCE(c.phone,'') AS phone,COALESCE(c.disabled,0) AS disabled,COALESCE(w.balance,0) AS balance FROM user u LEFT JOIN customers c ON c.id=u.id LEFT JOIN wallets w ON w.user_id=u.id WHERE u.id=?",
+    )
+      .bind(customerId)
+      .first();
+    if (!userRow) throw new HttpError(404, "Không tìm thấy khách hàng");
+    const [ordersRes, journalsRes, telegramRow] = await Promise.all([
+      env.DB.prepare(
+        "SELECT * FROM orders WHERE user_id=? ORDER BY created_at DESC LIMIT 20",
+      )
+        .bind(customerId)
+        .all<StoredOrder>(),
+      env.DB.prepare(
+        "SELECT * FROM journals WHERE user_id=? ORDER BY created_at DESC LIMIT 20",
+      )
+        .bind(customerId)
+        .all(),
+      env.DB.prepare(
+        "SELECT telegram_id,chat_id FROM telegram_links WHERE user_id=?",
+      )
+        .bind(customerId)
+        .first(),
+    ]);
+    return json({
+      customer: userRow,
+      orders: await Promise.all(
+        ordersRes.results.map((o) => orderProgress(env, o)),
+      ),
+      journals: journalsRes.results,
+      telegram: telegramRow ?? null,
+    });
+  }
+
+  if (customerDetail && request.method === "PUT") {
+    requireRole(admin, ["owner", "support"]);
+    const customerId = decodeURIComponent(customerDetail[1]);
+    const existingUser = await env.DB.prepare("SELECT id FROM user WHERE id=?")
+      .bind(customerId)
+      .first();
+    if (!existingUser) throw new HttpError(404, "Không tìm thấy khách hàng");
+    const body = await readBody(
+      request,
+      z.object({
+        name: z.string().trim().min(1).max(100),
+        phone: z.string().trim().max(30).default(""),
+      }),
+    );
+    await env.DB.batch([
+      env.DB.prepare("UPDATE user SET name=?,updatedAt=? WHERE id=?").bind(
+        body.name,
+        Date.now(),
+        customerId,
+      ),
+      env.DB.prepare(
+        "INSERT INTO customers(id,phone) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET phone=excluded.phone",
+      ).bind(customerId, body.phone),
+      env.DB.prepare(
+        "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
+      ).bind(
+        id(),
+        admin.email,
+        "CUSTOMER_UPDATE",
+        customerId,
+        JSON.stringify(body),
+      ),
+    ]);
+    return json({ ok: true });
+  }
+
   const lock = path.match(/^\/customers\/([^/]+)\/lock$/);
   if (lock && request.method === "POST") {
     requireRole(admin, ["owner"]);
+    const customerId = decodeURIComponent(lock[1]);
     const body = await readBody(
       request,
       z.object({ disabled: z.boolean(), reason: z.string().min(5).max(300) }),
@@ -137,21 +230,89 @@ export async function adminApi(request: Request, env: Env) {
     await env.DB.batch([
       env.DB.prepare(
         "INSERT INTO customers(id,disabled) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET disabled=excluded.disabled",
-      ).bind(lock[1], Number(body.disabled)),
-      env.DB.prepare("DELETE FROM session WHERE userId=?").bind(lock[1]),
+      ).bind(customerId, Number(body.disabled)),
+      env.DB.prepare("DELETE FROM session WHERE userId=?").bind(customerId),
       env.DB.prepare(
         "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
-      ).bind(id(), admin.email, "CUSTOMER_LOCK", lock[1], JSON.stringify(body)),
+      ).bind(
+        id(),
+        admin.email,
+        "CUSTOMER_LOCK",
+        customerId,
+        JSON.stringify(body),
+      ),
     ]);
     return json({ ok: true });
   }
+
   if (path === "/orders" && request.method === "GET") {
     requireRole(admin, ["owner", "finance", "support", "auditor"]);
+    const q = url.searchParams.get("q")?.trim();
+    const statusFilter = url.searchParams.get("status")?.trim();
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (q) {
+      conditions.push(
+        "(id LIKE ? OR user_id LIKE ? OR customer LIKE ? OR items LIKE ?)",
+      );
+      const p = `%${q}%`;
+      params.push(p, p, p, p);
+    }
+    if (statusFilter) {
+      conditions.push("(payment_status=? OR fulfillment_status=?)");
+      params.push(statusFilter, statusFilter);
+    }
+    const whereSql = conditions.length
+      ? `WHERE ${conditions.join(" AND ")}`
+      : "";
     const { results } = await env.DB.prepare(
-      "SELECT * FROM orders ORDER BY created_at DESC,id DESC LIMIT 100",
-    ).all<StoredOrder>();
-    return json({ orders: await Promise.all(results.map(order => orderProgress(env, order))) });
+      `SELECT * FROM orders ${whereSql} ORDER BY created_at DESC,id DESC LIMIT 100`,
+    )
+      .bind(...params)
+      .all<StoredOrder>();
+    return json({
+      orders: await Promise.all(
+        results.map((order) => orderProgress(env, order)),
+      ),
+    });
   }
+
+  const orderDeliveryView = path.match(/^\/orders\/([A-Z0-9]+)\/delivery$/);
+  if (orderDeliveryView && request.method === "GET") {
+    requireRole(admin, ["owner", "support"]);
+    const order = await env.DB.prepare("SELECT * FROM orders WHERE id=?")
+      .bind(orderDeliveryView[1])
+      .first<StoredOrder>();
+    if (!order) throw new HttpError(404, "Không tìm thấy đơn hàng");
+    return json(await receivedDelivery(env, order));
+  }
+
+  const orderDelete = path.match(/^\/orders\/([A-Z0-9]+)$/);
+  if (orderDelete && request.method === "DELETE") {
+    requireRole(admin, ["owner", "support"]);
+    const orderId = orderDelete[1];
+    const order = await env.DB.prepare(
+      "SELECT id,payment_status FROM orders WHERE id=?",
+    )
+      .bind(orderId)
+      .first<{ id: string; payment_status: string }>();
+    if (!order) throw new HttpError(404, "Không tìm thấy đơn hàng");
+    if (order.payment_status !== "UNPAID")
+      throw new HttpError(409, "Chỉ có thể xóa đơn chưa thanh toán");
+    await env.DB.batch([
+      env.DB.prepare(
+        "DELETE FROM intents WHERE order_id=? AND status<>'SUCCEEDED'",
+      ).bind(orderId),
+      env.DB.prepare(
+        "DELETE FROM orders WHERE id=? AND payment_status='UNPAID'",
+      ).bind(orderId),
+      env.DB.prepare(
+        "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
+      ).bind(id(), admin.email, "ORDER_DELETE", orderId, "{}"),
+    ]);
+    return json({ ok: true });
+  }
+
   const delivery = path.match(/^\/orders\/([A-Z0-9]+)\/deliver$/);
   if (delivery && request.method === "POST") {
     requireRole(admin, ["owner", "support"]);
@@ -162,10 +323,14 @@ export async function adminApi(request: Request, env: Env) {
     const encrypted = await encryptDelivery(env, delivery[1], body.value);
     const result = await env.DB.batch([
       env.DB.prepare(
-        "UPDATE orders SET delivery=?,fulfillment_status='DELIVERED' WHERE id=? AND payment_status='PAID' AND fulfillment_status='QUEUED' AND NOT EXISTS(SELECT 1 FROM fulfillments WHERE order_id=orders.id AND status NOT IN('QUEUED','REVIEW')) RETURNING id",
+        "UPDATE orders SET delivery=?,fulfillment_status='DELIVERED' WHERE id=? AND payment_status='PAID' AND fulfillment_status IN('QUEUED','REVIEW','AWAITING') AND NOT EXISTS(SELECT 1 FROM fulfillments WHERE order_id=orders.id AND status NOT IN('QUEUED','REVIEW','AWAITING')) RETURNING id",
       ).bind(encrypted, delivery[1]),
-      env.DB.prepare("UPDATE fulfillments SET status='DELIVERED',delivered_quantity=quantity,reason=NULL,updated_at=unixepoch() WHERE order_id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND delivery=? AND fulfillment_status='DELIVERED')").bind(delivery[1], delivery[1], encrypted),
-      env.DB.prepare("UPDATE admin_alerts SET resolved_at=unixepoch() WHERE order_id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND delivery=? AND fulfillment_status='DELIVERED')").bind(delivery[1], delivery[1], encrypted),
+      env.DB.prepare(
+        "UPDATE fulfillments SET status='DELIVERED',delivered_quantity=quantity,reason=NULL,updated_at=unixepoch() WHERE order_id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND delivery=? AND fulfillment_status='DELIVERED')",
+      ).bind(delivery[1], delivery[1], encrypted),
+      env.DB.prepare(
+        "UPDATE admin_alerts SET resolved_at=unixepoch() WHERE order_id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND delivery=? AND fulfillment_status='DELIVERED')",
+      ).bind(delivery[1], delivery[1], encrypted),
       env.DB.prepare(
         "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
       ).bind(id(), admin.email, "DELIVERY_ATTEMPT", delivery[1], "{}"),
@@ -174,10 +339,12 @@ export async function adminApi(request: Request, env: Env) {
       throw new HttpError(409, "Đơn chưa thanh toán hoặc đã giao");
     return json({ ok: true });
   }
+
   if (path === "/payment-config" && request.method === "GET") {
     requireRole(admin, ["owner", "finance", "auditor"]);
     return json(await paymentConfig(env));
   }
+
   if (path === "/approvals" && request.method === "GET") {
     requireRole(admin, ["owner", "finance", "auditor"]);
     const { results } = await env.DB.prepare(
@@ -185,6 +352,7 @@ export async function adminApi(request: Request, env: Env) {
     ).all();
     return json({ approvals: results });
   }
+
   if (path === "/approvals" && request.method === "POST") {
     requireRole(admin, ["owner", "finance"]);
     const body = await readBody(
@@ -267,6 +435,7 @@ export async function adminApi(request: Request, env: Env) {
     }
     return json({ id: approvalId }, 201);
   }
+
   const approval = path.match(/^\/approvals\/([a-f0-9-]+)\/approve$/);
   if (approval && request.method === "POST") {
     requireRole(admin, ["owner", "finance"]);
@@ -297,6 +466,69 @@ export async function adminApi(request: Request, env: Env) {
     }
     return json({ ok: true });
   }
+
+  const cancelApproval = path.match(/^\/approvals\/([a-f0-9-]+)$/);
+  if (cancelApproval && request.method === "DELETE") {
+    requireRole(admin, ["owner", "finance"]);
+    const item = await env.DB.prepare(
+      "SELECT id,kind,status FROM approvals WHERE id=?",
+    )
+      .bind(cancelApproval[1])
+      .first<{ id: string; kind: string; status: string }>();
+    if (!item) throw new HttpError(404, "Không tìm thấy yêu cầu");
+    if (item.status !== "PENDING")
+      throw new HttpError(409, "Chỉ có thể hủy yêu cầu đang chờ duyệt");
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM admin_commands WHERE result_id=?").bind(
+        cancelApproval[1],
+      ),
+      env.DB.prepare(
+        "DELETE FROM approvals WHERE id=? AND status='PENDING'",
+      ).bind(cancelApproval[1]),
+      env.DB.prepare(
+        "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
+      ).bind(
+        id(),
+        admin.email,
+        "CANCEL_APPROVAL",
+        cancelApproval[1],
+        JSON.stringify({ kind: item.kind }),
+      ),
+    ]);
+    return json({ ok: true });
+  }
+
+  const inboxAction = path.match(/^\/inbox\/([^/]+)(?:\/(retry))?$/);
+  if (inboxAction) {
+    requireRole(admin, ["owner", "finance"]);
+    const inboxId = decodeURIComponent(inboxAction[1]);
+    if (inboxAction[2] === "retry" && request.method === "POST") {
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM inbox_retries WHERE id=?").bind(inboxId),
+        env.DB.prepare(
+          "UPDATE inbox SET status='PENDING',error=NULL WHERE id=? AND status<>'DONE'",
+        ).bind(inboxId),
+        env.DB.prepare(
+          "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
+        ).bind(id(), admin.email, "INBOX_RETRY", inboxId, "{}"),
+      ]);
+      await sweep(env);
+      return json({ ok: true });
+    }
+    if (!inboxAction[2] && request.method === "DELETE") {
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM inbox_retries WHERE id=?").bind(inboxId),
+        env.DB.prepare("DELETE FROM inbox WHERE id=? AND status<>'DONE'").bind(
+          inboxId,
+        ),
+        env.DB.prepare(
+          "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
+        ).bind(id(), admin.email, "INBOX_DISMISS", inboxId, "{}"),
+      ]);
+      return json({ ok: true });
+    }
+  }
+
   if (path === "/ledger" && request.method === "GET") {
     requireRole(admin, ["owner", "finance", "auditor"]);
     const { results } = await env.DB.prepare(
@@ -307,6 +539,7 @@ export async function adminApi(request: Request, env: Env) {
     ).all();
     return json({ journals: results, differences: differences.results });
   }
+
   if (path === "/transactions" && request.method === "GET") {
     requireRole(admin, ["owner", "finance", "auditor"]);
     const [transactions, inbox, runs] = await Promise.all([
@@ -326,6 +559,7 @@ export async function adminApi(request: Request, env: Env) {
       runs: runs.results,
     });
   }
+
   if (path === "/reconcile" && request.method === "POST") {
     requireRole(admin, ["owner", "finance"]);
     const input = await readBody(
@@ -350,18 +584,21 @@ export async function adminApi(request: Request, env: Env) {
       ),
     );
   }
+
   if (path === "/maintenance" && request.method === "POST") {
     requireRole(admin, ["owner"]);
     await audit(env, admin.email, "SWEEP", "inbox-outbox");
     await sweep(env);
     return json({ ok: true });
   }
+
   if (path === "/pages" && request.method === "GET") {
     const { results } = await env.DB.prepare(
       "SELECT p.*,v.title,v.description,v.blocks FROM pages p JOIN page_versions v ON v.id=p.draft_id",
     ).all();
     return json({ pages: results });
   }
+
   if (path === "/pages" && request.method === "POST") {
     requireRole(admin, ["owner", "editor"]);
     const p = await readBody(request, pageSchema);
@@ -392,6 +629,7 @@ export async function adminApi(request: Request, env: Env) {
     ]);
     return json({ id: versionId }, 201);
   }
+
   const page = path.match(/^\/pages\/([a-z0-9-]+)\/(publish|versions)$/);
   if (page && page[2] === "versions" && request.method === "GET")
     return json({
@@ -403,6 +641,7 @@ export async function adminApi(request: Request, env: Env) {
           .all()
       ).results,
     });
+
   if (page && page[2] === "publish" && request.method === "POST") {
     requireRole(admin, ["owner", "editor"]);
     const body = await readBody(
@@ -428,6 +667,29 @@ export async function adminApi(request: Request, env: Env) {
     ]);
     return json({ ok: true });
   }
+
+  const pageDelete = path.match(/^\/pages\/([a-z0-9-]+)$/);
+  if (pageDelete && request.method === "DELETE") {
+    requireRole(admin, ["owner", "editor"]);
+    const slug = pageDelete[1];
+    if (slug === "trang-chu")
+      throw new HttpError(409, "Không thể xóa trang chủ mặc định");
+    if (
+      !(await env.DB.prepare("SELECT slug FROM pages WHERE slug=?")
+        .bind(slug)
+        .first())
+    )
+      throw new HttpError(404, "Không tìm thấy trang");
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM pages WHERE slug=?").bind(slug),
+      env.DB.prepare("DELETE FROM page_versions WHERE slug=?").bind(slug),
+      env.DB.prepare(
+        "INSERT INTO audit(id,actor,action,target,detail) VALUES(?,?,?,?,?)",
+      ).bind(id(), admin.email, "PAGE_DELETE", slug, "{}"),
+    ]);
+    return json({ ok: true });
+  }
+
   if (path === "/audit" && request.method === "GET") {
     requireRole(admin, ["owner", "auditor"]);
     return json({
@@ -438,6 +700,7 @@ export async function adminApi(request: Request, env: Env) {
       ).results,
     });
   }
+
   if (path === "/status" && request.method === "GET") {
     return json({
       environment: env.ENVIRONMENT,
@@ -456,6 +719,7 @@ export async function adminApi(request: Request, env: Env) {
       ).results,
     });
   }
+
   const retryOutbox = path.match(/^\/outbox\/(.+)\/retry$/);
   if (retryOutbox && request.method === "POST") {
     requireRole(admin, ["owner", "support"]);
@@ -470,5 +734,6 @@ export async function adminApi(request: Request, env: Env) {
     ]);
     return json({ ok: true });
   }
+
   throw new HttpError(404, "Không tìm thấy chức năng admin");
 }

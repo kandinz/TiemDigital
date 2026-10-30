@@ -81,7 +81,10 @@ export interface OrderStore {
   insertOrder(order: NewOrder): Promise<void>;
   findOrder(id: string): Promise<OrderRow | null>;
   hasProviderOrder(providerId: string, providerOrderId: string): Promise<boolean>;
-  updateOrder(id: string, change: { status?: string; response_raw?: string }): Promise<void>;
+  updateOrder(
+    id: string,
+    change: { status?: string; response_raw?: string; delivered_items?: string; delivered_data?: string | null },
+  ): Promise<void>;
 }
 
 export interface MmoStores {
@@ -98,7 +101,7 @@ function createD1ProviderStore(db: D1Database): ProviderStore {
     async listProviders() {
       const res = await db
         .prepare(
-          "SELECT id, name, base_url, auth_type, auth_key_name, api_key, is_active, sort_order, bot_url, avatar_url, badge_color, balance_cache, balance_cached_at FROM mmo_providers ORDER BY sort_order ASC"
+          "SELECT id, name, base_url, auth_type, auth_key_name, api_key, is_active, sort_order, bot_url, avatar_url, badge_color, balance_cache, balance_cached_at FROM mmo_providers ORDER BY sort_order ASC",
         )
         .all<ProviderRow>();
       return res.results || [];
@@ -111,7 +114,7 @@ function createD1ProviderStore(db: D1Database): ProviderStore {
       const [providerRes, rateRes, categoryRes] = await db.batch([
         db
           .prepare(
-            "SELECT id, name, base_url, auth_type, auth_key_name, api_key, is_active, sort_order, bot_url, avatar_url, balance_cache FROM mmo_providers WHERE id = ?"
+            "SELECT id, name, base_url, auth_type, auth_key_name, api_key, is_active, sort_order, bot_url, avatar_url, balance_cache FROM mmo_providers WHERE id = ?",
           )
           .bind(providerId),
         db.prepare("SELECT value FROM mmo_settings WHERE key = 'usd_rate'"),
@@ -148,7 +151,9 @@ function createD1OrderStore(db: D1Database): OrderStore {
         params.push(providerId);
       }
       if (search) {
-        conditions.push("(o.product_name LIKE ? OR o.provider_order_id LIKE ? OR o.customer_email LIKE ? OR o.delivered_data LIKE ?)");
+        conditions.push(
+          "(o.product_name LIKE ? OR o.provider_order_id LIKE ? OR o.customer_email LIKE ? OR o.delivered_data LIKE ?)",
+        );
         const pattern = `%${search}%`;
         params.push(pattern, pattern, pattern, pattern);
       }
@@ -164,7 +169,7 @@ function createD1OrderStore(db: D1Database): OrderStore {
            FROM mmo_orders o
            LEFT JOIN mmo_transactions t ON t.purchase_order_id = o.id AND t.is_deleted = 0
            ${whereClause}
-           ORDER BY o.created_at DESC LIMIT ? OFFSET ?`
+           ORDER BY o.created_at DESC LIMIT ? OFFSET ?`,
         )
         .bind(...params, limit, (page - 1) * limit)
         .all<OrderRow>();
@@ -177,11 +182,24 @@ function createD1OrderStore(db: D1Database): OrderStore {
           `INSERT INTO mmo_orders (
             id, user_id, provider_id, provider_order_id, product_id, product_name, quantity,
             unit_price, total_price, currency, status, delivered_data, delivered_items, customer_email, response_raw, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
         )
         .bind(
-          o.id, o.user_id, o.provider_id, o.provider_order_id, o.product_id, o.product_name, o.quantity,
-          o.unit_price, o.total_price, o.currency, o.status, o.delivered_data, o.delivered_items, o.customer_email, o.response_raw
+          o.id,
+          o.user_id,
+          o.provider_id,
+          o.provider_order_id,
+          o.product_id,
+          o.product_name,
+          o.quantity,
+          o.unit_price,
+          o.total_price,
+          o.currency,
+          o.status,
+          o.delivered_data,
+          o.delivered_items,
+          o.customer_email,
+          o.response_raw,
         )
         .run();
     },
@@ -192,7 +210,7 @@ function createD1OrderStore(db: D1Database): OrderStore {
             `SELECT o.*, t.id AS linked_transaction_id
              FROM mmo_orders o
              LEFT JOIN mmo_transactions t ON t.purchase_order_id = o.id AND t.is_deleted = 0
-             WHERE o.id = ?`
+             WHERE o.id = ?`,
           )
           .bind(id)
           .first<OrderRow>()) ?? null
@@ -215,6 +233,14 @@ function createD1OrderStore(db: D1Database): OrderStore {
       if (change.response_raw !== undefined) {
         updates.push("response_raw = ?");
         params.push(change.response_raw);
+      }
+      if (change.delivered_items !== undefined) {
+        updates.push("delivered_items = ?");
+        params.push(change.delivered_items);
+      }
+      if (change.delivered_data !== undefined) {
+        updates.push("delivered_data = ?");
+        params.push(change.delivered_data);
       }
       params.push(id);
       await db

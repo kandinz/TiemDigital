@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Admin, Env } from "./types";
 import { requireRole } from "./auth";
 import { audit, HttpError, id, json, readBody } from "./http";
-import { encryptDelivery } from "./delivery";
+import { decryptDelivery, encryptDelivery } from "./delivery";
 import { createD1Stores } from "./mmo/services/mmoStores";
 import { openSession } from "./mmo/services/providerSession";
 import type { UnifiedProduct } from "./mmo/services/adapters/types";
@@ -284,12 +284,59 @@ export async function catalogAdmin(
     ]);
     return json({ ok: true, id: (result[0].results[0] as { id: number }).id });
   }
+  const statusMatch = path.match(/^\/products\/(\d+)\/status$/);
+  if (statusMatch && request.method === "PATCH") {
+    requireRole(admin, ["owner"]);
+    const productId = Number(statusMatch[1]);
+    if (!await env.DB.prepare("SELECT id FROM products WHERE id=?").bind(productId).first())
+      throw new HttpError(404, "Không tìm thấy sản phẩm");
+    const input = await readBody(
+      request,
+      z.object({
+        active: z.boolean().optional(),
+        in_stock: z.boolean().optional(),
+      }),
+    );
+    const statements = [];
+    if (input.in_stock !== undefined) {
+      statements.push(
+        env.DB.prepare("UPDATE products SET in_stock=?,updated_at=? WHERE id=?")
+          .bind(Number(input.in_stock), new Date().toISOString(), productId),
+      );
+    }
+    if (input.active !== undefined) {
+      statements.push(
+        env.DB.prepare(
+          "INSERT INTO product_sources(product_id,source,active) VALUES(?,'stock',?) ON CONFLICT(product_id) DO UPDATE SET active=excluded.active",
+        ).bind(productId, Number(input.active)),
+      );
+    }
+    if (statements.length) await env.DB.batch(statements);
+    await audit(env, admin.email, "PRODUCT_STATUS", statusMatch[1], input);
+    return json({ ok: true });
+  }
   const archive = path.match(/^\/products\/(\d+)$/);
   if (archive && request.method === "DELETE") {
     requireRole(admin, ["owner"]);
     const productId = Number(archive[1]);
     if (!await env.DB.prepare("SELECT id FROM products WHERE id=?").bind(productId).first())
       throw new HttpError(404, "Không tìm thấy sản phẩm");
+    const url = new URL(request.url);
+    if (url.searchParams.get("permanent") === "1") {
+      const hasHistory = await env.DB.prepare(
+        "SELECT 1 FROM fulfillments WHERE product_id=? UNION ALL SELECT 1 FROM product_inventory WHERE product_id=? AND fulfillment_id IS NOT NULL UNION ALL SELECT 1 FROM orders o,json_each(o.items) j WHERE CAST(json_extract(j.value,'$.productId') AS INTEGER)=? LIMIT 1",
+      ).bind(productId, productId, productId).first();
+      if (hasHistory)
+        throw new HttpError(409, "Sản phẩm đã có lịch sử đơn hàng; chỉ có thể ngừng bán");
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM product_inventory WHERE product_id=? AND fulfillment_id IS NULL").bind(productId),
+        env.DB.prepare("DELETE FROM product_sources WHERE product_id=?").bind(productId),
+        env.DB.prepare("DELETE FROM catalog_imports WHERE product_id=?").bind(productId),
+        env.DB.prepare("DELETE FROM products WHERE id=?").bind(productId),
+      ]);
+      await audit(env, admin.email, "PRODUCT_DELETE", archive[1]);
+      return json({ ok: true, deleted: true });
+    }
     await env.DB.prepare(
       "INSERT INTO product_sources(product_id,source,active) VALUES(?,'stock',0) ON CONFLICT(product_id) DO UPDATE SET active=0",
     ).bind(productId).run();
@@ -306,8 +353,15 @@ export async function catalogAdmin(
     ).bind(orderId).first<{
       id: string; user_id: string | null; status: string; quantity: number; delivered_items: string | null;
     }>();
-    if (!order || order.user_id !== (admin.userId ?? admin.email))
+    const ownerIdentity = admin.userId ?? admin.email;
+    const isAdminPurchase = order && (order.user_id === ownerIdentity || order.user_id === admin.email || order.user_id === "system_sync");
+    if (!order || !isAdminPurchase)
       throw new HttpError(404, "Không tìm thấy đơn mua riêng của quản trị viên");
+    const linkedCustomerFulfillment = await env.DB.prepare(
+      "SELECT id FROM fulfillments WHERE purchase_order_id=?",
+    ).bind(orderId).first();
+    if (linkedCustomerFulfillment)
+      throw new HttpError(409, "Đơn NCC đã gắn với đơn giao khách hàng, không thể nhập kho");
     if (normalizeStatus(order.status) !== "completed")
       throw new HttpError(409, "Đơn NCC chưa hoàn tất; kiểm tra trạng thái trước khi nhập kho");
     const linkedSale = await env.DB.prepare(
@@ -343,6 +397,37 @@ export async function catalogAdmin(
     if (added) await audit(env, admin.email, "SUPPLIER_PURCHASE_IMPORT", orderId, { productId, count: added });
     return json({ ok: true, added, total: items.length });
   }
+  const inventoryItem = path.match(/^\/products\/(\d+)\/inventory\/([^/]+)$/);
+  if (inventoryItem) {
+    requireRole(admin, ["owner"]);
+    const productId = Number(inventoryItem[1]);
+    const itemId = decodeURIComponent(inventoryItem[2]);
+    const existingItem = await env.DB.prepare(
+      "SELECT id,fulfillment_id FROM product_inventory WHERE id=? AND product_id=?",
+    ).bind(itemId, productId).first<{ id: string; fulfillment_id: string | null }>();
+    if (!existingItem) throw new HttpError(404, "Không tìm thấy đơn vị hàng trong kho");
+    if (existingItem.fulfillment_id)
+      throw new HttpError(409, "Đơn vị hàng đã xuất giao cho khách, không thể chỉnh sửa hoặc xóa");
+    if (request.method === "PUT") {
+      const { value } = await readBody(
+        request,
+        z.object({ value: z.string().trim().min(1).max(10000) }),
+      );
+      const encrypted = await encryptDelivery(env, itemId, value);
+      await env.DB.prepare(
+        "UPDATE product_inventory SET payload=? WHERE id=? AND product_id=? AND fulfillment_id IS NULL",
+      ).bind(encrypted, itemId, productId).run();
+      await audit(env, admin.email, "INVENTORY_UPDATE", itemId, { productId });
+      return json({ ok: true });
+    }
+    if (request.method === "DELETE") {
+      await env.DB.prepare(
+        "DELETE FROM product_inventory WHERE id=? AND product_id=? AND fulfillment_id IS NULL",
+      ).bind(itemId, productId).run();
+      await audit(env, admin.email, "INVENTORY_DELETE", itemId, { productId });
+      return json({ ok: true });
+    }
+  }
   const inventory = path.match(/^\/products\/(\d+)\/inventory$/);
   if (inventory) {
     requireRole(admin, ["owner"]);
@@ -354,16 +439,37 @@ export async function catalogAdmin(
       .first<{ source: string }>();
     if (source?.source !== "stock")
       throw new HttpError(400, "Sản phẩm không dùng kho tự tạo");
-    if (request.method === "GET")
-      return json({
-        inventory: (
-          await env.DB.prepare(
-            "SELECT id,created_at,fulfillment_id FROM product_inventory WHERE product_id=? ORDER BY created_at DESC",
-          )
-            .bind(productId)
-            .all()
-        ).results,
-      });
+    if (request.method === "GET") {
+      const rows = (
+        await env.DB.prepare(
+          "SELECT id,created_at,fulfillment_id,payload FROM product_inventory WHERE product_id=? ORDER BY created_at DESC",
+        )
+          .bind(productId)
+          .all<{ id: string; created_at: number; fulfillment_id: string | null; payload: string }>()
+      ).results;
+      const items = await Promise.all(
+        rows.map(async (row) => {
+          let value: string | null = null;
+          if (env.DELIVERY_KEY) {
+            try {
+              value = await decryptDelivery(env, row.id, row.payload);
+            } catch {
+              value = null;
+            }
+          }
+          return {
+            id: row.id,
+            created_at: row.created_at,
+            fulfillment_id: row.fulfillment_id,
+            supplier_order_id: row.id.startsWith("supplier:")
+              ? row.id.split(":")[1] ?? null
+              : null,
+            value,
+          };
+        }),
+      );
+      return json({ inventory: items, items });
+    }
     if (request.method === "POST") {
       const { values } = await readBody(
         request,

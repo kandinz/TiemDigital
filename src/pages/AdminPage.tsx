@@ -9,8 +9,15 @@ import {
   type PlatformOrder,
 } from "../services/platform";
 import "../platform.css";
-import { AuthForm } from '../components/AuthForm';
-import { CatalogProducts, ReadOnlyProducts, Providers, PurchaseOrders, FulfillmentAlerts, BusinessFinance } from '../components/admin/CommerceAdmin';
+import { AuthForm } from "../components/AuthForm";
+import {
+  CatalogProducts,
+  ReadOnlyProducts,
+  Providers,
+  PurchaseOrders,
+  FulfillmentAlerts,
+  BusinessFinance,
+} from "../components/admin/CommerceAdmin";
 
 interface Admin {
   userId?: string;
@@ -18,6 +25,7 @@ interface Admin {
   email: string;
   role: string;
 }
+
 interface Config {
   enabled: boolean;
   provider: "sepay";
@@ -30,6 +38,7 @@ interface Config {
   intentTtl: number;
   version: number;
 }
+
 interface Approval {
   id: string;
   kind: string;
@@ -38,6 +47,7 @@ interface Approval {
   requested_by: string;
   approved_by: string | null;
 }
+
 interface Page {
   slug: string;
   title: string;
@@ -46,13 +56,25 @@ interface Page {
   draft_id: string;
   published_id: string | null;
 }
+
 interface Customer {
   id: string;
   email: string;
   name: string;
+  username?: string | null;
+  phone?: string;
+  order_count?: number;
   balance: number;
   disabled: number;
 }
+
+interface CustomerDetailResponse {
+  customer: Customer;
+  orders: PlatformOrder[];
+  journals: Record<string, unknown>[];
+  telegram: { telegram_id: string; chat_id: string } | null;
+}
+
 type Tab =
   | "overview"
   | "customers"
@@ -65,7 +87,23 @@ type Tab =
   | "telegram"
   | "audit"
   | "providers";
+
 type Run = (task: () => Promise<void>) => Promise<void>;
+
+/**
+ * Cuộn mượt tới khu vực chi tiết/biên tập và tự động focus ô nhập liệu đầu tiên.
+ */
+function focusPanel(element: HTMLElement | null) {
+  if (!element) return;
+  requestAnimationFrame(() => {
+    element.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const firstInput = element.querySelector<HTMLElement>(
+      "input:not([disabled]):not([type='hidden']):not([type='checkbox']), select:not([disabled]), textarea:not([disabled])",
+    );
+    firstInput?.focus({ preventScroll: true });
+  });
+}
+
 function useAdminCommand() {
   const pending = useRef(new Map<string, string>());
   return async function submit<T>(
@@ -83,6 +121,7 @@ function useAdminCommand() {
     return result;
   };
 }
+
 const labels: [Tab, string][] = [
   ["overview", "Tổng quan"],
   ["customers", "Khách hàng"],
@@ -97,28 +136,82 @@ const labels: [Tab, string][] = [
   ["providers", "Nhà cung cấp"],
 ];
 
+/**
+ * Quản lý danh sách đơn hàng của khách, tra cứu chi tiết, xem dữ liệu đã giao và giao hàng thủ công.
+ */
 function Orders({ run }: { run: Run }) {
   const [orders, setOrders] = useState<PlatformOrder[]>([]);
   const [selected, setSelected] = useState("");
   const [value, setValue] = useState("");
-  async function load() {
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [deliveredView, setDeliveredView] = useState<{
+    orderId: string;
+    items: string[];
+    value: string | null;
+  } | null>(null);
+  const detailRef = useRef<HTMLDivElement | null>(null);
+
+  async function load(q = search, status = statusFilter) {
+    const params = new URLSearchParams();
+    if (q.trim()) params.set("q", q.trim());
+    if (status) params.set("status", status);
+    const qs = params.toString() ? `?${params.toString()}` : "";
     setOrders(
-      (await api<{ orders: PlatformOrder[] }>("/api/admin/orders")).orders,
+      (await api<{ orders: PlatformOrder[] }>(`/api/admin/orders${qs}`)).orders,
     );
   }
+
   useEffect(() => {
-    void run(load);
+    void run(() => load("", ""));
   }, [run]);
+
+  const selectedOrder = orders.find((o) => o.id === selected);
+
   return (
     <section className="panel">
       <div className="panel-heading">
         <h2>Đơn hàng & giao sản phẩm</h2>
-        <button onClick={() => void run(load)}>Cập nhật</button>
+        <button onClick={() => void run(() => load(search, statusFilter))}>
+          Cập nhật
+        </button>
       </div>
       <p className="muted">
         Chỉ giao đơn đã thanh toán. Dữ liệu sản phẩm được mã hóa và khách nhận
         trong tài khoản.
       </p>
+      <form
+        className="action-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(() => load(search, statusFilter));
+        }}
+      >
+        <input
+          aria-label="Tìm đơn khách hàng"
+          placeholder="Tìm theo mã đơn, email, tên sản phẩm…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          aria-label="Lọc trạng thái đơn"
+          value={statusFilter}
+          onChange={(e) => {
+            const next = e.target.value;
+            setStatusFilter(next);
+            void run(() => load(search, next));
+          }}
+        >
+          <option value="">Tất cả trạng thái</option>
+          <option value="PAID">Đã thanh toán</option>
+          <option value="UNPAID">Chưa thanh toán</option>
+          <option value="DELIVERED">Đã giao</option>
+          <option value="QUEUED">Chờ giao</option>
+          <option value="AWAITING">Đã mua NCC · chờ giao</option>
+          <option value="REVIEW">Cần kiểm tra</option>
+        </select>
+        <button>Tìm đơn</button>
+      </form>
       <div className="table-wrap">
         <table>
           <thead>
@@ -132,9 +225,19 @@ function Orders({ run }: { run: Run }) {
           </thead>
           <tbody>
             {orders.map((o) => (
-              <tr key={o.id}>
+              <tr
+                key={o.id}
+                className={selected === o.id ? "selected-row" : ""}
+              >
                 <td>
-                  <button className="mono" onClick={() => setSelected(o.id)}>
+                  <button
+                    className="mono"
+                    onClick={() => {
+                      setSelected(o.id);
+                      setDeliveredView(null);
+                      focusPanel(detailRef.current);
+                    }}
+                  >
                     {o.id}
                   </button>
                   <br />
@@ -149,51 +252,184 @@ function Orders({ run }: { run: Run }) {
           </tbody>
         </table>
       </div>
-      {selected && <div className="admin-detail">{orders.find(o => o.id === selected)?.fulfillments?.map(f => <p key={f.product_id}>{f.name}: {f.delivered_quantity}/{f.quantity} đã giao · {fulfillmentLabel(f.status)}</p>)}</div>}
-      {selected && !orders.find(o => o.id === selected)?.fulfillments?.length && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              await api(`/api/admin/orders/${selected}/deliver`, {
-                body: { value },
-              });
-              setValue("");
-              setSelected("");
-              await load();
-            });
-          }}
-        >
-          <h3>Giao sản phẩm · {selected}</h3>
-          <label>
-            Key / thông tin tài khoản / hướng dẫn
-            <textarea
-              required
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              maxLength={10000}
-            />
-          </label>
-          <button className="primary">Giao sản phẩm cho khách</button>
-        </form>
+      {selectedOrder && (
+        <div className="admin-detail" ref={detailRef}>
+          <h3>
+            Chi tiết đơn {selectedOrder.id} ·{" "}
+            {paymentLabel(selectedOrder.payment_status)} ·{" "}
+            {fulfillmentLabel(selectedOrder.fulfillment_status)}
+          </h3>
+          <p>
+            Khách hàng: {selectedOrder.customer.fullName || "—"} · Email:{" "}
+            {selectedOrder.customer.email || selectedOrder.user_id} · SĐT:{" "}
+            {selectedOrder.customer.phone || "—"} · Thời gian:{" "}
+            {timeLabel(selectedOrder.created_at)}
+          </p>
+          {selectedOrder.customer.note && (
+            <p className="muted">
+              Ghi chú của khách: {selectedOrder.customer.note}
+            </p>
+          )}
+          <div>
+            <strong>Sản phẩm đặt mua:</strong>
+            {selectedOrder.items.map((item) => (
+              <p key={item.productId}>
+                {item.name} × {item.quantity} ·{" "}
+                {amountLabel(item.price * item.quantity, selectedOrder.currency)}
+              </p>
+            ))}
+          </div>
+          {!!selectedOrder.fulfillments?.length && (
+            <div>
+              <strong>Tiến độ giao hàng tự động:</strong>
+              {selectedOrder.fulfillments.map((f) => (
+                <p key={f.product_id}>
+                  {f.name}: {f.delivered_quantity}/{f.quantity} đã giao ·{" "}
+                  {fulfillmentLabel(f.status)}
+                </p>
+              ))}
+            </div>
+          )}
+          {deliveredView?.orderId === selectedOrder.id && (
+            <pre className="code-block">
+              {deliveredView.value ||
+                deliveredView.items.join("\n") ||
+                "Chưa có dữ liệu đã giao"}
+            </pre>
+          )}
+          <div className="action-row">
+            {(selectedOrder.fulfillment_status === "DELIVERED" ||
+              selectedOrder.fulfillments?.some(
+                (f) => f.delivered_quantity > 0,
+              )) && (
+              <button
+                type="button"
+                onClick={() =>
+                  void run(async () => {
+                    const res = await api<{
+                      items: string[];
+                      value: string | null;
+                    }>(`/api/admin/orders/${selectedOrder.id}/delivery`);
+                    setDeliveredView({
+                      orderId: selectedOrder.id,
+                      items: res.items,
+                      value: res.value,
+                    });
+                  })
+                }
+              >
+                Xem dữ liệu đã giao
+              </button>
+            )}
+            {selectedOrder.payment_status === "UNPAID" && (
+              <button
+                type="button"
+                onClick={() =>
+                  void run(async () => {
+                    await api(`/api/admin/orders/${selectedOrder.id}`, {
+                      method: "DELETE",
+                    });
+                    setSelected("");
+                    await load(search, statusFilter);
+                  })
+                }
+              >
+                Xóa đơn chưa thanh toán
+              </button>
+            )}
+            <button type="button" onClick={() => setSelected("")}>
+              Đóng chi tiết
+            </button>
+          </div>
+          {selectedOrder.payment_status === "UNPAID" && (
+            <p className="muted">
+              Đơn chưa thanh toán nên chưa thể giao sản phẩm.
+            </p>
+          )}
+        </div>
       )}
+      {selectedOrder &&
+        selectedOrder.payment_status === "PAID" &&
+        selectedOrder.fulfillment_status !== "DELIVERED" &&
+        !selectedOrder.fulfillments?.length && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                await api(`/api/admin/orders/${selected}/deliver`, {
+                  body: { value },
+                });
+                setValue("");
+                setSelected("");
+                await load(search, statusFilter);
+              });
+            }}
+          >
+            <h3>Giao sản phẩm · {selected}</h3>
+            <label>
+              Key / thông tin tài khoản / hướng dẫn
+              <textarea
+                required
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                maxLength={10000}
+              />
+            </label>
+            <button className="primary">Giao sản phẩm cho khách</button>
+          </form>
+        )}
     </section>
   );
 }
-function Customers({ run }: { run: Run }) {
+
+/**
+ * Quản lý khách hàng, tìm kiếm, xem hồ sơ chi tiết, chỉnh sửa thông tin và khóa/mở khóa phiên.
+ */
+function Customers({
+  run,
+  onAdjustWallet,
+}: {
+  run: Run;
+  onAdjustWallet?: (customerId: string) => void;
+}) {
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [reason, setReason] = useState("");
-  async function load() {
+  const [reason, setReason] = useState("Kiểm tra bảo mật tài khoản");
+  const [search, setSearch] = useState("");
+  const [detail, setDetail] = useState<CustomerDetailResponse | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const detailRef = useRef<HTMLDivElement | null>(null);
+
+  async function load(q = search) {
+    const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
     setCustomers(
-      (await api<{ customers: Customer[] }>("/api/admin/customers")).customers,
+      (await api<{ customers: Customer[] }>(`/api/admin/customers${qs}`))
+        .customers,
     );
   }
+
   useEffect(() => {
-    void run(load);
+    void run(() => load(""));
   }, [run]);
+
   return (
     <section className="panel">
       <h2>Khách hàng</h2>
+      <form
+        className="action-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(() => load(search));
+        }}
+      >
+        <input
+          aria-label="Tìm khách hàng"
+          placeholder="Tìm theo tên, email, SĐT hoặc ID…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <button>Tìm khách</button>
+      </form>
       <label>
         Lý do khóa / mở khóa
         <input
@@ -214,58 +450,178 @@ function Customers({ run }: { run: Run }) {
           </thead>
           <tbody>
             {customers.map((c) => (
-              <tr key={c.id}>
+              <tr
+                key={c.id}
+                className={detail?.customer.id === c.id ? "selected-row" : ""}
+              >
                 <td>
-                  {c.name}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void run(async () => {
+                        const info = await api<CustomerDetailResponse>(
+                          `/api/admin/customers/${encodeURIComponent(c.id)}`,
+                        );
+                        setDetail(info);
+                        setEditName(info.customer.name);
+                        setEditPhone(info.customer.phone ?? "");
+                        focusPanel(detailRef.current);
+                      })
+                    }
+                  >
+                    {c.name}
+                  </button>
                   <br />
                   {c.email}
+                  {c.phone ? ` · ${c.phone}` : ""}
                 </td>
                 <td className="mono">{c.id}</td>
                 <td>{amountLabel(c.balance)}</td>
                 <td>
-                  <button
-                    disabled={reason.length < 5}
-                    onClick={() =>
-                      void run(async () => {
-                        await api(`/api/admin/customers/${c.id}/lock`, {
-                          body: { disabled: !c.disabled, reason },
-                        });
-                        await load();
-                      })
-                    }
-                  >
-                    {c.disabled ? "Mở khóa" : "Khóa và thu hồi phiên"}
-                  </button>
+                  <div className="action-row">
+                    <button
+                      disabled={reason.length < 5}
+                      onClick={() =>
+                        void run(async () => {
+                          await api(`/api/admin/customers/${c.id}/lock`, {
+                            body: { disabled: !c.disabled, reason },
+                          });
+                          await load(search);
+                          if (detail?.customer.id === c.id) {
+                            const updated = await api<CustomerDetailResponse>(
+                              `/api/admin/customers/${encodeURIComponent(c.id)}`,
+                            );
+                            setDetail(updated);
+                          }
+                        })
+                      }
+                    >
+                      {c.disabled ? "Mở khóa" : "Khóa và thu hồi phiên"}
+                    </button>
+                    {onAdjustWallet && (
+                      <button
+                        type="button"
+                        onClick={() => onAdjustWallet(c.id)}
+                      >
+                        Điều chỉnh số dư
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {detail && (
+        <div className="admin-detail" ref={detailRef}>
+          <h3>
+            Hồ sơ khách hàng · {detail.customer.name} ({detail.customer.id})
+          </h3>
+          <p>
+            Email: {detail.customer.email} · Số dư:{" "}
+            {amountLabel(detail.customer.balance)} · Trạng thái:{" "}
+            {detail.customer.disabled ? "Đã khóa" : "Đang hoạt động"}
+            {detail.telegram
+              ? ` · Telegram: ${detail.telegram.telegram_id}`
+              : " · Chưa liên kết Telegram"}
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                await api(
+                  `/api/admin/customers/${encodeURIComponent(detail.customer.id)}`,
+                  {
+                    method: "PUT",
+                    body: { name: editName, phone: editPhone },
+                  },
+                );
+                await load(search);
+                const refreshed = await api<CustomerDetailResponse>(
+                  `/api/admin/customers/${encodeURIComponent(detail.customer.id)}`,
+                );
+                setDetail(refreshed);
+              });
+            }}
+          >
+            <div className="form-grid">
+              <label>
+                Tên khách hàng
+                <input
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                />
+              </label>
+              <label>
+                Số điện thoại
+                <input
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="action-row">
+              <button className="primary">Lưu thông tin khách</button>
+              <button type="button" onClick={() => setDetail(null)}>
+                Đóng hồ sơ
+              </button>
+            </div>
+          </form>
+          {detail.orders.length > 0 && (
+            <div>
+              <strong>Đơn hàng gần đây ({detail.orders.length}):</strong>
+              {detail.orders.slice(0, 5).map((o) => (
+                <p key={o.id}>
+                  <span className="mono">{o.id}</span> ·{" "}
+                  {amountLabel(o.total, o.currency)} ·{" "}
+                  {paymentLabel(o.payment_status)} ·{" "}
+                  {fulfillmentLabel(o.fulfillment_status)}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
-function PaymentSettings({ run }: { run: Run }) {
+
+/**
+ * Cấu hình tài khoản ngân hàng nhận tiền, phê duyệt thay đổi cấu hình và đối soát giao dịch SePay.
+ */
+function PaymentSettings({ admin, run }: { admin: Admin; run: Run }) {
   const submit = useAdminCommand();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [config, setConfig] = useState<Config | null>(null);
+  const [approvals, setApprovals] = useState<Approval[]>([]);
   const [transactions, setTransactions] = useState<{
     transactions: Record<string, unknown>[];
     inbox: Record<string, unknown>[];
     runs: Record<string, unknown>[];
   } | null>(null);
+
   async function load() {
-    const [c, t] = await Promise.all([
+    const [c, t, a] = await Promise.all([
       api<Config>("/api/admin/payment-config"),
       api<typeof transactions>("/api/admin/transactions"),
+      api<{ approvals: Approval[] }>("/api/admin/approvals"),
     ]);
     setConfig(c);
     setTransactions(t);
+    setApprovals(
+      a.approvals.filter(
+        (item) => item.kind === "PAYMENT_CONFIG" && item.status === "PENDING",
+      ),
+    );
   }
+
   useEffect(() => {
     void run(load);
   }, [run]);
+
   return (
     <>
       <section className="panel">
@@ -287,6 +643,7 @@ function PaymentSettings({ run }: { run: Run }) {
                     expectedVersion: version,
                   },
                 });
+                await load();
               });
             }}
           >
@@ -360,6 +717,52 @@ function PaymentSettings({ run }: { run: Run }) {
             <button className="primary">Gửi yêu cầu thay đổi</button>
           </form>
         )}
+        {approvals.length > 0 && (
+          <div className="admin-detail">
+            <h3>Yêu cầu thay đổi cấu hình đang chờ duyệt ({approvals.length})</h3>
+            {approvals.map((a) => (
+              <div key={a.id}>
+                <p className="muted">
+                  Người tạo: {a.requested_by} ·{" "}
+                  {a.requested_by === admin.email
+                    ? "Cần một Owner khác phê duyệt yêu cầu này"
+                    : "Sẵn sàng phê duyệt"}
+                </p>
+                <div className="action-row">
+                  {a.requested_by !== admin.email && (
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() =>
+                        void run(async () => {
+                          await api(`/api/admin/approvals/${a.id}/approve`, {
+                            body: {},
+                          });
+                          await load();
+                        })
+                      }
+                    >
+                      Phê duyệt thay đổi
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void run(async () => {
+                        await api(`/api/admin/approvals/${a.id}`, {
+                          method: "DELETE",
+                        });
+                        await load();
+                      })
+                    }
+                  >
+                    Hủy yêu cầu
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
       <section className="panel">
         <div className="panel-heading">
@@ -414,6 +817,7 @@ function PaymentSettings({ run }: { run: Run }) {
                     <th>Mã</th>
                     <th>Trạng thái</th>
                     <th>Lý do</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
@@ -422,6 +826,38 @@ function PaymentSettings({ run }: { run: Run }) {
                       <td className="mono">{String(t.id)}</td>
                       <td>{String(t.status)}</td>
                       <td>{String(t.error ?? "")}</td>
+                      <td>
+                        <div className="action-row">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void run(async () => {
+                                await api(
+                                  `/api/admin/inbox/${encodeURIComponent(String(t.id))}/retry`,
+                                  { body: {} },
+                                );
+                                await load();
+                              })
+                            }
+                          >
+                            Thử lại
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void run(async () => {
+                                await api(
+                                  `/api/admin/inbox/${encodeURIComponent(String(t.id))}`,
+                                  { method: "DELETE" },
+                                );
+                                await load();
+                              })
+                            }
+                          >
+                            Bỏ qua
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -462,17 +898,34 @@ function PaymentSettings({ run }: { run: Run }) {
     </>
   );
 }
-function Finance({ admin, run }: { admin: Admin; run: Run }) {
+
+/**
+ * Quản lý yêu cầu điều chỉnh/hoàn số dư khách hàng, phê duyệt 2 lớp và đối chiếu sổ cái.
+ */
+function Finance({
+  admin,
+  run,
+  initialUserId = "",
+}: {
+  admin: Admin;
+  run: Run;
+  initialUserId?: string;
+}) {
   const submit = useAdminCommand();
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [ledger, setLedger] = useState<{
     journals: Record<string, unknown>[];
     differences: unknown[];
   }>({ journals: [], differences: [] });
-  const [userId, setUserId] = useState("");
+  const [userId, setUserId] = useState(initialUserId);
   const [delta, setDelta] = useState(10000);
   const [reason, setReason] = useState("");
   const [orderId, setOrderId] = useState("");
+
+  useEffect(() => {
+    if (initialUserId) setUserId(initialUserId);
+  }, [initialUserId]);
+
   async function load() {
     const [a, l] = await Promise.all([
       api<{ approvals: Approval[] }>("/api/admin/approvals"),
@@ -481,9 +934,11 @@ function Finance({ admin, run }: { admin: Admin; run: Run }) {
     setApprovals(a.approvals);
     setLedger(l);
   }
+
   useEffect(() => {
     void run(load);
   }, [run]);
+
   return (
     <>
       <section className="panel">
@@ -570,24 +1025,46 @@ function Finance({ admin, run }: { admin: Admin; run: Run }) {
             <strong>
               {a.kind} · {a.status}
             </strong>
-            <p className="muted">Người tạo: {a.requested_by}</p>
+            <p className="muted">
+              Người tạo: {a.requested_by}
+              {a.status === "PENDING" && a.requested_by === admin.email
+                ? " · Cần người quản trị thứ hai phê duyệt"
+                : ""}
+            </p>
             <pre className="code-block">
               {JSON.stringify(JSON.parse(a.body), null, 2)}
             </pre>
-            {a.status === "PENDING" && a.requested_by !== admin.email && (
-              <button
-                className="primary"
-                onClick={() =>
-                  void run(async () => {
-                    await api(`/api/admin/approvals/${a.id}/approve`, {
-                      body: {},
-                    });
-                    await load();
-                  })
-                }
-              >
-                Phê duyệt thay đổi
-              </button>
+            {a.status === "PENDING" && (
+              <div className="action-row">
+                {a.requested_by !== admin.email && (
+                  <button
+                    className="primary"
+                    onClick={() =>
+                      void run(async () => {
+                        await api(`/api/admin/approvals/${a.id}/approve`, {
+                          body: {},
+                        });
+                        await load();
+                      })
+                    }
+                  >
+                    Phê duyệt thay đổi
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    void run(async () => {
+                      await api(`/api/admin/approvals/${a.id}`, {
+                        method: "DELETE",
+                      });
+                      await load();
+                    })
+                  }
+                >
+                  Hủy yêu cầu
+                </button>
+              </div>
             )}
           </article>
         ))}
@@ -625,6 +1102,10 @@ function Finance({ admin, run }: { admin: Admin; run: Run }) {
     </>
   );
 }
+
+/**
+ * Biên tập nội dung trang CMS, quản lý các khối nội dung/liên kết/ảnh và lịch sử phiên bản.
+ */
 function Pages({ run }: { run: Run }) {
   const [pages, setPages] = useState<Page[]>([]);
   const [slug, setSlug] = useState("trang-chu");
@@ -636,17 +1117,32 @@ function Pages({ run }: { run: Run }) {
   const [versions, setVersions] = useState<
     { id: string; title: string; created_at: number }[]
   >([]);
+  const initializedRef = useRef(false);
+  const editorRef = useRef<HTMLElement | null>(null);
+
   async function load() {
-    setPages((await api<{ pages: Page[] }>("/api/admin/pages")).pages);
+    const loaded = (await api<{ pages: Page[] }>("/api/admin/pages")).pages;
+    setPages(loaded);
+    if (!initializedRef.current && loaded.length > 0) {
+      initializedRef.current = true;
+      const home = loaded.find((p) => p.slug === "trang-chu") ?? loaded[0];
+      setSlug(home.slug);
+      setTitle(home.title);
+      setDescription(home.description);
+      setBlocks(JSON.parse(home.blocks));
+    }
   }
+
   useEffect(() => {
     void run(load);
   }, [run]);
+
   function edit(page: Page) {
     setSlug(page.slug);
     setTitle(page.title);
     setDescription(page.description);
     setBlocks(JSON.parse(page.blocks));
+    focusPanel(editorRef.current);
     void run(async () =>
       setVersions(
         (
@@ -657,10 +1153,35 @@ function Pages({ run }: { run: Run }) {
       ),
     );
   }
+
+  function moveBlock(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= blocks.length) return;
+    const next = [...blocks];
+    const [item] = next.splice(index, 1);
+    next.splice(target, 0, item);
+    setBlocks(next);
+  }
+
   return (
     <>
       <section className="panel">
-        <h2>Nội dung website</h2>
+        <div className="panel-heading">
+          <h2>Nội dung website</h2>
+          <button
+            type="button"
+            onClick={() => {
+              setSlug("");
+              setTitle("");
+              setDescription("");
+              setBlocks([{ type: "text", heading: "", text: "" }]);
+              setVersions([]);
+              focusPanel(editorRef.current);
+            }}
+          >
+            Tạo trang mới
+          </button>
+        </div>
         <div className="stack">
           {pages.map((p) => (
             <div className="balance-strip" key={p.slug}>
@@ -687,12 +1208,30 @@ function Pages({ run }: { run: Run }) {
                 >
                   Xuất bản bản nháp
                 </button>
+                {p.slug !== "trang-chu" && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void run(async () => {
+                        await api(`/api/admin/pages/${p.slug}`, {
+                          method: "DELETE",
+                        });
+                        if (slug === p.slug) {
+                          setSlug("trang-chu");
+                        }
+                        await load();
+                      })
+                    }
+                  >
+                    Xóa trang
+                  </button>
+                )}
               </div>
             </div>
           ))}
         </div>
       </section>
-      <section className="panel">
+      <section className="panel panel-focus-target" ref={editorRef}>
         <h2>Biên tập page</h2>
         <form
           onSubmit={(e) => {
@@ -826,12 +1365,24 @@ function Pages({ run }: { run: Run }) {
                   </label>
                 </>
               )}
-              <button
-                type="button"
-                onClick={() => setBlocks(blocks.filter((_, n) => n !== i))}
-              >
-                Xóa khối
-              </button>
+              <div className="action-row">
+                {i > 0 && (
+                  <button type="button" onClick={() => moveBlock(i, -1)}>
+                    ↑ Lên
+                  </button>
+                )}
+                {i < blocks.length - 1 && (
+                  <button type="button" onClick={() => moveBlock(i, 1)}>
+                    ↓ Xuống
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setBlocks(blocks.filter((_, n) => n !== i))}
+                >
+                  Xóa khối
+                </button>
+              </div>
             </div>
           ))}
           <div className="action-row">
@@ -842,6 +1393,17 @@ function Pages({ run }: { run: Run }) {
               }
             >
               Thêm khối nội dung
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setBlocks([
+                  ...blocks,
+                  { type: "link", label: "", url: "https://" },
+                ])
+              }
+            >
+              Thêm khối liên kết
             </button>
             <button className="primary">Lưu bản nháp</button>
           </div>
@@ -921,6 +1483,7 @@ function Pages({ run }: { run: Run }) {
     </>
   );
 }
+
 function ReadonlyPanel({ path, run }: { path: string; run: Run }) {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   useEffect(() => {
@@ -975,6 +1538,7 @@ function ReadonlyPanel({ path, run }: { path: string; run: Run }) {
     </section>
   );
 }
+
 function Overview({ run }: { run: Run }) {
   const [data, setData] = useState<{
     payments: {
@@ -1031,16 +1595,31 @@ function Overview({ run }: { run: Run }) {
     </>
   );
 }
+
+/**
+ * Trang quản trị trung tâm điều phối tất cả các phân hệ Admin của Tiệm Digital.
+ */
 export function AdminPage() {
   const [admin, setAdmin] = useState<Admin | null>(null);
-  const [tab, setTab] = useState<Tab>(() => { const path = window.location.pathname.split('/')[2]; return path === 'mmo' ? 'products' : labels.some(([id]) => id === path) ? path as Tab : 'overview'; });
-  const [orderSection, setOrderSection] = useState<'customers' | 'purchases' | 'warranty'>('customers');
+  const [tab, setTab] = useState<Tab>(() => {
+    const path = window.location.pathname.split("/")[2];
+    return path === "mmo"
+      ? "products"
+      : labels.some(([id]) => id === path)
+        ? (path as Tab)
+        : "overview";
+  });
+  const [orderSection, setOrderSection] = useState<
+    "customers" | "purchases" | "warranty"
+  >("customers");
+  const [prefillUserId, setPrefillUserId] = useState("");
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState("session");
   const [adminUrl, setAdminUrl] = useState("/admin");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+
   const run = useCallback(async (task: () => Promise<void>) => {
     setBusy(true);
     setError("");
@@ -1054,16 +1633,30 @@ export function AdminPage() {
       setBusy(false);
     }
   }, []);
+
   const loadAdmin = useCallback(async () => {
-    try { const identity = await api<Admin>('/api/admin/me'); setError(''); setAdmin(identity); }
-    catch (error) { if ((error as Error & { status?: number }).status !== 401) setError((error as Error).message); }
-    finally { setLoading(false); }
+    try {
+      const identity = await api<Admin>("/api/admin/me");
+      setError("");
+      setAdmin(identity);
+    } catch (error) {
+      if ((error as Error & { status?: number }).status !== 401)
+        setError((error as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
   useEffect(() => {
     void loadAdmin();
-    api<{ adminAuthMode: string; adminUrl: string }>('/api/public/config')
-      .then(config => { setAuthMode(config.adminAuthMode); setAdminUrl(config.adminUrl); }).catch(() => {});
+    api<{ adminAuthMode: string; adminUrl: string }>("/api/public/config")
+      .then((config) => {
+        setAuthMode(config.adminAuthMode);
+        setAdminUrl(config.adminUrl);
+      })
+      .catch(() => {});
   }, [loadAdmin]);
+
   return (
     <div className="platform platform-shell">
       <header className="topbar">
@@ -1074,31 +1667,62 @@ export function AdminPage() {
           <span>
             {admin && `${admin.username ?? admin.email} · ${admin.role}`}
           </span>
-          {admin && (authMode === 'access' ? <a href="/cdn-cgi/access/logout">Đăng xuất Access</a> : <button onClick={() => void run(async () => { await api('/api/auth/sign-out', { body: {} }); setAdmin(null); })}>Đăng xuất</button>)}
+          {admin &&
+            (authMode === "access" ? (
+              <a href="/cdn-cgi/access/logout">Đăng xuất Access</a>
+            ) : (
+              <button
+                onClick={() =>
+                  void run(async () => {
+                    await api("/api/auth/sign-out", { body: {} });
+                    setAdmin(null);
+                  })
+                }
+              >
+                Đăng xuất
+              </button>
+            ))}
         </div>
       </header>
       {!admin ? (
         <div>
-          {loading ? <section className="auth-card"><p role="status">Đang kiểm tra phiên đăng nhập…</p></section> : authMode === 'session' ? <AuthForm admin onLogin={() => void loadAdmin()} /> : <section className="auth-card"><h1>Quản trị cửa hàng</h1><a href={adminUrl}>Đăng nhập qua Cloudflare Access</a></section>}
+          {loading ? (
+            <section className="auth-card">
+              <p role="status">Đang kiểm tra phiên đăng nhập…</p>
+            </section>
+          ) : authMode === "session" ? (
+            <AuthForm admin onLogin={() => void loadAdmin()} />
+          ) : (
+            <section className="auth-card">
+              <h1>Quản trị cửa hàng</h1>
+              <a href={adminUrl}>Đăng nhập qua Cloudflare Access</a>
+            </section>
+          )}
           {error && <p className="notice error">{error}</p>}
         </div>
       ) : (
         <div className="workspace">
           <nav className="navigation" aria-label="Quản trị">
-            {labels.filter(([id]) => !["providers", "purchases"].includes(id) || admin.role === "owner").map(([id, label]) => (
-              <button
-                key={id}
-                className={tab === id ? "active" : ""}
-                onClick={() => {
-                  setTab(id);
-                  window.history.replaceState(null, "", `/admin/${id}`);
-                  setError("");
-                  setMessage("");
-                }}
-              >
-                {label}
-              </button>
-            ))}
+            {labels
+              .filter(
+                ([id]) =>
+                  !["providers", "purchases"].includes(id) ||
+                  admin.role === "owner",
+              )
+              .map(([id, label]) => (
+                <button
+                  key={id}
+                  className={tab === id ? "active" : ""}
+                  onClick={() => {
+                    setTab(id);
+                    window.history.replaceState(null, "", `/admin/${id}`);
+                    setError("");
+                    setMessage("");
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
           </nav>
           <main className="content">
             <span className="eyebrow">Tiệm Digital · Khu vực quản trị</span>
@@ -1119,21 +1743,93 @@ export function AdminPage() {
               </p>
             )}
             {tab === "overview" && <Overview run={run} />}{" "}
-            {tab === "customers" && <Customers run={run} />}{" "}
-            {tab === "orders" && <>
-              {admin.role === 'owner' && <div className="action-row admin-section-nav" aria-label="Các loại đơn hàng">{([['customers', 'Đơn khách & giao hàng'], ['purchases', 'Đơn nhập NCC'], ['warranty', 'Bảo hành']] as const).map(([id, label]) => <button key={id} className={orderSection === id ? 'primary' : ''} onClick={() => setOrderSection(id)}>{label}</button>)}</div>}
-              {(admin.role !== 'owner' || orderSection === 'customers') && <>{['owner', 'support', 'auditor'].includes(admin.role) && <FulfillmentAlerts run={run} canResolve={admin.role === 'owner'} />}<Orders run={run} /></>}
-              {admin.role === 'owner' && orderSection === 'purchases' && <PurchaseOrders run={run} ownerId={admin.userId ?? admin.email} />}
-              {admin.role === 'owner' && orderSection === 'warranty' && <BusinessFinance run={run} warrantyOnly />}
-            </>}{" "}
-            {tab === "purchases" && admin.role === "owner" && <PurchaseOrders run={run} ownerId={admin.userId ?? admin.email} />}{" "}
-            {tab === "finance" && <>{admin.role === 'owner' && <BusinessFinance run={run} />}<Finance admin={admin} run={run} /></>}{" "}
-            {tab === "payment" && <PaymentSettings run={run} />}{" "}
-            {tab === "products" && (admin.role === 'owner' ? <CatalogProducts run={run} /> : <ReadOnlyProducts run={run} />)}{" "}
+            {tab === "customers" && (
+              <Customers
+                run={run}
+                onAdjustWallet={(customerId) => {
+                  setPrefillUserId(customerId);
+                  setTab("finance");
+                  window.history.replaceState(null, "", "/admin/finance");
+                }}
+              />
+            )}{" "}
+            {tab === "orders" && (
+              <>
+                {admin.role === "owner" && (
+                  <div
+                    className="action-row admin-section-nav"
+                    aria-label="Các loại đơn hàng"
+                  >
+                    {(
+                      [
+                        ["customers", "Đơn khách & giao hàng"],
+                        ["purchases", "Đơn nhập NCC"],
+                        ["warranty", "Bảo hành"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        className={orderSection === id ? "primary" : ""}
+                        onClick={() => setOrderSection(id)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {(admin.role !== "owner" || orderSection === "customers") && (
+                  <>
+                    {["owner", "support", "auditor"].includes(admin.role) && (
+                      <FulfillmentAlerts
+                        run={run}
+                        canResolve={admin.role === "owner"}
+                      />
+                    )}
+                    <Orders run={run} />
+                  </>
+                )}
+                {admin.role === "owner" && orderSection === "purchases" && (
+                  <PurchaseOrders
+                    run={run}
+                    ownerId={admin.userId ?? admin.email}
+                  />
+                )}
+                {admin.role === "owner" && orderSection === "warranty" && (
+                  <BusinessFinance run={run} warrantyOnly />
+                )}
+              </>
+            )}{" "}
+            {tab === "purchases" && admin.role === "owner" && (
+              <PurchaseOrders
+                run={run}
+                ownerId={admin.userId ?? admin.email}
+              />
+            )}{" "}
+            {tab === "finance" && (
+              <>
+                {admin.role === "owner" && <BusinessFinance run={run} />}
+                <Finance
+                  admin={admin}
+                  run={run}
+                  initialUserId={prefillUserId}
+                />
+              </>
+            )}{" "}
+            {tab === "payment" && (
+              <PaymentSettings admin={admin} run={run} />
+            )}{" "}
+            {tab === "products" &&
+              (admin.role === "owner" ? (
+                <CatalogProducts run={run} />
+              ) : (
+                <ReadOnlyProducts run={run} />
+              ))}{" "}
             {tab === "pages" && <Pages run={run} />}{" "}
             {tab === "telegram" && <ReadonlyPanel path="status" run={run} />}{" "}
             {tab === "audit" && <ReadonlyPanel path="audit" run={run} />}
-            {tab === 'providers' && admin.role === 'owner' && <Providers run={run} />}
+            {tab === "providers" && admin.role === "owner" && (
+              <Providers run={run} />
+            )}
           </main>
         </div>
       )}

@@ -21,7 +21,7 @@ export async function placeOrder(
   session: ProviderSession,
   orders: OrderStore,
   userId: string,
-  input: PlaceOrderInput
+  input: PlaceOrderInput,
 ): Promise<PlaceOrderOutcome> {
   const quantity = Number(input.quantity) || 1;
   const result: PlaceOrderResult = await session.placeOrder({
@@ -52,13 +52,12 @@ export async function placeOrder(
     total_price: Number(input.total_price) || 0,
     currency: "USD",
     status,
-    delivered_data: result.delivered ? JSON.stringify(result.delivered) : (result.data ? JSON.stringify(result.data) : null),
+    delivered_data: result.delivered ? JSON.stringify(result.delivered) : result.data ? JSON.stringify(result.data) : null,
     delivered_items: JSON.stringify(deliveredItems),
     customer_email: input.email || null,
     response_raw: JSON.stringify(result.data),
   };
 
-  // The vendor already charged us: retry once, then report instead of hiding a lost record.
   let persisted = false;
   for (let attempt = 0; attempt < 2 && !persisted; attempt++) {
     try {
@@ -92,14 +91,16 @@ export function toOrderView(row: OrderRow, options?: { includeRaw?: boolean }) {
   const { delivered_data, response_raw, delivered_items: _stored, ...rest } = row;
   const status = normalizeStatus(row.status);
   const linkedTxId = (row.linked_transaction_id as number | undefined) ?? null;
+  const delivered = deliveredItemsOfRow(row);
   const view: Record<string, any> = {
     ...rest,
     status,
     linked_transaction_id: linkedTxId,
     is_sold: Boolean(linkedTxId),
-    delivered_items: deliveredItemsOfRow(row),
+    delivered_items: delivered,
     error_message: status === "failed" ? errorMessageOf(response_raw) : null,
     can_check_status: supportsStatusCheck(row.provider_id),
+    can_import_to_stock: status === "completed" && delivered.length > 0 && !linkedTxId,
   };
   if (options?.includeRaw) {
     view.response_raw = response_raw;
@@ -162,7 +163,7 @@ export interface SyncAllResult {
 export async function syncAllProviders(stores: MmoStores): Promise<SyncAllResult> {
   const providers = await stores.providers.listProviders();
   const activeWithKeys = providers.filter(
-    (p) => Boolean(p.is_active) && typeof p.api_key === "string" && p.api_key.trim().length > 0
+    (p) => Boolean(p.is_active) && typeof p.api_key === "string" && p.api_key.trim().length > 0,
   );
 
   let total_synced = 0;
@@ -188,7 +189,15 @@ export async function syncAllProviders(stores: MmoStores): Promise<SyncAllResult
 }
 
 export type RefreshOutcome =
-  | { ok: true; order_id: string; provider_order_id: string; status: OrderStatus; raw_status: string; error_message: string | null; data: unknown }
+  | {
+      ok: true;
+      order_id: string;
+      provider_order_id: string;
+      status: OrderStatus;
+      raw_status: string;
+      error_message: string | null;
+      data: unknown;
+    }
   | { ok: false; statusCode: 400 | 404; message: string };
 
 // Provider-level problems surface as SessionError from openSession/checkStatus.
@@ -201,7 +210,6 @@ export async function refreshStatus(stores: MmoStores, orderId: string): Promise
   const result = await session.checkStatus(String(order.provider_order_id));
   const status = normalizeStatus(result.status || order.status);
 
-  // The status payload is added next to the purchase response instead of replacing it.
   const original = parseJson(order.response_raw);
   const merged = { ...(isObject(original) ? original : {}), status_check: result.data ?? result };
   await stores.orders.updateOrder(orderId, { status, response_raw: JSON.stringify(merged) });

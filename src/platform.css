@@ -487,3 +487,6 @@
 .platform .admin-block { display: block; }
 .platform .action-row { flex-wrap: wrap; }
 .platform input[type="checkbox"] { width: auto; }
+
+.platform tr.selected-row { background: rgba(15, 118, 110, 0.08); }
+.platform .panel-focus-target { scroll-margin-top: 24px; }

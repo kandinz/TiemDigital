@@ -58,7 +58,7 @@ export function computeWarrantyExpireDate(startDate: string, period: string): st
 export function computeWarrantyStatus(
   period: string,
   expireDateStr: string | null,
-  rawStatus?: string
+  rawStatus?: string,
 ): { status: "none" | "lifetime" | "valid" | "expiring_soon" | "expired" | "void"; daysLeft: number | null } {
   if (rawStatus === "void") return { status: "void", daysLeft: null };
   if (!period || period === "none") return { status: "none", daysLeft: null };
@@ -86,7 +86,7 @@ function formatTransaction(row: MmoTransactionRow) {
   const { status, daysLeft } = computeWarrantyStatus(
     row.warranty_period,
     row.warranty_expire_date,
-    row.warranty_status
+    row.warranty_status,
   );
 
   return {
@@ -114,12 +114,10 @@ function formatTransaction(row: MmoTransactionRow) {
 
 /**
  * Lấy danh sách giao dịch MMO theo bộ lọc kỳ, từ khóa, loại và bảo hành
- * // Bước 1: Trích xuất thông tin người dùng từ context bảo mật
- * // Bước 2: Thiết lập điều kiện lọc kỳ thời gian, loại giao dịch và từ khóa tìm kiếm
- * // Bước 3: Truy vấn danh sách giao dịch từ Cloudflare D1
  */
 app.get("/transactions", async (c) => {
   const user = c.get("user")!;
+  const isAdmin = user.role === "admin";
   const period = c.req.query("period") || "all";
   const date = c.req.query("date");
   const month = c.req.query("month");
@@ -127,11 +125,13 @@ app.get("/transactions", async (c) => {
   const fromDate = c.req.query("from_date");
   const toDate = c.req.query("to_date");
   const type = c.req.query("type");
-  const search = c.req.query("q")?.trim();
+  const search = (c.req.query("q") || c.req.query("search"))?.trim();
   const warrantyFilter = c.req.query("warranty");
 
-  let sql = "SELECT * FROM mmo_transactions WHERE user_id = ? AND is_deleted = 0";
-  const params: any[] = [user.id];
+  let sql = isAdmin
+    ? "SELECT * FROM mmo_transactions WHERE is_deleted = 0"
+    : "SELECT * FROM mmo_transactions WHERE user_id = ? AND is_deleted = 0";
+  const params: any[] = isAdmin ? [] : [user.id];
 
   if (period === "day" && date) {
     sql += " AND date = ?";
@@ -175,9 +175,7 @@ app.get("/transactions", async (c) => {
 });
 
 /**
- * Thêm mới giao dịch MMO (Bán hàng hoặc Chi phí khác)
- * // Bước 1: Kiểm tra tính hợp lệ của dữ liệu đầu vào (product_name, type, cost_price, sale_price)
- * // Bước 2: Tự động tính hạn bảo hành và lưu trữ vào Cloudflare D1
+ * Thêm mới giao dịch MMO (Bán hàng, Nhập hàng hoặc Chi phí khác)
  */
 app.post("/transactions", async (c) => {
   const user = c.get("user")!;
@@ -208,7 +206,7 @@ app.post("/transactions", async (c) => {
   const expireDate = computeWarrantyExpireDate(txDate, warranty_period);
   if (purchase_order_id) {
     const existingOrderLink = await c.env.DB.prepare(
-      "SELECT id FROM mmo_transactions WHERE purchase_order_id = ? AND is_deleted = 0"
+      "SELECT id FROM mmo_transactions WHERE purchase_order_id = ? AND is_deleted = 0",
     )
       .bind(String(purchase_order_id).trim())
       .first<{ id: number }>();
@@ -219,7 +217,7 @@ app.post("/transactions", async (c) => {
           success: false,
           message: "Đơn mua NCC này đã được liên kết với một đơn bán khác",
         },
-        400
+        400,
       );
     }
   }
@@ -233,7 +231,7 @@ app.post("/transactions", async (c) => {
         cost_price, sale_price, delivered_data, warranty_period,
         warranty_start_date, warranty_expire_date, warranty_note,
         warranty_status, purchase_order_id, is_deleted, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'valid', ?, 0, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'valid', ?, 0, ?, ?)`,
     )
       .bind(
         user.id,
@@ -250,7 +248,7 @@ app.post("/transactions", async (c) => {
         warranty_note ? String(warranty_note).trim() : null,
         purchase_order_id || null,
         now,
-        now
+        now,
       )
       .run();
 
@@ -267,12 +265,11 @@ app.post("/transactions", async (c) => {
 });
 
 /**
- * Cập nhật thông tin chi tiết giao dịch (ghi chú bảo hành, đổi tài khoản, điều chỉnh giá)
- * // Bước 1: Kiểm tra quyền sở hữu bản ghi của user hiện tại
- * // Bước 2: Cập nhật các trường thông tin thay đổi vào D1
+ * Cập nhật thông tin chi tiết giao dịch (loại giao dịch, ghi chú bảo hành, đổi tài khoản, điều chỉnh giá)
  */
 app.put("/transactions/:id", async (c) => {
   const user = c.get("user")!;
+  const isAdmin = user.role === "admin";
   const id = Number(c.req.param("id"));
 
   if (!id) {
@@ -281,6 +278,7 @@ app.put("/transactions/:id", async (c) => {
 
   const body = await c.req.json().catch(() => ({}));
   const {
+    type,
     date,
     product_name,
     customer_info,
@@ -293,16 +291,26 @@ app.put("/transactions/:id", async (c) => {
   } = body;
 
   try {
-    const existing = await c.env.DB.prepare(
-      "SELECT * FROM mmo_transactions WHERE id = ? AND user_id = ? AND is_deleted = 0"
-    )
-      .bind(id, user.id)
-      .first<MmoTransactionRow>();
+    const existing = await (isAdmin
+      ? c.env.DB.prepare("SELECT * FROM mmo_transactions WHERE id = ? AND is_deleted = 0").bind(id)
+      : c.env.DB.prepare("SELECT * FROM mmo_transactions WHERE id = ? AND user_id = ? AND is_deleted = 0").bind(
+          id,
+          user.id,
+        )
+    ).first<MmoTransactionRow>();
 
     if (!existing) {
       return c.json({ success: false, message: "Transaction not found or access denied" }, 404);
     }
 
+    const txType =
+      type !== undefined
+        ? type === "expense"
+          ? "expense"
+          : type === "purchase"
+            ? "purchase"
+            : "sale"
+        : existing.type;
     const txDate = date !== undefined ? String(date).trim() : existing.date;
     const pName = product_name !== undefined ? String(product_name).trim() : existing.product_name;
     const cInfo = customer_info !== undefined ? String(customer_info).trim() : existing.customer_info;
@@ -318,15 +326,12 @@ app.put("/transactions/:id", async (c) => {
       const candidate = body.purchase_order_id ? String(body.purchase_order_id).trim() : null;
       if (candidate && candidate !== existing.purchase_order_id) {
         const conflict = await c.env.DB.prepare(
-          "SELECT id FROM mmo_transactions WHERE purchase_order_id = ? AND id != ? AND is_deleted = 0"
+          "SELECT id FROM mmo_transactions WHERE purchase_order_id = ? AND id != ? AND is_deleted = 0",
         )
           .bind(candidate, id)
           .first<{ id: number }>();
         if (conflict) {
-          return c.json(
-            { success: false, message: "Đơn mua NCC này đã được liên kết với một đơn bán khác" },
-            400
-          );
+          return c.json({ success: false, message: "Đơn mua NCC này đã được liên kết với một đơn bán khác" }, 400);
         }
       }
       pOrderId = candidate;
@@ -337,13 +342,14 @@ app.put("/transactions/:id", async (c) => {
 
     await c.env.DB.prepare(
       `UPDATE mmo_transactions
-       SET date = ?, product_name = ?, customer_info = ?, cost_price = ?,
+       SET type = ?, date = ?, product_name = ?, customer_info = ?, cost_price = ?,
            sale_price = ?, delivered_data = ?, warranty_period = ?,
            warranty_expire_date = ?, warranty_note = ?, warranty_status = ?,
            purchase_order_id = ?, updated_at = ?
-       WHERE id = ? AND user_id = ?`
+       WHERE id = ?`,
     )
       .bind(
+        txType,
         txDate,
         pName,
         cInfo,
@@ -357,7 +363,6 @@ app.put("/transactions/:id", async (c) => {
         pOrderId,
         now,
         id,
-        user.id
       )
       .run();
 
@@ -372,6 +377,7 @@ app.put("/transactions/:id", async (c) => {
  */
 app.delete("/transactions/:id", async (c) => {
   const user = c.get("user")!;
+  const isAdmin = user.role === "admin";
   const id = Number(c.req.param("id"));
 
   if (!id) {
@@ -381,13 +387,18 @@ app.delete("/transactions/:id", async (c) => {
   const now = new Date().toISOString();
 
   try {
-    const res = await c.env.DB.prepare(
-      `UPDATE mmo_transactions
-       SET is_deleted = 1, updated_at = ?
-       WHERE id = ? AND user_id = ? AND is_deleted = 0`
-    )
-      .bind(now, id, user.id)
-      .run();
+    const res = await (isAdmin
+      ? c.env.DB.prepare(
+          `UPDATE mmo_transactions
+           SET is_deleted = 1, updated_at = ?
+           WHERE id = ? AND is_deleted = 0`,
+        ).bind(now, id)
+      : c.env.DB.prepare(
+          `UPDATE mmo_transactions
+           SET is_deleted = 1, updated_at = ?
+           WHERE id = ? AND user_id = ? AND is_deleted = 0`,
+        ).bind(now, id, user.id)
+    ).run();
 
     if (res.meta.changes === 0) {
       return c.json({ success: false, message: "Transaction not found or already deleted" }, 404);
@@ -401,12 +412,10 @@ app.delete("/transactions/:id", async (c) => {
 
 /**
  * Thống kê tổng hợp số liệu kinh doanh MMO (KPI Summary)
- * // Bước 1: Trích xuất các tham số kỳ lọc từ query
- * // Bước 2: Tính tổng doanh thu (sale_price đơn bán), tổng giá vốn (cost_price đơn bán),
- * //         tổng chi phí khác (cost_price đơn expense), lợi nhuận ròng và tỷ suất
  */
 app.get("/reports/summary", async (c) => {
   const user = c.get("user")!;
+  const isAdmin = user.role === "admin";
   const period = c.req.query("period") || "month";
   const date = c.req.query("date");
   const month = c.req.query("month");
@@ -423,9 +432,9 @@ app.get("/reports/summary", async (c) => {
       COUNT(CASE WHEN type = 'expense' THEN 1 END) as count_expenses,
       COUNT(id) as total_count
     FROM mmo_transactions
-    WHERE user_id = ? AND is_deleted = 0
+    WHERE ${isAdmin ? "is_deleted = 0" : "user_id = ? AND is_deleted = 0"}
   `;
-  const params: any[] = [user.id];
+  const params: any[] = isAdmin ? [] : [user.id];
 
   if (period === "day" && date) {
     sql += " AND date = ?";
@@ -486,6 +495,7 @@ interface MonthlyRow {
  */
 app.get("/reports/monthly", async (c) => {
   const user = c.get("user")!;
+  const isAdmin = user.role === "admin";
   const currentYear = new Date().getFullYear();
   const yearQuery = c.req.query("year");
   const year = yearQuery && /^\d{4}$/.test(yearQuery) ? parseInt(yearQuery, 10) : currentYear;
@@ -498,13 +508,16 @@ app.get("/reports/monthly", async (c) => {
       SUM(CASE WHEN type = 'expense' THEN cost_price ELSE 0 END) as other_expense,
       COUNT(CASE WHEN type = 'sale' THEN 1 END) as count_sales
     FROM mmo_transactions
-    WHERE user_id = ? AND is_deleted = 0 AND date LIKE ?
+    WHERE ${isAdmin ? "is_deleted = 0 AND date LIKE ?" : "user_id = ? AND is_deleted = 0 AND date LIKE ?"}
     GROUP BY strftime('%m', date)
     ORDER BY month_num ASC
   `;
 
   try {
-    const res = await c.env.DB.prepare(sql).bind(user.id, `${year}-%`).all<MonthlyRow>();
+    const res = await (isAdmin
+      ? c.env.DB.prepare(sql).bind(`${year}-%`)
+      : c.env.DB.prepare(sql).bind(user.id, `${year}-%`)
+    ).all<MonthlyRow>();
     const rowMap = new Map<number, { revenue: number; cost: number; other_expense: number; count_sales: number }>();
 
     for (const r of res.results || []) {
@@ -542,7 +555,7 @@ app.get("/reports/monthly", async (c) => {
         shortLabel: `T${monthIndex}`,
         monthKey: `${year}-${String(monthIndex).padStart(2, "0")}`,
         revenue: rev,
-        cost,
+        cost: cost,
         otherExpense: otherExp,
         totalExpense: totalExp,
         profit,
@@ -577,14 +590,15 @@ app.get("/reports/monthly", async (c) => {
  */
 app.get("/warranty/lookup", async (c) => {
   const user = c.get("user")!;
-  const search = c.req.query("q")?.trim();
+  const isAdmin = user.role === "admin";
+  const search = (c.req.query("q") || c.req.query("search"))?.trim();
   const statusFilter = c.req.query("status") || "all";
 
   let sql = `
     SELECT * FROM mmo_transactions
-    WHERE user_id = ? AND is_deleted = 0 AND type = 'sale' AND warranty_period != 'none'
+    WHERE ${isAdmin ? "is_deleted = 0" : "user_id = ? AND is_deleted = 0"} AND type = 'sale' AND warranty_period != 'none'
   `;
-  const params: any[] = [user.id];
+  const params: any[] = isAdmin ? [] : [user.id];
 
   if (search) {
     sql += " AND (product_name LIKE ? OR customer_info LIKE ? OR delivered_data LIKE ? OR warranty_note LIKE ?)";
@@ -596,27 +610,28 @@ app.get("/warranty/lookup", async (c) => {
 
   try {
     const res = await c.env.DB.prepare(sql).bind(...params).all<MmoTransactionRow>();
-    let list = (res.results || []).map(formatTransaction);
-
-    if (statusFilter && statusFilter !== "all") {
-      list = list.filter((item) => item.warrantyStatus === statusFilter);
-    }
+    const allItems = (res.results || []).map(formatTransaction);
 
     // Phân loại số lượng theo từng nhóm để trả về badges thống kê
     const counts = {
-      all: list.length,
+      all: allItems.length,
       valid: 0,
       expiringSoon: 0,
       expired: 0,
       lifetime: 0,
     };
 
-    for (const item of list) {
+    for (const item of allItems) {
       if (item.warrantyStatus === "valid") counts.valid++;
       else if (item.warrantyStatus === "expiring_soon") counts.expiringSoon++;
       else if (item.warrantyStatus === "expired") counts.expired++;
       else if (item.warrantyStatus === "lifetime") counts.lifetime++;
     }
+
+    const list =
+      statusFilter && statusFilter !== "all"
+        ? allItems.filter((item) => item.warrantyStatus === statusFilter)
+        : allItems;
 
     return c.json({ success: true, list, counts });
   } catch (err: any) {

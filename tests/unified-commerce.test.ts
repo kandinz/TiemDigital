@@ -654,3 +654,156 @@ it("keeps successful supplier delivery when its ledger write fails and lets admi
     await env.DB.prepare("DROP TRIGGER fixture_supplier_ledger_failure").run();
   }
 });
+
+it("supports complete admin CRUD for warehouse inventory, product lifecycle, synced supplier orders, customers, orders, approvals, and pages", async () => {
+  const created = await body("/api/admin/products", owner, {
+    name: "CRUD Stock Product",
+    category: "Test",
+    source: "stock",
+    selling_price: 45000,
+    active: true,
+    in_stock: true,
+  });
+  const pid = created.id as number;
+
+  await body(`/api/admin/products/${pid}/inventory`, owner, {
+    values: ["crud-key-1", "crud-key-2"],
+  });
+  const invList = await body(`/api/admin/products/${pid}/inventory`, owner);
+  expect(invList.items).toHaveLength(2);
+  expect(invList.items.map((i: any) => i.value)).toEqual(
+    expect.arrayContaining(["crud-key-1", "crud-key-2"]),
+  );
+
+  const firstItem = invList.items[0];
+  await body(
+    `/api/admin/products/${pid}/inventory/${firstItem.id}`,
+    owner,
+    { value: "crud-key-1-edited" },
+    "PUT",
+  );
+  const afterEdit = await body(`/api/admin/products/${pid}/inventory`, owner);
+  expect(afterEdit.items.find((i: any) => i.id === firstItem.id)?.value).toBe(
+    "crud-key-1-edited",
+  );
+
+  for (const item of afterEdit.items) {
+    await body(
+      `/api/admin/products/${pid}/inventory/${item.id}`,
+      owner,
+      undefined,
+      "DELETE",
+    );
+  }
+  expect(
+    (await body(`/api/admin/products/${pid}/inventory`, owner)).items,
+  ).toHaveLength(0);
+
+  await body(`/api/admin/products/${pid}`, owner, undefined, "DELETE");
+  await body(
+    `/api/admin/products/${pid}/status`,
+    owner,
+    { active: true, in_stock: true },
+    "PATCH",
+  );
+  await body(
+    `/api/admin/products/${pid}?permanent=1`,
+    owner,
+    undefined,
+    "DELETE",
+  );
+  expect(
+    (await body("/api/admin/products", owner)).products.some(
+      (p: any) => p.id === pid,
+    ),
+  ).toBe(false);
+
+  const syncStock = await body("/api/admin/products", owner, {
+    name: "Sync Target Stock",
+    source: "stock",
+    selling_price: 55000,
+  });
+  await env.DB.prepare(
+    "INSERT INTO mmo_orders(id,user_id,provider_id,provider_order_id,product_id,product_name,quantity,unit_price,total_price,currency,status,delivered_items,created_at,updated_at) VALUES('mmo_sync_test','system_sync','prodseller','ps-sync-1','sku','Synced SKU',1,1,1,'USD','completed',?,datetime('now'),datetime('now'))",
+  )
+    .bind(JSON.stringify(["synced-key-alpha"]))
+    .run();
+  const importedSync = await body(
+    "/api/admin/supplier-purchases/mmo_sync_test/import",
+    owner,
+    { productId: syncStock.id },
+  );
+  expect(importedSync).toMatchObject({ added: 1, total: 1 });
+
+  const custDetail = await body(`/api/admin/customers/${buyerId}`, owner);
+  expect(custDetail.customer.id).toBe(buyerId);
+  await body(
+    `/api/admin/customers/${buyerId}`,
+    owner,
+    { name: "Updated Buyer Name", phone: "0912345678" },
+    "PUT",
+  );
+  const custSearch = await body(
+    "/api/admin/customers?q=0912345678",
+    owner,
+  );
+  expect(custSearch.customers.some((c: any) => c.id === buyerId)).toBe(true);
+
+  const unpaidOrder = await body("/api/orders", buyer, {
+    items: [{ productId: syncStock.id, quantity: 1 }],
+    customer: { fullName: "Unpaid Buyer" },
+  });
+  expect(
+    (await body(`/api/admin/orders?q=${unpaidOrder.id}&status=UNPAID`, owner))
+      .orders,
+  ).toHaveLength(1);
+  await body(
+    `/api/admin/orders/${unpaidOrder.id}`,
+    owner,
+    undefined,
+    "DELETE",
+  );
+  expect(
+    (await body(`/api/admin/orders?q=${unpaidOrder.id}`, owner)).orders,
+  ).toHaveLength(0);
+
+  const pendingApproval = await body("/api/admin/approvals", owner, {
+    kind: "WALLET_ADJUSTMENT",
+    userId: buyerId,
+    delta: 20000,
+    reason: "Test cancel approval",
+  });
+  await body(
+    `/api/admin/approvals/${pendingApproval.id}`,
+    owner,
+    undefined,
+    "DELETE",
+  );
+  expect(
+    (await body("/api/admin/approvals", owner)).approvals.some(
+      (a: any) => a.id === pendingApproval.id,
+    ),
+  ).toBe(false);
+
+  await body("/api/admin/pages", owner, {
+    slug: "trang-thu-nghiem",
+    title: "Trang thử nghiệm",
+    description: "Mô tả",
+    blocks: [{ type: "text", heading: "H1", text: "Nội dung" }],
+  });
+  expect(
+    (await call("/api/admin/pages/trang-chu", owner, undefined, "DELETE"))
+      .status,
+  ).toBe(409);
+  await body(
+    "/api/admin/pages/trang-thu-nghiem",
+    owner,
+    undefined,
+    "DELETE",
+  );
+  expect(
+    (await body("/api/admin/pages", owner)).pages.some(
+      (p: any) => p.slug === "trang-thu-nghiem",
+    ),
+  ).toBe(false);
+});
