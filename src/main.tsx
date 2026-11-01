@@ -11,9 +11,9 @@ const ContentPage = lazy(() => import('./pages/ContentPage').then((module) => ({
 const path = window.location.pathname;
 try {
   const theme = localStorage.getItem('tiem_digital_theme');
-  document.documentElement.classList.toggle('dark', theme ? theme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.classList.toggle('dark', theme === 'dark');
 } catch {
-  document.documentElement.classList.toggle('dark', window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.classList.remove('dark');
 }
 const page = path === '/account' ? <AccountPage /> : path === '/admin' || path.startsWith('/admin/') ? <AdminPage /> : path.startsWith('/pages/') ? <ContentPage slug={path.slice(7)} /> : <App />;
 

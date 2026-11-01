@@ -11,7 +11,7 @@ const products = [
 const customer = { id: 'browser-test', name: 'Khách kiểm thử', email: 'browser@example.com' };
 
 (async () => {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined });
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
@@ -84,19 +84,18 @@ const customer = { id: 'browser-test', name: 'Khách kiểm thử', email: 'brow
     await page.getByRole('combobox').selectOption('default');
     await page.getByRole('button', { name: 'Xem chi tiết Claude API 50M Tokens 2day' }).click();
     await page.getByRole('spinbutton').fill('2');
-    await page.getByRole('dialog').getByRole('button', { name: 'Mua ngay', exact: true }).click();
+    await page.getByRole('main').getByRole('button', { name: 'Mua ngay', exact: true }).click();
     await page.getByRole('link', { name: 'Đăng nhập để tiếp tục' }).click();
     await page.getByRole('textbox', { name: 'Username hoặc email', exact: true }).fill('browseruser');
     await page.getByLabel('Mật khẩu', { exact: true }).fill('Test-password-42');
     await page.getByRole('form', { name: 'Đăng nhập bằng mật khẩu' }).getByRole('button', { name: 'Đăng nhập', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Thanh toán' }).getByRole('button', { name: 'Tạo đơn và chọn thanh toán' }).waitFor();
+    await page.getByRole('dialog', { name: 'Thanh toán' }).getByRole('button', { name: /Xác nhận thanh toán/ }).waitFor();
     assert.match(await page.locator('.receipt-lines').innerText(), /Claude API.*× 2/);
     await page.keyboard.press('Escape');
     // Abandoning Claude must not add it to the next Gemini order.
     await page.locator('.product-card').filter({ hasText: 'Gemini Pro' }).getByRole('button', { name: 'Mua ngay', exact: true }).click();
     await page.getByRole('spinbutton', { name: 'Số lượng', exact: true }).fill('2');
-    await page.getByRole('button', { name: 'Tạo đơn và chọn thanh toán' }).click();
-    await page.getByRole('button', { name: 'Thanh toán bằng số dư', exact: true }).click();
+    await page.getByRole('button', { name: /Xác nhận thanh toán/ }).click();
     await page.getByRole('dialog', { name: 'Thanh toán thành công' }).waitFor();
     assert.deepEqual(orders[0].items.map(({ productId, quantity }) => ({ productId, quantity })), [{ productId: 2, quantity: 2 }]);
     assert.equal(orders[0].total, 138000); assert.equal(walletPayments, 1);
@@ -110,9 +109,9 @@ const customer = { id: 'browser-test', name: 'Khách kiểm thử', email: 'brow
     await page.getByRole('link', { name: 'Tiệm Digital, trang sản phẩm' }).click();
     await page.getByRole('button', { name: 'Xem chi tiết Claude API 50M Tokens 2day' }).click();
     await page.getByRole('spinbutton').fill('2');
-    await page.getByRole('dialog').getByRole('button', { name: 'Mua ngay', exact: true }).click();
-    await page.getByRole('button', { name: 'Tạo đơn và chọn thanh toán' }).click();
-    await page.getByRole('button', { name: 'Quét QR ngân hàng' }).click();
+    await page.getByRole('main').getByRole('button', { name: 'Mua ngay', exact: true }).click();
+    await page.getByRole('radio', { name: 'Chuyển khoản QR' }).check();
+    await page.getByRole('button', { name: /Xác nhận thanh toán/ }).click();
     await page.getByRole('dialog', { name: 'Thanh toán thành công' }).waitFor();
     assert.equal(qrPayments, 1); assert.equal(orders[1].total, 198000);
     assert.deepEqual(orders[1].items.map(({ productId, quantity }) => ({ productId, quantity })), [{ productId: 1, quantity: 2 }]);

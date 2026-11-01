@@ -5,6 +5,7 @@ import { ProductDescription } from "../ProductDescription";
 import { PurchaseOrders } from "./CommerceAdmin";
 import { DropdownChipFilter } from "./DropdownChipFilter";
 import { SmartTable } from "./SmartTable";
+import { VendorPublish } from "./VendorPublish";
 
 type Run = (task: () => Promise<void>) => Promise<void>;
 
@@ -31,7 +32,7 @@ interface Provider {
   is_active: boolean;
 }
 
-type VendorRow = VendorSelection & { providerName: string; priceVnd: number };
+export type VendorRow = VendorSelection & { providerName: string; priceVnd: number };
 
 interface VendorProgress {
   id: string;
@@ -76,7 +77,10 @@ export function VendorCatalog({
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<VendorProgress[]>([]);
   const [selectedRow, setSelectedRow] = useState<VendorRow | null>(null);
+  const [publishSelection, setPublishSelection] = useState<string[]>([]);
+  const [publishRows, setPublishRows] = useState<VendorRow[] | null>(null);
   const [purchaseSelection, setPurchaseSelection] = useState<VendorSelection | null>(null);
+  const [purchaseDestination, setPurchaseDestination] = useState<"self" | "stock">("self");
   const [purchaseTrigger, setPurchaseTrigger] = useState(0);
   const loadId = useRef(0);
   const detailRef = useRef<HTMLElement | null>(null);
@@ -225,7 +229,8 @@ export function VendorCatalog({
     (item) => item.status === "done" || item.status === "error",
   ).length;
 
-  function triggerBuy(selection: VendorSelection) {
+  function triggerBuy(selection: VendorSelection, destination: "self" | "stock") {
+    setPurchaseDestination(destination);
     setPurchaseSelection(selection);
     setPurchaseTrigger((prev) => prev + 1);
     onBuy?.(selection);
@@ -364,6 +369,8 @@ export function VendorCatalog({
               Còn hàng
             </label>
           </div>
+          <button type="button" disabled={!publishSelection.length || publishRows !== null} onClick={() => setPublishRows(rows.filter(row => publishSelection.includes(`${row.providerId}:${row.product.provider_product_id}`)))}>Kiểm tra trước khi lên kệ ({publishSelection.length})</button>
+          {publishRows && <VendorPublish rows={publishRows} onClose={() => setPublishRows(null)} />}
           {failures.length > 0 && (
             <p role="alert" className="notice error">
               Không tải được: {failures.join(", ")}. Có thể thử tải lại.
@@ -374,6 +381,7 @@ export function VendorCatalog({
               <SmartTable>
                 <thead>
                   <tr>
+                    <th>Chọn</th>
                     <th>Sản phẩm</th>
                     <th>Nhà cung cấp</th>
                     <th>Danh mục</th>
@@ -405,6 +413,7 @@ export function VendorCatalog({
                           });
                         }}
                       >
+                        <td onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Chọn ${row.product.name}`} checked={publishSelection.includes(rowKey)} onChange={(event) => setPublishSelection(previous => event.target.checked ? [...previous, rowKey] : previous.filter(key => key !== rowKey))} /></td>
                         <td>
                           <strong>{row.product.name}</strong>
                           <br />
@@ -454,11 +463,12 @@ export function VendorCatalog({
                               triggerBuy({
                                 providerId: row.providerId,
                                 product: row.product,
-                              })
+                              }, "self")
                             }
                           >
-                            Chọn mua
+                            Mua dùng
                           </button>
+                          <button disabled={!inStock} onClick={() => triggerBuy({ providerId: row.providerId, product: row.product }, "stock")}>Mua nhập kho</button>
                         </td>
                       </tr>
                     );
@@ -527,7 +537,7 @@ export function VendorCatalog({
                   <small>Tồn kho NCC</small>
                   <strong>
                     {stockQuantity(selectedRow.product) === null
-                      ? "Không giới hạn"
+                      ? "NCC không công bố số lượng"
                       : stockQuantity(selectedRow.product)?.toLocaleString(
                           "vi-VN",
                         )}
@@ -568,11 +578,12 @@ export function VendorCatalog({
                     triggerBuy({
                       providerId: selectedRow.providerId,
                       product: selectedRow.product,
-                    })
+                    }, "self")
                   }
                 >
-                  Chọn mua sản phẩm này
+                  Mua dùng
                 </button>
+                <button type="button" disabled={!selectedRow.product.in_stock || stockQuantity(selectedRow.product) === 0} onClick={() => triggerBuy({ providerId: selectedRow.providerId, product: selectedRow.product }, "stock")}>Mua nhập kho</button>
               </div>
             </section>
           </aside>
@@ -590,6 +601,7 @@ export function VendorCatalog({
             run={run}
             ownerId={ownerId}
             initialSelection={purchaseSelection}
+            initialDestination={purchaseDestination}
           />
         </div>
       )}

@@ -15,6 +15,7 @@ import {
   Bot,
   ShieldAlert,
   Plug,
+  Settings,
   Sun,
   Moon,
 } from "lucide-react";
@@ -94,6 +95,7 @@ type Tab =
   | "finance-transactions"
   | "payment"
   | "products"
+  | "stock"
   | "vendor-catalog"
   | "telegram"
   | "audit"
@@ -137,16 +139,17 @@ function useAdminCommand() {
 }
 
 const labels: [Tab, string][] = [
-  ["overview", "Tổng quan"],
+  ["overview", "Hôm nay"],
   ["customers", "Khách hàng"],
-  ["orders", "Đơn & giao hàng"],
+  ["orders", "Đơn bán"],
   ["purchases", "Mua hàng NCC"],
   ["finance", "Ví & sổ cái"],
   ["finance-report", "Báo cáo doanh thu"],
-  ["finance-transactions", "Sổ giao dịch MMO"],
+  ["finance-transactions", "Thu chi"],
   ["payment", "Thanh toán ngân hàng"],
-  ["products", "Sản phẩm"],
-  ["vendor-catalog", "Sản phẩm NCC"],
+  ["products", "Danh mục bán"],
+  ["stock", "Kho"],
+  ["vendor-catalog", "Hàng từ NCC"],
   ["telegram", "Telegram Bot"],
   ["audit", "Nhật ký quản trị"],
   ["providers", "Nhà cung cấp"],
@@ -154,20 +157,28 @@ const labels: [Tab, string][] = [
 
 const navGroups: { title: string; items: Tab[] }[] = [
   {
-    title: "Vận hành & Bán hàng",
-    items: ["overview", "orders", "customers"],
+    title: "Hôm nay",
+    items: ["overview"],
   },
   {
-    title: "Danh mục & Nguồn hàng",
-    items: ["products", "vendor-catalog", "providers"],
+    title: "Sản phẩm",
+    items: ["products", "vendor-catalog", "stock"],
   },
   {
-    title: "Tài chính & Ngân hàng",
-    items: ["finance-report", "finance-transactions", "finance", "payment"],
+    title: "NCC",
+    items: ["providers"],
   },
   {
-    title: "Nội dung & Hệ thống",
-    items: ["telegram", "audit"],
+    title: "Đơn hàng",
+    items: ["orders", "customers"],
+  },
+  {
+    title: "Tài chính",
+    items: ["finance-report", "finance-transactions", "finance"],
+  },
+  {
+    title: "Cài đặt",
+    items: ["payment", "telegram", "audit"],
   },
 ];
 
@@ -192,6 +203,7 @@ function TabIcon({ tab }: { tab: Tab }) {
     case "payment":
       return <Landmark {...props} />;
     case "products":
+    case "stock":
     case "vendor-catalog":
       return <Package {...props} />;
     case "telegram":
@@ -219,11 +231,11 @@ function statusClass(status: string) {
 /**
  * Quản lý danh sách đơn hàng của khách, tra cứu chi tiết, xem dữ liệu đã giao và giao hàng thủ công.
  */
-function Orders({ run }: { run: Run }) {
+function Orders({ run, initialOrderId = "" }: { run: Run; initialOrderId?: string }) {
   const [orders, setOrders] = useState<PlatformOrder[]>([]);
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState(initialOrderId);
   const [value, setValue] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialOrderId);
   const [statusFilter, setStatusFilter] = useState("");
   const [deliveredView, setDeliveredView] = useState<{
     orderId: string;
@@ -243,8 +255,8 @@ function Orders({ run }: { run: Run }) {
   }
 
   useEffect(() => {
-    void run(() => load("", ""));
-  }, [run]);
+    void run(async () => { await load(initialOrderId, ""); if (initialOrderId) focusPanel(detailRef.current); });
+  }, [run, initialOrderId]);
 
   const selectedOrder = orders.find((o) => o.id === selected);
   const paidCount = orders.filter((o) => o.payment_status === "PAID").length;
@@ -1462,63 +1474,40 @@ function AuditPanel({ run }: { run: Run }) {
 /**
  * Hiển thị bảng điều khiển tổng quan, chỉ số vận hành và lối tắt thao tác nhanh.
  */
-function Overview({ run, query }: { run: Run; query: string }) {
-  const [data, setData] = useState<{
-    payments: {
-      currency: string;
-      channel: string;
-      total: number;
-      count: number;
-    }[];
-    wallets: { liability: number };
-    review: { count: number };
-    backlog: { count: number };
-  } | null>(null);
+function Overview({ owner, canSeeAlerts, onOpenOrder, onOpenProviders, onOpenReview }: { owner: boolean; canSeeAlerts: boolean; onOpenOrder: (orderId: string) => void; onOpenProviders: () => void; onOpenReview: () => void }) {
+  const [alerts, setAlerts] = useState<{ id: string; order_id: string; name: string; reason: string }[] | null>(null);
+  const [providers, setProviders] = useState<{ id: string; name: string; balance: number | null; balance_currency: string | null; balance_cached_at: string | null }[] | null>(null);
+  const [alertError, setAlertError] = useState(false);
+  const [providerError, setProviderError] = useState(false);
+  const [review, setReview] = useState<number | null>(null);
+  const [reviewError, setReviewError] = useState(false);
   useEffect(() => {
-    void run(async () => setData(await api("/api/admin/overview")));
-  }, [run]);
-  const match = (value: string) => value.toLocaleLowerCase("vi").includes(query.toLocaleLowerCase("vi"));
-  return (
-    <>
-      {data && (
-        <div className="metric-grid">
-          {match("Tổng số dư khách hàng") && <div className="metric">
-            <span>Tổng số dư khách hàng</span>
-            <strong>{amountLabel(data.wallets.liability)}</strong>
-          </div>}
-          {match("Cần đối soát") && <div className="metric">
-            <span>Cần đối soát</span>
-            <strong>{data.review.count}</strong>
-          </div>}
-          {match("Thông báo đang chờ") && <div className="metric">
-            <span>Thông báo đang chờ</span>
-            <strong>{data.backlog.count}</strong>
-          </div>}
-          {data.payments.filter((p) => match(`${p.channel === "telegram" ? "Telegram" : "Website"} ${p.currency} đơn đã thanh toán`)).map((p) => (
-            <div className="metric" key={`${p.currency}:${p.channel}`}>
-              <span>
-                {p.count} đơn đã thanh toán ·{" "}
-                {p.channel === "telegram" ? "Telegram" : "Website"}
-              </span>
-              <strong>{amountLabel(p.total, p.currency)}</strong>
-            </div>
-          ))}
-        </div>
-      )}
-      {data && <section className="panel dashboard-breakdown">
-        <div className="panel-heading"><h2>Doanh thu theo kênh</h2><span className="muted">Đơn đã thanh toán</span></div>
-        {data.payments.filter((payment) => match(`${payment.channel === "telegram" ? "Telegram" : "Website"} ${payment.currency} đơn đã thanh toán`)).map((payment) => {
-          const maximum = Math.max(1, ...data.payments.filter((item) => item.currency === payment.currency).map((item) => item.total));
-          return <div className="dashboard-bar-row" key={`${payment.currency}:${payment.channel}`}>
-            <span>{payment.channel === "telegram" ? "Telegram" : "Website"} · {payment.currency}</span>
-            <div className="dashboard-track"><div style={{ width: `${Math.max(2, payment.total / maximum * 100)}%` }} /></div>
-            <strong>{amountLabel(payment.total, payment.currency)}</strong>
-          </div>;
-        })}
-        {data.payments.length === 0 && <p className="muted">Chưa có đơn đã thanh toán.</p>}
-      </section>}
-    </>
-  );
+    let stopped = false;
+    if (canSeeAlerts) api<{ alerts: { id: string; order_id: string; name: string; reason: string }[] }>('/api/admin/fulfillment-alerts')
+      .then((data) => { if (!stopped) setAlerts(data.alerts); })
+      .catch(() => { if (!stopped) setAlertError(true); });
+    api<{ review: { count: number } }>('/api/admin/overview').then(data => { if (!stopped) setReview(data.review.count); }).catch(() => { if (!stopped) setReviewError(true); });
+    if (owner) api<{ providers: { id: string; name: string; balance: number | null; balance_currency: string | null; balance_cached_at: string | null }[] }>('/api/admin/mmo/providers')
+      .then((data) => { if (!stopped) setProviders(data.providers); })
+      .catch(() => { if (!stopped) setProviderError(true); });
+    return () => { stopped = true; };
+  }, [owner, canSeeAlerts]);
+  return <>
+    <div className="metric-grid">
+      <div className="metric"><span>Doanh thu hôm nay</span><strong>Chưa đủ dữ liệu</strong></div>
+      <div className="metric"><span>Lợi nhuận hôm nay</span><strong>Chưa đủ dữ liệu</strong></div>
+    </div>
+    <p className="muted">Cần đối soát khoản thu, chi và thời điểm thanh toán trước khi xác nhận số tổng.</p>
+    <section className="panel">
+      <div className="panel-heading"><div><h2>Việc cần xử lý</h2><p className="muted">Bao gồm việc còn tồn từ trước · Tối đa 100 cảnh báo</p></div></div>
+      {reviewError ? <p role="alert">Chưa tải được khoản chờ đối soát.</p> : review === null ? <p role="status">Đang tải khoản chờ đối soát…</p> : review > 0 ? <div className="today-row"><strong>{review} khoản cần đối soát</strong><button onClick={onOpenReview}>Xem đối soát</button></div> : <p>Không có khoản chờ đối soát.</p>}
+      {canSeeAlerts && (alertError ? <p role="alert">Chưa tải được việc giao hàng.</p> : !alerts ? <p role="status">Đang tải việc giao hàng…</p> : alerts.length === 0 ? <p>Không có cảnh báo giao hàng.</p> : alerts.map((alert) => <div className="today-row" key={alert.id}><div><strong>{alert.order_id}</strong><p className="muted">{alert.name} · Cần xử lý giao hàng</p></div><button onClick={() => onOpenOrder(alert.order_id)}>Xem đơn</button></div>))}
+    </section>
+    {owner && <section className="panel">
+      <div className="panel-heading"><div><h2>Số dư nhà cung cấp</h2><p className="muted">Số liệu lưu gần nhất</p></div><button onClick={onOpenProviders}>Xem tất cả</button></div>
+      {providerError ? <p role="alert">Chưa tải được số dư nhà cung cấp.</p> : !providers ? <p role="status">Đang tải nhà cung cấp…</p> : providers.length === 0 ? <p>Chưa có nhà cung cấp.</p> : providers.map((provider) => <div className="today-row" key={provider.id}><div><strong>{provider.name}</strong><p className="muted">{provider.balance_cached_at ? `Cập nhật: ${provider.balance_cached_at}` : 'Chưa có thời điểm cập nhật'}</p></div><strong>{provider.balance === null || provider.balance === undefined ? 'Chưa tải được' : `${provider.balance.toLocaleString('vi-VN')} ${provider.balance_currency ?? ''}`}</strong></div>)}
+    </section>}
+  </>;
 }
 
 /**
@@ -1536,12 +1525,14 @@ export function AdminPage() {
     "customers" | "purchases" | "warranty"
   >("customers");
   const [prefillUserId, setPrefillUserId] = useState("");
+  const [prefillOrderId, setPrefillOrderId] = useState("");
   const [pageSearch, setPageSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState("session");
   const [adminUrl, setAdminUrl] = useState("/admin");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [alertCount, setAlertCount] = useState<number | null>(null);
   const [dark, setDark] = useState(() =>
     document.documentElement.classList.contains("dark"),
   );
@@ -1556,6 +1547,7 @@ export function AdminPage() {
   };
 
   const navigateTab = useCallback((nextTab: Tab) => {
+    if (nextTab !== "orders") setPrefillOrderId("");
     setTab(nextTab);
     window.history.pushState(null, "", `/admin/${nextTab}`);
     setError("");
@@ -1616,6 +1608,19 @@ export function AdminPage() {
       .catch(() => {});
   }, [loadAdmin]);
 
+  useEffect(() => {
+    if (!admin || !["owner", "support", "auditor"].includes(admin.role)) { setAlertCount(null); return; }
+    let stopped = false;
+    const refresh = () => {
+      void api<{ alerts: unknown[] }>("/api/admin/fulfillment-alerts")
+        .then((data) => { if (!stopped) setAlertCount(data.alerts.length); })
+        .catch(() => { if (!stopped) setAlertCount(null); });
+    };
+    refresh();
+    const timer = setInterval(refresh, 60000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [admin, tab]);
+
   return (
     <div className="platform platform-shell admin-shell">
       <header className="topbar">
@@ -1640,6 +1645,7 @@ export function AdminPage() {
             )}
             {dark ? "Sáng" : "Tối"}
           </button>
+          {admin && <button type="button" onClick={() => navigateTab("payment")}><Settings size={15} aria-hidden="true" /> Cài đặt</button>}
           {admin && (
             <span className="admin-badge-role">
               {admin.username ?? admin.email} · {admin.role}
@@ -1704,6 +1710,7 @@ export function AdminPage() {
                       >
                         <TabIcon tab={id} />
                         {label}
+                        {id === "orders" && alertCount !== null && alertCount > 0 && <span className="admin-alert-badge" aria-label={`${alertCount} cảnh báo đang mở`}>{alertCount >= 100 ? "99+" : alertCount}</span>}
                       </button>
                     );
                   })}
@@ -1713,6 +1720,9 @@ export function AdminPage() {
           </nav>
           <main className="content">
             <TableSearchContext.Provider value={pageSearch}>
+            <nav className="admin-mobile-subnav" aria-label="Mục con quản trị">
+              {(navGroups.find((group) => group.items.includes(tab))?.items ?? []).filter((id) => !["providers", "vendor-catalog", "finance-report", "finance-transactions"].includes(id) || admin.role === "owner").map((id) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => navigateTab(id)}>{labels.find(([key]) => key === id)?.[1] ?? id}</button>)}
+            </nav>
             <div className="admin-page-header">
               <h1>{labels.find(([id]) => id === tab)?.[1]}</h1>
               <input className="admin-page-search" type="search" aria-label={tab === "overview" ? "Lọc số liệu tổng quan" : "Tìm trong bảng của trang"} placeholder={tab === "overview" ? "Lọc chỉ số, kênh bán…" : "Tìm trong các bảng…"} value={pageSearch} onChange={(event) => setPageSearch(event.target.value)} />
@@ -1726,7 +1736,7 @@ export function AdminPage() {
               </div>
             )}
             {tab === "overview" && (
-              <Overview run={run} query={pageSearch} />
+              <Overview owner={admin.role === "owner"} canSeeAlerts={["owner", "support", "auditor"].includes(admin.role)} onOpenOrder={(orderId) => { setOrderSection("customers"); setPrefillOrderId(orderId); navigateTab("orders"); }} onOpenProviders={() => navigateTab("providers")} onOpenReview={() => navigateTab("payment")} />
             )}{" "}
             {tab === "customers" && (
               <Customers
@@ -1769,7 +1779,7 @@ export function AdminPage() {
                         canResolve={admin.role === "owner"}
                       />
                     )}
-                    <Orders run={run} />
+                    <Orders run={run} initialOrderId={prefillOrderId} />
                   </>
                 )}
                 {admin.role === "owner" && orderSection === "purchases" && (
@@ -1799,9 +1809,9 @@ export function AdminPage() {
             {tab === "payment" && (
               <PaymentSettings admin={admin} run={run} />
             )}{" "}
-            {tab === "products" &&
+            {(tab === "products" || tab === "stock") &&
               (admin.role === "owner" ? (
-                <CatalogProducts run={run} />
+                <CatalogProducts key={tab} run={run} stockOnly={tab === "stock"} />
               ) : (
                 <ReadOnlyProducts run={run} />
               ))}{" "}
@@ -1819,6 +1829,15 @@ export function AdminPage() {
             )}
             </TableSearchContext.Provider>
           </main>
+          <nav className="admin-mobile-bottom" aria-label="Điều hướng quản trị di động">
+            {([
+              ["Hôm nay", "overview", ["overview"]],
+              ["Sản phẩm", "products", ["products", "vendor-catalog", "stock"]],
+              ["NCC", "providers", ["providers"]],
+              ["Đơn hàng", "orders", ["orders", "customers"]],
+              ["Tài chính", admin.role === "owner" ? "finance-report" : "finance", ["finance-report", "finance-transactions", "finance"]],
+            ] as [string, Tab, Tab[]][]).filter(([, id]) => id !== "providers" || admin.role === "owner").map(([label, id, children]) => <button key={id} type="button" className={children.includes(tab) ? 'active' : ''} onClick={() => navigateTab(id)}><TabIcon tab={id} /><span>{label}</span>{id === 'orders' && alertCount !== null && alertCount > 0 && <span className="admin-alert-badge" aria-label={`${alertCount} cảnh báo đang mở`}>{alertCount >= 100 ? '99+' : alertCount}</span>}</button>)}
+          </nav>
         </div>
       )}
     </div>

@@ -233,6 +233,27 @@
   accent-color: var(--accent);
   flex-shrink: 0;
 }
+.platform .checkout-methods { border: 0; padding: 0; margin: 16px 0; }
+.platform .checkout-methods legend { font-weight: 650; margin-bottom: 8px; }
+.platform .checkout-methods label { display: flex; flex-direction: row; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.platform .checkout-methods input[type="radio"] { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+.platform .delivery-value { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--color-subtle); }
+.platform .today-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.platform .today-row > div { min-width: 0; overflow-wrap: anywhere; }
+.admin-mobile-bottom, .admin-mobile-subnav { display: none; }
+.admin-shell .navigation .admin-alert-badge { margin-left: auto; padding: 0 6px; border-radius: 999px; background: #fff3de; color: #925000; font-size: 11px; }
+@media (max-width: 760px) {
+  .admin-shell .navigation { display: none; }
+  .admin-shell .content { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .admin-mobile-bottom { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-around; background: var(--color-card-base); border-top: 1px solid var(--color-border); padding-bottom: env(safe-area-inset-bottom); }
+  .admin-mobile-bottom button { flex: 1; min-width: 0; min-height: 56px; padding: 5px 2px; display: flex; flex-direction: column; gap: 2px; border: 0; border-radius: 0; background: transparent; color: var(--color-text-muted); font-size: 11px; }
+  .admin-mobile-bottom button.active { color: var(--color-accent); font-weight: 700; }
+  .admin-mobile-bottom button { position: relative; }
+  .admin-alert-badge { position: absolute; top: 2px; left: 58%; padding: 0 5px; border-radius: 999px; background: #fff3de; color: #925000; font-size: 10px; }
+  .admin-mobile-subnav { display: flex; overflow-x: auto; gap: 6px; padding-bottom: 12px; }
+  .admin-mobile-subnav button { white-space: nowrap; flex: none; }
+  .admin-mobile-subnav button.active { background: var(--color-subtle); color: var(--color-accent); }
+}
 .platform .check-label,
 .platform label:has(> input[type="checkbox"]) {
   display: inline-flex;
@@ -1317,4 +1338,8 @@ html.dark .platform tr.selected-row {
     animation: none !important;
     transition: none !important;
   }
+}
+
+@media (max-width: 760px) {
+  .admin-shell .content { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
 }

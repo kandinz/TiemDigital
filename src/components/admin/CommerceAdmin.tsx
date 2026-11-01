@@ -185,7 +185,7 @@ export function ReadOnlyProducts({ run }: { run: Run }) {
 /**
  * Quản trị danh mục sản phẩm, kho tự tạo và liên kết sản phẩm từ nhà cung cấp.
  */
-export function CatalogProducts({ run }: { run: Run }) {
+export function CatalogProducts({ run, stockOnly = false }: { run: Run; stockOnly?: boolean }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [product, setProduct] = useState<Product>(emptyProduct);
   const [config, setConfig] = useState<CatalogConfig>({
@@ -258,7 +258,7 @@ export function CatalogProducts({ run }: { run: Run }) {
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <h2>Danh mục bán</h2>
+              <h2>{stockOnly ? "Kho" : "Danh mục bán"}</h2>
               <p className="muted">
                 Bấm vào dòng sản phẩm để chỉnh sửa, nhập key kho hoặc ngừng bán.
               </p>
@@ -337,7 +337,7 @@ export function CatalogProducts({ run }: { run: Run }) {
               <tbody>
                 {[...products]
                   .filter((p) =>
-                    `${p.name} ${p.category}`
+                    (!stockOnly || p.source === "stock") && `${p.name} ${p.category}`
                       .toLowerCase()
                       .includes(filter.toLowerCase()),
                   )
@@ -416,7 +416,7 @@ export function CatalogProducts({ run }: { run: Run }) {
           )}
         </section>
 
-        <section className="panel">
+        {!stockOnly && <section className="panel">
           <h2>Chọn sản phẩm từ nhà cung cấp</h2>
           <p className="muted">
             Tải bảng giá trực tiếp từ nhà cung cấp và bấm vào dòng sản phẩm để
@@ -550,9 +550,9 @@ export function CatalogProducts({ run }: { run: Run }) {
               </SmartTable>
             </div>
           )}
-        </section>
+        </section>}
 
-        <section className="panel">
+        {!stockOnly && <section className="panel">
           <h2>Giá bán mặc định</h2>
           <form
             onSubmit={(e) => {
@@ -590,7 +590,7 @@ export function CatalogProducts({ run }: { run: Run }) {
             </p>
             <button>Lưu cấu hình giá</button>
           </form>
-        </section>
+        </section>}
       </div>
 
       <aside
@@ -1770,10 +1770,12 @@ export function PurchaseOrders({
   run,
   ownerId,
   initialSelection,
+  initialDestination = "self",
 }: {
   run: Run;
   ownerId: string;
   initialSelection?: VendorSelection | null;
+  initialDestination?: "self" | "stock";
 }) {
   const [orders, setOrders] = useState<SupplierOrder[]>([]);
   const [selected, setSelected] = useState<SupplierOrder | null>(null);
@@ -1785,15 +1787,33 @@ export function PurchaseOrders({
   const [item, setItem] = useState(initialSelection?.product.provider_product_id ?? "");
   const [quantity, setQuantity] = useState(1);
   const [email, setEmail] = useState("");
-  const [destination, setDestination] = useState<"self" | "stock">("self");
+  const [destination, setDestination] = useState<"self" | "stock">(initialDestination);
   const [stockProductId, setStockProductId] = useState("");
   const [stockProducts, setStockProducts] = useState<Product[]>([]);
+  const [createStockOpen, setCreateStockOpen] = useState(false);
+  const [stockName, setStockName] = useState("");
+  const [stockCategory, setStockCategory] = useState("");
+  const [stockPrice, setStockPrice] = useState("");
+  const [stockCreateUncertain, setStockCreateUncertain] = useState(false);
+  const [stockCreateBusy, setStockCreateBusy] = useState(false);
   const [purchaseNotice, setPurchaseNotice] = useState("");
   const [buying, setBuying] = useState(false);
+  const [purchaseUncertain, setPurchaseUncertain] = useState(false);
+  const [purchaseConfirmed, setPurchaseConfirmed] = useState(false);
+  const [reconciled, setReconciled] = useState(false);
   const [manualStatus, setManualStatus] = useState("");
   const [manualDelivered, setManualDelivered] = useState("");
   const [purchaseFormOpen, setPurchaseFormOpen] = useState(Boolean(initialSelection));
   const detailRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setReconciled(false);
+    try {
+      const state = provider && item ? sessionStorage.getItem(`supplier-purchase:${ownerId}:${provider}:${item}`) : null;
+      setPurchaseUncertain(Boolean(state));
+      setPurchaseConfirmed(state === 'confirmed');
+    } catch { setPurchaseUncertain(false); setPurchaseConfirmed(false); }
+  }, [ownerId, provider, item]);
 
   async function load(query = search, provFilter = providerFilter) {
     const providerQuery = provFilter
@@ -2165,7 +2185,7 @@ export function PurchaseOrders({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (buying) return;
+              if (buying || purchaseUncertain) return;
               setBuying(true);
               void run(async () => {
                 const selectedProduct = vendorProducts.find(
@@ -2174,11 +2194,15 @@ export function PurchaseOrders({
                 if (!selectedProduct) throw new Error("Chọn sản phẩm NCC");
                 if (destination === "stock" && !stockProductId)
                   throw new Error("Chọn sản phẩm kho nhận hàng");
-                const purchase = await api<{
+                const guardKey = `supplier-purchase:${ownerId}:${provider}:${item}`;
+                setPurchaseUncertain(true);
+                try { sessionStorage.setItem(guardKey, "pending"); } catch { /* Keep the in-memory guard when storage is unavailable. */ }
+                let purchase: {
                   order_id: string;
                   status: string;
                   persisted: boolean;
-                }>(`${supplierApi}/order`, {
+                };
+                try { purchase = await api(`${supplierApi}/order`, {
                   body: {
                     provider_id: provider,
                     product_id: item,
@@ -2188,11 +2212,13 @@ export function PurchaseOrders({
                     unit_price: selectedProduct.price_usd,
                     total_price: selectedProduct.price_usd * quantity,
                   },
-                });
+                }); } catch { return; }
                 setPurchaseNotice(
                   `Đã gửi yêu cầu mua NCC. Mã đơn: ${purchase.order_id}. ${purchase.persisted ? "" : "NCC đã xử lý nhưng chưa lưu được đơn; cần đối soát, không mua lại."}`,
                 );
                 if (!purchase.persisted) return;
+                setPurchaseConfirmed(true);
+                try { sessionStorage.setItem(guardKey, "confirmed"); } catch { /* Keep the in-memory guard when storage is unavailable. */ }
                 await load(search, providerFilter);
                 const detail = await api<{ order: SupplierOrder }>(
                   `${supplierApi}/orders/${encodeURIComponent(purchase.order_id)}`,
@@ -2208,6 +2234,9 @@ export function PurchaseOrders({
                     setPurchaseNotice(
                       `Đơn ${purchase.order_id} đang chờ NCC giao. Sau khi hoàn tất, mở đơn và chọn Nhập đơn này vào kho.`,
                     );
+                    try { sessionStorage.removeItem(guardKey); } catch { /* The order is available in history. */ }
+                    setPurchaseUncertain(false);
+                    setPurchaseConfirmed(false);
                     return;
                   }
                   const imported = await api<{
@@ -2224,6 +2253,9 @@ export function PurchaseOrders({
                   );
                   await load(search, providerFilter);
                 }
+                try { sessionStorage.removeItem(guardKey); } catch { /* The order is available in history. */ }
+                setPurchaseUncertain(false);
+                setPurchaseConfirmed(false);
               }).finally(() => setBuying(false));
             }}
           >
@@ -2328,24 +2360,46 @@ export function PurchaseOrders({
                 </select>
               </label>
               {destination === "stock" && (
-                <label>
-                  Sản phẩm kho nhận hàng
-                  <select
-                    required
-                    value={stockProductId}
-                    onChange={(e) => setStockProductId(e.target.value)}
-                  >
-                    <option value="">Chọn sản phẩm kho</option>
-                    {stockProducts.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.name} · #{product.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div>
+                  <label>
+                    Sản phẩm kho nhận hàng
+                    <select required value={stockProductId} onChange={(e) => setStockProductId(e.target.value)}>
+                      <option value="">Chọn sản phẩm kho</option>
+                      {stockProducts.map((product) => <option key={product.id} value={product.id}>{product.name} · #{product.id}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" onClick={() => setCreateStockOpen((open) => !open)}>Tạo nhanh sản phẩm kho</button>
+                  {createStockOpen && <div className="admin-detail">
+                    <label>Tên sản phẩm kho mới<input value={stockName} maxLength={150} onChange={(event) => setStockName(event.target.value)} /></label>
+                    <label>Danh mục kho mới<input value={stockCategory} maxLength={80} onChange={(event) => setStockCategory(event.target.value)} /></label>
+                    <label>Giá bán kho mới<input type="number" min={1} max={100000000} step={1} value={stockPrice} onChange={(event) => setStockPrice(event.target.value)} /></label>
+                    <p className="muted">Sản phẩm mới chưa lên kệ.</p>
+                    {stockCreateUncertain && <p role="alert" className="notice error">Chưa xác định được kết quả tạo kho. Kiểm tra danh mục sản phẩm trước khi tạo lại.</p>}
+                    <button type="button" disabled={stockCreateBusy || stockCreateUncertain} onClick={() => void (async () => {
+                      const price = Number(stockPrice);
+                      if (!stockName.trim() || !stockCategory.trim() || !Number.isSafeInteger(price) || price < 1 || price > 100000000) {
+                        setPurchaseNotice("Nhập tên, danh mục và giá bán hợp lệ cho sản phẩm kho.");
+                        return;
+                      }
+                      setStockCreateBusy(true);
+                      setStockCreateUncertain(true);
+                      try {
+                        const product = { ...emptyProduct(), name: stockName.trim(), category: stockCategory.trim(), selling_price: price, source: "stock" as const, active: false };
+                        const saved = await api<{ id: number }>("/api/admin/products", { body: product });
+                        setStockProducts((previous) => [...previous, { ...product, id: saved.id }]);
+                        setStockProductId(String(saved.id));
+                        setStockCreateUncertain(false);
+                        setCreateStockOpen(false);
+                        setPurchaseNotice("Đã tạo sản phẩm kho chưa lên kệ.");
+                      } catch { /* Do not repeat an insert whose result is unknown. */ }
+                      finally { setStockCreateBusy(false); }
+                    })()}>{stockCreateBusy ? "Đang tạo…" : "Tạo và chọn kho"}</button>
+                  </div>}
+                </div>
               )}
             </div>
-            <button className="primary" disabled={buying}>
+            {purchaseUncertain && <div className="notice error"><p role="alert">{purchaseConfirmed ? "Đơn đã mua nhưng bước xử lý tiếp theo chưa hoàn tất. Kiểm tra đơn và không mua lại." : "Kết quả mua chưa xác định. Kiểm tra với NCC và đối soát trước khi tiếp tục; không mua lại."}</p><label className="check-label"><input type="checkbox" checked={reconciled} onChange={(event) => setReconciled(event.target.checked)} /> Tôi đã đối soát với NCC và xác nhận có thể tạo đơn mới.</label><button type="button" disabled={!reconciled} onClick={() => { try { sessionStorage.removeItem(`supplier-purchase:${ownerId}:${provider}:${item}`); } catch { /* The in-memory guard can still be cleared after confirmation. */ } setPurchaseUncertain(false); setPurchaseConfirmed(false); setReconciled(false); }}>Cho phép mua đơn mới</button></div>}
+            <button className="primary" disabled={buying || purchaseUncertain}>
               {buying ? "Đang gửi đơn mua…" : "Mua từ NCC"}
             </button>
           </form>

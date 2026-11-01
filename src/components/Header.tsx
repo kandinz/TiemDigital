@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, LogOut, UserRound } from 'lucide-react';
+import { ChevronDown, LogOut, Moon, Sun, UserRound } from 'lucide-react';
 import { api, amountLabel, type Customer } from '../services/platform';
 
 interface AccountInfo { name: string; email: string; balance: number | null }
@@ -9,7 +9,15 @@ export function Header({ account, refreshKey = 0 }: HeaderProps) {
   const [loadedAccount, setLoadedAccount] = useState<AccountInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
   const user = account === undefined ? loadedAccount : account;
+
+  function toggleTheme() {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle('dark', next);
+    try { localStorage.setItem('tiem_digital_theme', next ? 'dark' : 'light'); } catch { /* Theme still applies for this page. */ }
+  }
 
   useEffect(() => {
     if (account !== undefined) return;
@@ -33,6 +41,7 @@ export function Header({ account, refreshKey = 0 }: HeaderProps) {
     <div className="shop-container shop-header-inner">
       <a href="/" className="shop-wordmark" aria-label="Tiệm Digital, trang sản phẩm">Tiệm<span>Digital</span></a>
       <div className="shop-account">
+        <button type="button" className="shop-icon-button" onClick={toggleTheme} aria-label={dark ? 'Chuyển giao diện sáng' : 'Chuyển giao diện tối'}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
         {user ? <details className="profile-menu" onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false; }}>
           <summary aria-label="Menu tài khoản">
             <span className="profile-avatar"><UserRound size={18} /></span>

@@ -69,7 +69,7 @@ export default function App() {
 
   return <div className="shop-shell">
     <Header refreshKey={accountVersion} />
-    <main id="products" className="shop-container catalog">
+    {quickViewProduct ? <ProductDetailModal key={quickViewProduct.id} product={quickViewProduct} onClose={() => setQuickViewProduct(null)} onBuyNow={buyNow} /> : <main id="products" className="shop-container catalog">
       <h1 className="sr-only">Sản phẩm</h1>
       <div className="catalog-layout">
         <aside className="catalog-sidebar"><CategoryPills categories={categories} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} /><a className="shop-button catalog-bot" href="https://t.me/tiemdigital_bot" target="_blank" rel="noopener noreferrer"><Send size={16} aria-hidden="true" />Mở bot Telegram</a></aside>
@@ -84,9 +84,8 @@ export default function App() {
         : <div className="product-grid">{filteredProducts.map((product) => <ProductCard key={product.id} product={product} onQuickView={setQuickViewProduct} onBuyNow={buyNow} />)}</div>}
         </section>
       </div>
-    </main>
+    </main>}
     <SupportButton />
-    {quickViewProduct && <ProductDetailModal key={quickViewProduct.id} product={quickViewProduct} onClose={() => setQuickViewProduct(null)} onBuyNow={buyNow} />}
     {purchase && <CheckoutModal key={purchase.product.id} onClose={closeCheckout} purchase={purchase} onOrderSuccess={(order) => { setSuccessOrder(order); setAccountVersion((value) => value + 1); }} />}
     {successOrder && <OrderSuccessModal order={successOrder} onClose={() => setSuccessOrder(null)} />}
   </div>;

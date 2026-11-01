@@ -5,25 +5,25 @@
 :root {
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   color-scheme: light;
-  --color-bg-base: #f7f9f8;
+  --color-bg-base: #f6f8fc;
   --color-card-base: #fff;
-  --color-text-base: #182824;
-  --color-text-muted: #64736d;
-  --color-border: #dfe6e2;
-  --color-subtle: #f0f4f2;
-  --color-accent: #087455;
-  --color-accent-hover: #065e45;
+  --color-text-base: #142033;
+  --color-text-muted: #5c697c;
+  --color-border: #dfe5ef;
+  --color-subtle: #eaf0ff;
+  --color-accent: #3358cf;
+  --color-accent-hover: #2547b4;
 }
 .dark {
   color-scheme: dark;
-  --color-bg-base: #101714;
-  --color-card-base: #17201c;
-  --color-text-base: #edf3ef;
-  --color-text-muted: #a3b3aa;
-  --color-border: #2b3931;
-  --color-subtle: #1e2a23;
-  --color-accent: #78dbaf;
-  --color-accent-hover: #98e7c2;
+  --color-bg-base: #131923;
+  --color-card-base: #1b2432;
+  --color-text-base: #ecf0f8;
+  --color-text-muted: #b1bfd1;
+  --color-border: #344257;
+  --color-subtle: #283a5d;
+  --color-accent: #a6bcff;
+  --color-accent-hover: #c5d3ff;
 }
 body { margin: 0; background: var(--color-bg-base); color: var(--color-text-base); font-family: "Segoe UI", system-ui, -apple-system, sans-serif; font-size: 14px; -webkit-font-smoothing: antialiased; }
 button, input, select { font: inherit; }
@@ -39,7 +39,7 @@ a { text-decoration: none; }
 .shop-header-inner { display: flex; align-items: center; gap: 32px; min-height: 72px; }
 .shop-wordmark { color: var(--color-text-base) !important; font-size: 22px; font-weight: 800; letter-spacing: -1px; white-space: nowrap; }
 .shop-wordmark span { color: var(--color-accent); }
-.shop-account { margin-left: auto; min-width: 0; }
+.shop-account { margin-left: auto; min-width: 0; display: flex; align-items: center; gap: 8px; }
 .profile-menu { position: relative; }
 .profile-menu summary { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; cursor: pointer; list-style: none; }
 .profile-menu summary::-webkit-details-marker { display: none; }
@@ -116,6 +116,8 @@ a { text-decoration: none; }
 .detail-purchase { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 24px; }
 .detail-purchase label { display: grid; gap: 8px; font-size: 12px; color: var(--color-text-muted); }
 .detail-purchase input { width: 100px; }
+.product-detail-page { max-width: 800px; flex: 1; padding-block: 28px 96px; }
+.product-detail-page h1 { margin: 24px 0 8px; font-size: 28px; line-height: 1.2; }
 @media (max-width: 1000px) {
   .shop-header-inner { gap: 16px; }
   .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
