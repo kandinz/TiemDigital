@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "viewport": 1024,
+      "pass": true,
+      "width": 1022,
+      "client": 1022
+    },
+    {
+      "viewport": 736,
+      "pass": true,
+      "width": 719,
+      "client": 719
+    },
+    {
+      "viewport": 390,
+      "pass": true,
+      "width": 373,
+      "client": 373
+    },
+    {
+      "viewport": 320,
+      "pass": true,
+      "width": 303,
+      "client": 303
+    }
+  ],
+  "errors": []
+}

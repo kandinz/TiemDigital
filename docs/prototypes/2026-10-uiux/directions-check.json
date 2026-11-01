@@ -1,0 +1,66 @@
+{
+  "bytes": 40818,
+  "results": [
+    {
+      "direction": "clean",
+      "width": 1024,
+      "pass": true
+    },
+    {
+      "direction": "clean",
+      "width": 736,
+      "pass": true
+    },
+    {
+      "direction": "clean",
+      "width": 390,
+      "pass": true
+    },
+    {
+      "direction": "clean",
+      "width": 320,
+      "pass": true
+    },
+    {
+      "direction": "warm",
+      "width": 1024,
+      "pass": true
+    },
+    {
+      "direction": "warm",
+      "width": 736,
+      "pass": true
+    },
+    {
+      "direction": "warm",
+      "width": 390,
+      "pass": true
+    },
+    {
+      "direction": "warm",
+      "width": 320,
+      "pass": true
+    },
+    {
+      "direction": "sharp",
+      "width": 1024,
+      "pass": true
+    },
+    {
+      "direction": "sharp",
+      "width": 736,
+      "pass": true
+    },
+    {
+      "direction": "sharp",
+      "width": 390,
+      "pass": true
+    },
+    {
+      "direction": "sharp",
+      "width": 320,
+      "pass": true
+    }
+  ],
+  "errors": []
+}

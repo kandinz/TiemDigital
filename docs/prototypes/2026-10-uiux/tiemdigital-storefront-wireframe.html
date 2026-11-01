@@ -1,0 +1,194 @@
+<style>
+#td-storefront {font-family:"Segoe UI",Arial,sans-serif;color:#142033;font-size:14px;line-height:1.5}
+#td-storefront [hidden]{display:none!important}
+#td-storefront .sf-app{--sf-bg:#f6f8fc;--sf-paper:#fff;--sf-ink:#142033;--sf-muted:#5c697c;--sf-line:#dfe5ef;--sf-soft:#eaf0ff;--sf-brand:#3358cf;--sf-link:#3358cf;--sf-good:#236448;--sf-radius:12px;color:var(--sf-ink);background:var(--sf-bg);border:1px solid var(--sf-line);border-radius:12px;position:relative;container:sf / inline-size;width:100%;min-width:0;color-scheme:light}
+#td-storefront .sf-app[data-theme="dark"]{--sf-bg:#131923;--sf-paper:#1b2432;--sf-ink:#ecf0f8;--sf-muted:#b1bfd1;--sf-line:#344257;--sf-soft:#283a5d;--sf-link:#a6bcff;--sf-good:#9bd6b4;color-scheme:dark}
+#td-storefront .sf-phone{max-width:390px;margin-inline:auto}
+#td-storefront .sf-app *{box-sizing:border-box}
+#td-storefront button,#td-storefront input,#td-storefront select{font:inherit}
+#td-storefront button{cursor:inherit}
+#td-storefront button:focus-visible,#td-storefront input:focus-visible,#td-storefront select:focus-visible{outline:2px solid var(--sf-link);outline-offset:3px}
+#td-storefront .sf-app p,#td-storefront .sf-app h1,#td-storefront .sf-app h2{margin:0}
+#td-storefront .sf-preview{padding:10px 22px;background:var(--sf-paper);border-radius:12px 12px 0 0;border-bottom:1px solid var(--sf-line);display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--sf-muted);font-size:12px}
+#td-storefront .sf-plain{padding:5px 0;border:0;background:transparent;color:var(--sf-link);font-size:12px}
+#td-storefront .sf-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 28px;background:var(--sf-paper);border-bottom:1px solid var(--sf-line)}
+#td-storefront .sf-logo{display:flex;gap:8px;align-items:center;font-size:21px;font-weight:750;letter-spacing:-.8px;border:0;background:transparent;color:var(--sf-ink);padding:0}
+#td-storefront .sf-logo b{width:28px;height:28px;display:grid;place-items:center;font-size:20px;letter-spacing:-2px;padding-right:2px;background:var(--sf-brand);color:#fff;border-radius:8px}
+#td-storefront .sf-logo em{font-style:normal;color:var(--sf-link)}
+#td-storefront .sf-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+#td-storefront .sf-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--sf-paper);color:var(--sf-ink);border:1px solid var(--sf-line);padding:9px 13px;border-radius:8px;font-size:13px;font-weight:600;min-height:38px}
+#td-storefront .sf-primary{color:#fff;background:var(--sf-brand);border-color:var(--sf-brand)}
+#td-storefront i[data-lucide],#td-storefront svg[data-lucide]{width:16px;height:16px;display:inline-block;flex-shrink:0}
+#td-storefront .sf-main{padding:25px 28px 28px}
+#td-storefront .sf-title{font-size:25px;letter-spacing:-.7px;font-weight:650}
+#td-storefront .sf-tools{margin:18px 0 16px;display:grid;grid-template-columns:minmax(0,1fr) 175px;gap:12px}
+#td-storefront .sf-search{display:flex;align-items:center;gap:9px;padding:11px 13px;background:var(--sf-paper);border:1px solid var(--sf-line);border-radius:8px;color:var(--sf-muted)}
+#td-storefront .sf-search input{border:0;outline:none;width:100%;min-width:0;background:transparent;color:var(--sf-ink)}
+#td-storefront input::placeholder{color:var(--sf-muted);opacity:1}
+#td-storefront select{width:100%;padding:10px;background:var(--sf-paper);color:var(--sf-ink);border:1px solid var(--sf-line);border-radius:8px;font-size:13px}
+#td-storefront .sf-categories{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:24px}
+#td-storefront .sf-chip{border:1px solid var(--sf-line);border-radius:30px;padding:7px 13px;background:var(--sf-paper);color:var(--sf-muted);font-size:12px;font-weight:600}
+#td-storefront .sf-chip[aria-pressed="true"]{background:var(--sf-ink);color:var(--sf-paper);border-color:var(--sf-ink)}
+#td-storefront .sf-list-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px;gap:12px}
+#td-storefront .sf-small{color:var(--sf-muted);font-size:12px}
+#td-storefront .sf-products{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}
+#td-storefront .sf-product{display:flex;flex-direction:column;gap:10px;padding:17px;background:var(--sf-paper);border:1px solid var(--sf-line);border-radius:var(--sf-radius);min-width:0}
+#td-storefront .sf-product-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#td-storefront .sf-product-mark{width:48px;height:48px;display:grid;place-items:center;border:0;padding:0;border-radius:10px;background:var(--sf-soft);color:var(--sf-link);font-size:22px;font-weight:650}
+#td-storefront .sf-stock{color:var(--sf-good);font-size:11px;display:inline-flex;align-items:center;gap:5px}
+#td-storefront .sf-stock:before{content:"";width:5px;height:5px;background:currentColor;border-radius:50%}
+#td-storefront .sf-category{font-size:11px;color:var(--sf-link)}
+#td-storefront .sf-name{padding:0;margin:4px 0;border:0;background:transparent;color:var(--sf-ink);text-align:left;font-size:17px;font-weight:650;line-height:1.35}
+#td-storefront .sf-desc{color:var(--sf-muted);font-size:12px;min-height:37px}
+#td-storefront .sf-price{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.6px}
+#td-storefront .sf-period{font-size:11px;color:var(--sf-muted);margin-left:5px}
+#td-storefront .sf-buy{width:100%;margin-top:auto}
+#td-storefront .sf-card-foot{color:var(--sf-muted);font-size:11px;text-align:center}
+#td-storefront .sf-empty{padding:45px 10px;text-align:center;background:var(--sf-paper);border:1px solid var(--sf-line);border-radius:12px}
+#td-storefront .sf-empty p{color:var(--sf-muted);margin:7px 0 17px}
+#td-storefront .sf-footer{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;padding-top:22px;margin-top:26px;border-top:1px solid var(--sf-line);color:var(--sf-muted);font-size:12px}
+#td-storefront .sf-back{display:inline-flex;align-items:center;gap:6px;color:var(--sf-link);border:0;background:transparent;padding:0;font-size:12px;margin-bottom:23px}
+#td-storefront .sf-detail{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:28px;align-items:start}
+#td-storefront .sf-cover{padding:34px;background:var(--sf-soft);border:1px solid var(--sf-line);border-radius:12px;min-height:280px;display:flex;flex-direction:column;justify-content:space-between;gap:35px;color:var(--sf-link)}
+#td-storefront .sf-cover b{font-size:68px;font-weight:600;letter-spacing:-3px}
+#td-storefront .sf-cover p{font-size:16px;font-weight:600}
+#td-storefront .sf-detail h1{font-size:29px;line-height:1.2;font-weight:650;letter-spacing:-.8px;margin:8px 0 12px}
+#td-storefront .sf-detail .sf-desc{font-size:14px;min-height:0}
+#td-storefront .sf-detail .sf-price{font-size:29px}
+#td-storefront .sf-detail-price{margin:21px 0 19px}
+#td-storefront .sf-quantity{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:19px 0;font-size:13px}
+#td-storefront .sf-quantity input{width:76px;background:var(--sf-paper);color:var(--sf-ink);padding:9px 10px;border:1px solid var(--sf-line);border-radius:7px}
+#td-storefront .sf-details-text{background:var(--sf-paper);border:1px solid var(--sf-line);border-radius:12px;padding:23px;margin-top:26px}
+#td-storefront .sf-details-text h2{font-size:17px;font-weight:650;margin-bottom:12px}
+#td-storefront .sf-details-text p{color:var(--sf-muted);margin-top:10px}
+#td-storefront .sf-note{color:var(--sf-muted);font-size:12px;margin-top:12px!important}
+#td-storefront .sf-overlay{position:absolute;inset:0;z-index:4;display:flex;justify-content:flex-end;background:color-mix(in srgb,var(--sf-ink) 18%,transparent);border-radius:12px}
+#td-storefront .sf-drawer{width:min(100%,365px);padding:24px;background:var(--sf-paper);border-left:1px solid var(--sf-line);border-radius:0 12px 12px 0}
+#td-storefront .sf-drawer h2{font-size:24px;line-height:1.25;margin:26px 0 12px;font-weight:650;letter-spacing:-.5px}
+#td-storefront .sf-drawer p{color:var(--sf-muted);font-size:13px;margin:13px 0}
+#td-storefront .sf-summary{border-top:1px solid var(--sf-line);padding-top:17px;margin:21px 0;display:flex;justify-content:space-between}
+#td-storefront .sf-drawer .sf-summary strong{font-variant-numeric:tabular-nums}
+@container sf (max-width:650px){
+  #td-storefront .sf-header{padding:20px 17px}
+  #td-storefront .sf-preview{padding:9px 17px;font-size:11px}
+  #td-storefront .sf-account-text{display:none}
+  #td-storefront .sf-logo{font-size:20px}
+  #td-storefront .sf-main{padding:22px 16px}
+  #td-storefront .sf-title{font-size:24px}
+  #td-storefront .sf-tools{grid-template-columns:1fr;gap:9px;margin-top:15px}
+  #td-storefront .sf-categories{gap:6px;margin-bottom:21px}
+  #td-storefront .sf-chip{padding:8px 10px}
+  #td-storefront .sf-products{grid-template-columns:1fr;gap:11px}
+  #td-storefront .sf-product{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:10px 12px;padding:15px}
+  #td-storefront .sf-product-top{display:block;grid-column:1;grid-row:1/3}
+  #td-storefront .sf-product-mark{width:42px;height:42px}
+  #td-storefront .sf-product-top .sf-stock{display:none}
+  #td-storefront .sf-copy{grid-column:2/4;grid-row:1}
+  #td-storefront .sf-cost{grid-column:2;grid-row:2;align-self:center}
+  #td-storefront .sf-buy{grid-column:3;grid-row:2;width:auto;padding:8px 10px;font-size:12px}
+  #td-storefront .sf-card-foot{grid-column:2/4;text-align:left;font-size:11px}
+  #td-storefront .sf-period{display:none}
+  #td-storefront .sf-desc{min-height:0}
+  #td-storefront .sf-price{font-size:20px}
+  #td-storefront .sf-detail{grid-template-columns:1fr;gap:22px}
+  #td-storefront .sf-cover{min-height:0;padding:19px;display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:center}
+  #td-storefront .sf-cover b{font-size:39px;letter-spacing:-1px}
+  #td-storefront .sf-cover .sf-small{display:none}
+  #td-storefront .sf-cover p{font-size:14px}
+  #td-storefront .sf-detail h1{font-size:27px}
+  #td-storefront .sf-details-text{padding:19px}
+  #td-storefront .sf-drawer{width:100%;border-left:0;border-radius:12px}
+}
+@media(pointer:coarse){
+  #td-storefront button{min-height:44px}
+  #td-storefront input,#td-storefront select{font-size:16px}
+}
+</style>
+<div id="td-storefront">
+  <div id="td-sf-app" class="sf-app" data-theme="light" aria-label="Wireframe storefront TiệmDigital"></div>
+</div>
+<script>
+(()=>{
+const root=document.getElementById("td-storefront"),app=document.getElementById("td-sf-app");
+const products=[
+  {id:1,name:"Trợ lý AI Pro",category:"Công cụ AI",price:129000,mark:"AI",description:"Gói tháng cho công việc và học tập.",details:["Hỗ trợ lên ý tưởng, viết nội dung và tóm tắt tài liệu trong công việc hằng ngày.","Gói sử dụng 30 ngày. Hướng dẫn và thông tin nhận hàng hiển thị trong đơn sau khi thanh toán được xác nhận."]},
+  {id:2,name:"Bộ thiết kế sáng tạo",category:"Thiết kế",price:79000,mark:"Ds",description:"Công cụ làm hình ảnh và nội dung.",details:["Một bộ công cụ dành cho thiết kế hình ảnh và nội dung cá nhân.","Đọc kỹ mô tả sản phẩm trước khi mua để chọn đúng gói cho nhu cầu của bạn."]},
+  {id:3,name:"Lưu trữ đám mây",category:"Tiện ích",price:49000,mark:"Cl",description:"Thêm không gian cho tài liệu của bạn.",details:["Không gian lưu trữ bổ sung cho tài liệu và công việc.","Phù hợp để lưu tài liệu và đồng bộ giữa các thiết bị. Hướng dẫn nhận sản phẩm nằm trong chi tiết đơn."]}
+];
+const prior=window.openai?.widgetState?.privateContent||{};
+const state={query:"",category:"Tất cả",sort:"default",detail:null,quantities:{},theme:prior.theme==="dark"?"dark":"light",phone:prior.phone===true};
+const money=n=>new Intl.NumberFormat("vi-VN").format(n)+" ₫";
+const icon=n=>'<i data-lucide="'+n+'" aria-hidden="true"></i>';
+const btn=(text,action,attrs="",primary=false)=>'<button type="button" class="sf-button cursor-interaction '+(primary?"sf-primary":"")+'" data-action="'+action+'" '+attrs+'>'+text+'</button>';
+const save=()=>window.openai?.setWidgetState?.({modelContent:{screen:"storefront",direction:"Gọn rõ",catalogFirst:true},privateContent:{theme:state.theme,phone:state.phone}}).catch(()=>{});
+function header(){return '<header class="sf-header"><button type="button" class="sf-logo cursor-interaction" data-action="catalog" aria-label="TiệmDigital — danh mục"><b>t.</b><span>Tiệm<em>Digital</em></span></button><div class="sf-row">'+btn(icon(state.theme==="light"?"moon":"sun"),"theme",'aria-label="Đổi chế độ sáng tối"')+btn(icon("user-round")+'<span class="sf-account-text">Tài khoản</span>',"account")+'</div></header>';}
+function card(p){return '<article class="sf-product" data-item="'+p.id+'"><div class="sf-product-top"><button type="button" class="sf-product-mark cursor-interaction" data-action="detail" data-id="'+p.id+'" aria-label="Xem chi tiết '+p.name+'">'+p.mark+'</button><span class="sf-stock">Còn hàng</span></div><div class="sf-copy"><span class="sf-category">'+p.category+'</span><br><button type="button" class="sf-name cursor-interaction" data-action="detail" data-id="'+p.id+'">'+p.name+'</button><p class="sf-desc">'+p.description+'</p></div><div class="sf-cost"><span class="sf-price">'+money(p.price)+'</span><span class="sf-period">/ tháng</span></div>'+btn("Mua ngay","buy",'data-id="'+p.id+'"',true).replace('class="sf-button','class="sf-button sf-buy')+'<div class="sf-card-foot">Xem mô tả để chọn đúng gói</div></article>';}
+function catalog(){
+return '<main class="sf-main"><h1 class="sf-title">Sản phẩm số</h1><div class="sf-tools"><label class="sf-search">'+icon("search")+'<input type="search" aria-label="Tìm sản phẩm" placeholder="Tìm tên sản phẩm, công cụ…" value="'+state.query+'"></label><select aria-label="Sắp xếp sản phẩm" data-sort><option value="default">Sắp xếp mặc định</option><option value="asc">Giá thấp đến cao</option><option value="desc">Giá cao đến thấp</option></select></div><nav class="sf-categories" aria-label="Danh mục sản phẩm">'+["Tất cả","Công cụ AI","Thiết kế","Tiện ích"].map(c=>'<button type="button" class="sf-chip cursor-interaction" data-action="category" data-category="'+c+'" aria-pressed="'+(state.category===c)+'">'+c+'</button>').join("")+'</nav><div class="sf-list-title"><strong>Tất cả sản phẩm</strong><span class="sf-small" data-result>3 sản phẩm</span></div><div class="sf-products">'+products.map(card).join("")+'</div><div class="sf-empty" hidden><h2>Không tìm thấy sản phẩm</h2><p>Thử từ khóa hoặc danh mục khác.</p>'+btn("Xóa bộ lọc","reset")+'</div>'+footer()+'</main>';
+}
+function footer(){return '<footer class="sf-footer"><span>TiệmDigital · Dữ liệu minh họa</span><button type="button" class="sf-plain cursor-interaction" data-action="support">Hỗ trợ & đơn hàng →</button></footer>';}
+function detail(p){
+const qty=state.quantities[p.id]||1;
+return '<main class="sf-main"><button type="button" class="sf-back cursor-interaction" data-action="catalog">'+icon("arrow-left")+'Trở lại danh sách</button><section class="sf-detail"><div class="sf-cover"><b>'+p.mark+'</b><div><span class="sf-small">'+p.category+'</span><p>'+p.name+'</p></div></div><div><span class="sf-category">'+p.category+'</span><h1>'+p.name+'</h1><span class="sf-stock">Còn hàng</span><p class="sf-desc" style="margin-top:12px">'+p.description+'</p><div class="sf-detail-price"><span class="sf-price">'+money(p.price)+'</span><span class="sf-period">/ tháng</span></div><label class="sf-quantity">Số lượng<input type="number" min="1" max="20" value="'+qty+'" data-quantity data-product="'+p.id+'"></label>'+btn("Mua ngay","buy",'data-id="'+p.id+'"',true).replace('class="sf-button','class="sf-button sf-buy')+'<p class="sf-note">Xem tổng tiền và xác nhận trong khung mua.</p></div></section><section class="sf-details-text"><h2>Mô tả sản phẩm</h2>'+p.details.map(t=>'<p>'+t+'</p>').join("")+'</section>'+footer()+'</main>';
+}
+function icons(){if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});}
+function render(){
+app.dataset.theme=state.theme;app.classList.toggle("sf-phone",state.phone);
+const p=products.find(p=>p.id===state.detail);
+app.innerHTML='<div class="sf-page"><div class="sf-preview"><span>Bố cục storefront · Minh họa</span><button type="button" class="sf-plain cursor-interaction" data-action="device">'+(state.phone?"Xem desktop":"Xem mobile")+'</button></div>'+header()+(p?detail(p):catalog())+'</div>';
+if(!p){app.querySelector("[data-sort]").value=state.sort;filter();}
+icons();
+}
+function filter(){
+let list=products.filter(p=>(state.category==="Tất cả"||p.category===state.category)&&[p.name,p.description,p.category].join(" ").toLocaleLowerCase("vi").includes(state.query.toLocaleLowerCase("vi").trim()));
+if(state.sort==="asc")list.sort((a,b)=>a.price-b.price);if(state.sort==="desc")list.sort((a,b)=>b.price-a.price);
+const grid=app.querySelector(".sf-products");
+grid.querySelectorAll("[data-item]").forEach(el=>el.hidden=!list.some(p=>p.id===Number(el.dataset.item)));
+list.forEach(p=>grid.appendChild(grid.querySelector('[data-item="'+p.id+'"]')));
+app.querySelector("[data-result]").textContent=list.length+" sản phẩm";
+app.querySelector(".sf-empty").hidden=list.length>0;
+app.querySelectorAll("[data-action=category]").forEach(el=>el.setAttribute("aria-pressed",String(el.dataset.category===state.category)));
+}
+let trigger=null;
+function close(){app.querySelector(".sf-overlay")?.remove();app.querySelector(".sf-page").inert=false;const qty=app.querySelector("[data-quantity]");if(qty&&state.detail)qty.value=String(state.quantities[state.detail]||1);if(trigger?.isConnected)trigger.focus();}
+function panel(title,body){
+trigger=document.activeElement;app.querySelector(".sf-page").inert=true;
+const el=document.createElement("div");el.className="sf-overlay";
+el.innerHTML='<section class="sf-drawer" role="dialog" aria-modal="true" aria-label="'+title+'"><div class="sf-row" style="justify-content:space-between"><span class="sf-small">TiệmDigital</span>'+btn(icon("x"),"close",'aria-label="Đóng khung"')+'</div><h2>'+title+'</h2>'+body+'</section>';
+app.appendChild(el);el.querySelector("button").focus();el.addEventListener("click",e=>{if(e.target===el)close();});icons();
+}
+app.addEventListener("input",e=>{
+if(e.target.matches('input[type="search"]')){state.query=e.target.value;filter();}
+if(e.target.matches("[data-quantity]")){
+const id=Number(e.target.dataset.product),qty=Math.max(1,Math.min(20,Math.trunc(Number(e.target.value))||1));state.quantities[id]=qty;e.target.value=String(qty);
+const total=app.querySelector("[data-total]");if(total)total.textContent=money(products.find(p=>p.id===id).price*qty);
+}
+});
+app.addEventListener("change",e=>{if(e.target.matches("[data-sort]")){state.sort=e.target.value;filter();}});
+app.addEventListener("click",e=>{
+const b=e.target.closest("button[data-action]");if(!b)return;
+switch(b.dataset.action){
+case "theme":state.theme=state.theme==="light"?"dark":"light";render();save();break;
+case "device":state.phone=!state.phone;render();save();break;
+case "catalog":state.detail=null;render();break;
+case "detail":state.detail=Number(b.dataset.id);render();break;
+case "category":state.category=b.dataset.category;filter();break;
+case "reset":state.query="";state.category="Tất cả";state.sort="default";render();break;
+case "close":close();break;
+case "buy":{
+const p=products.find(p=>p.id===Number(b.dataset.id)),qty=state.detail===p.id?(state.quantities[p.id]||1):1;state.quantities[p.id]=qty;
+panel("Mua "+p.name,'<p>'+p.description+'</p><label class="sf-quantity">Số lượng<input type="number" min="1" max="20" value="'+qty+'" data-quantity data-product="'+p.id+'"></label><div class="sf-summary"><span>Tổng tiền</span><strong data-total>'+money(p.price*qty)+'</strong></div><p>Đăng nhập để tiếp tục mua hàng. Sản phẩm và số lượng được giữ lại.</p>'+btn("Đăng nhập để tiếp tục","auth","",true));break;}
+case "auth":close();panel("Đăng nhập để mua",'<p>Sản phẩm và số lượng bạn chọn được giữ lại.</p><p>Dùng tài khoản TiệmDigital, mã email hoặc Telegram để tiếp tục.</p>'+btn("Quay lại","close","",true));break;
+case "account":panel("Tài khoản",'<p>Đơn hàng · Ví · Hồ sơ & bảo mật</p>'+btn("Đóng","close","",true));break;
+case "support":panel("Hỗ trợ",'<p>Xem lại đơn và dữ liệu đã nhận trong Đơn hàng của tôi; liên hệ hỗ trợ theo thông tin của cửa hàng.</p>'+btn("Đóng","close","",true));break;
+}
+});
+app.addEventListener("keydown",e=>{
+const p=app.querySelector(".sf-overlay");if(!p)return;if(e.key==="Escape"){e.preventDefault();close();}
+if(e.key==="Tab"){const nodes=[...p.querySelectorAll("button,input")],first=nodes[0],last=nodes[nodes.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
+});
+render();
+if(globalThis.Tweak){const tokens={radius:12};const t=new Tweak({container:app,onChange:()=>app.style.setProperty("--sf-radius",tokens.radius+"px")});t.addSlider(tokens,"radius",{label:"Độ bo thẻ",min:0,max:20,unit:"px",reference:"--sf-radius"});}
+window.addEventListener("openai:set_globals",e=>{const v=e.detail?.globals?.widgetState?.privateContent;if(!v)return;state.theme=v.theme==="dark"?"dark":"light";state.phone=v.phone===true;render();});
+})();
+</script>

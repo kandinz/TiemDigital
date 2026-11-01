@@ -1,0 +1,26 @@
+{
+  "bytes": 21800,
+  "results": [
+    {
+      "direction": "storefront",
+      "width": 1024,
+      "pass": true
+    },
+    {
+      "direction": "storefront",
+      "width": 736,
+      "pass": true
+    },
+    {
+      "direction": "storefront",
+      "width": 390,
+      "pass": true
+    },
+    {
+      "direction": "storefront",
+      "width": 320,
+      "pass": true
+    }
+  ],
+  "errors": []
+}
