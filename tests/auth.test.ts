@@ -2,7 +2,6 @@ import { env } from 'cloudflare:test';
 import { describe, expect, it, vi } from 'vitest';
 import worker from '../workers/index';
 import type { Env } from '../workers/types';
-import { now, sha256 } from '../workers/http';
 
 const testEnv = { ...env, APP_ORIGIN: 'http://localhost:8787', ADMIN_ORIGIN: 'http://localhost:8787', ENVIRONMENT: 'local', BETTER_AUTH_SECRET: 'test-secret-with-at-least-thirty-two-characters', TELEGRAM_BOT_TOKEN: 'auth-test-bot-token', TELEGRAM_WEBHOOK_SECRET: 'auth-test-webhook-secret', TELEGRAM_BOT_USERNAME: 'tiemdigital_bot' } as Env;
 let client = 50;
@@ -100,82 +99,58 @@ describe('password and Telegram authentication', () => {
     expect(await (await request('/api/me', undefined, cookies(login))).json()).toMatchObject({ id: before.id, hasPassword: true });
   });
 
-  it('logs in to the existing bot account only after explicit Telegram confirmation, without merging its wallet', async () => {
+  it('authenticates Telegram OTP once and resets passwords through linked email or Telegram', async () => {
     client++;
-    const telegramId = '87654321';
-    const userId = `telegram:${telegramId}`;
-    await env.DB.prepare('INSERT INTO user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,0,?,?)').bind(userId, 'Bot customer', `telegram-${telegramId}@users.invalid`, Date.now(), Date.now()).run();
-    await env.DB.prepare('INSERT INTO telegram_links(user_id,telegram_id,chat_id) VALUES(?,?,?)').bind(userId, telegramId, telegramId).run();
-    await env.DB.prepare("INSERT INTO journals(id,source,user_id,kind,amount,wallet_delta,debit_account,credit_account,memo) VALUES(?,?,?,'TOPUP',50000,50000,'test-bank',?,'test fixture')").bind(crypto.randomUUID(), crypto.randomUUID(), userId, `wallet:${userId}`).run();
-    const started = await request('/api/auth/telegram/start', {});
-    expect(started.status).toBe(200);
-    const startCookie = cookies(started);
-    const challenge = await started.json() as { token: string; url: string };
-    expect(challenge.url).toBe(`https://t.me/tiemdigital_bot?start=login_${challenge.token}`);
-    expect((await request('/api/auth/telegram/complete', { token: challenge.token })).status).toBe(403);
-    expect(await (await request('/api/auth/telegram/complete', { token: challenge.token }, startCookie)).json()).toMatchObject({ status: 'PENDING' });
-    const sent: { text?: string; reply_markup?: { inline_keyboard: { callback_data: string }[][] } }[] = [];
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      if (!String(input).startsWith('https://api.telegram.org/botauth-test-bot-token/')) throw new Error('Unexpected external request');
-      sent.push(JSON.parse(String(init?.body)));
+    const signup = await request('/api/auth/register', { username: 'otp_customer', email: 'otp@example.test', password });
+    const oldCookie = cookies(signup);
+    const me = await (await request('/api/me', undefined, oldCookie)).json() as { id: string };
+    await env.DB.prepare('INSERT INTO telegram_links(user_id,telegram_id,chat_id) VALUES(?,?,?)').bind(me.id, '87654321', '87654321').run();
+    let code = '';
+    const send = vi.fn(async (message: { text: string }) => { code = message.text.match(/: (\d{6})/)![1]!; });
+    testEnv.EMAIL = { send }; testEnv.EMAIL_FROM = 'sender@example.test';
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (_input, init) => {
+      const message = JSON.parse(init!.body as string) as { text: string };
+      code = message.text.match(/: (\d{6})/)![1]!;
       return Response.json({ ok: true, result: {} });
-    });
-    let updateId = 700000;
-    async function update(text: string, callback = false, sender = Number(telegramId), secret = testEnv.TELEGRAM_WEBHOOK_SECRET!) {
-      updateId++;
-      const from = { id: sender, first_name: 'Bot customer' }, chat = { id: sender, type: 'private' };
-      return worker.fetch(new Request(`${testEnv.APP_ORIGIN}/webhooks/telegram`, { method: 'POST', headers: { 'X-Telegram-Bot-Api-Secret-Token': secret, 'content-type': 'application/json' }, body: JSON.stringify({ update_id: updateId, ...(callback ? { callback_query: { id: String(updateId), from, data: text, message: { chat } } } : { message: { from, chat, text } }) }) }), testEnv);
-    }
+    }) as typeof fetch;
     try {
-      expect((await update(`/start login_${challenge.token}`, false, Number(telegramId), 'forged')).status).toBe(401);
-      expect((await update(`/start login_${challenge.token}`)).status).toBe(200);
-      expect(await (await request('/api/auth/telegram/complete', { token: challenge.token }, startCookie)).json()).toMatchObject({ status: 'PENDING' });
-      const button = sent.find((message) => message.reply_markup)?.reply_markup?.inline_keyboard[0][0].callback_data;
-      expect(button).toBe(`web-login:${challenge.token}`);
-      await update(button!, true, Number(telegramId) + 1);
-      expect(await (await request('/api/auth/telegram/complete', { token: challenge.token }, startCookie)).json()).toMatchObject({ status: 'PENDING' });
-      await update(button!, true);
-      const completed = await request('/api/auth/telegram/complete', { token: challenge.token }, startCookie);
-      expect(completed.status).toBe(200);
-      expect(await completed.json()).toMatchObject({ status: 'SIGNED_IN' });
-      const cookie = cookies(completed);
-      expect(await (await request('/api/me', undefined, cookie)).json()).toMatchObject({ id: userId, email: '' });
-      expect(await (await request('/api/me/wallet', undefined, cookie)).json()).toMatchObject({ balance: 50000 });
-      expect((await request('/api/auth/telegram/complete', { token: challenge.token }, startCookie)).status).toBe(400);
-      expect(await env.DB.prepare('SELECT COUNT(*) AS count FROM telegram_links WHERE telegram_id=?').bind(telegramId).first()).toMatchObject({ count: 1 });
-      expect((await request('/api/auth/profile', { name: 'Bot customer', username: 'Bot_Web', email: 'bot-web@example.com' }, cookie)).status).toBe(200);
-      expect(await (await request('/api/me', undefined, cookie)).json()).toMatchObject({ id: userId, username: 'bot_web', hasPassword: false });
-      const again = await request('/api/auth/telegram/start', {});
-      const next = await again.json() as { token: string };
-      await update(`/start login_${next.token}`);
-      await update(`web-login:${next.token}`, true);
-      expect((await request('/api/auth/telegram/complete', { token: next.token }, cookies(again))).status).toBe(200);
-      expect((await request('/api/auth/password/create', { newPassword: password }, cookie)).status).toBe(200);
-      expect((await request('/api/auth/password/create', { newPassword: password }, cookie)).status).toBe(400);
-      const passwordLogin = await request('/api/auth/sign-in/username', { username: 'bot_web', password });
-      expect(passwordLogin.status).toBe(200);
-      expect(await (await request('/api/me/wallet', undefined, cookies(passwordLogin))).json()).toMatchObject({ balance: 50000 });
-      const blockedStart = await request('/api/auth/telegram/start', {});
-      const blocked = await blockedStart.json() as { token: string };
-      await env.DB.prepare('UPDATE telegram_logins SET user_id=?,telegram_id=?,confirmed_at=? WHERE id=?').bind(userId, telegramId, now(), await sha256(blocked.token)).run();
-      await env.DB.prepare('UPDATE customers SET disabled=1 WHERE id=?').bind(userId).run();
-      try {
-        expect((await request('/api/auth/telegram/complete', { token: blocked.token }, cookies(blockedStart))).status).toBe(403);
-        expect((await request('/api/me/wallet', undefined, cookie)).status).toBe(403);
-        expect((await request('/api/auth/profile', { name: 'Blocked', username: 'blocked_bot', email: '' }, cookie)).status).toBe(403);
-        expect((await request('/api/auth/profile/', { name: 'Blocked', username: 'blocked_bot', email: '' }, cookie)).status).toBe(403);
-        expect((await request('/api/auth/change-password', { currentPassword: password, newPassword: 'Changed-password-42' }, cookie)).status).toBe(403);
-      } finally { await env.DB.prepare('UPDATE customers SET disabled=0 WHERE id=?').bind(userId).run(); }
-    } finally { fetchMock.mockRestore(); }
+      const begin = await request('/api/auth/telegram/otp/start', { identifier: '87654321' });
+      expect(begin.status).toBe(200);
+      const challenge = await begin.json() as { token: string };
+      expect(code).toMatch(/^\d{6}$/);
+      expect((await request('/api/auth/recovery/complete', { ...challenge, otp: code, newPassword: password })).status).toBe(400);
+      const login = await request('/api/auth/telegram/otp/complete', { ...challenge, otp: code });
+      expect(login.status).toBe(200);
+      expect(await (await request('/api/me', undefined, cookies(login))).json()).toMatchObject({ id: me.id });
+      expect((await request('/api/auth/telegram/otp/complete', { ...challenge, otp: code })).status).toBe(400);
+      await env.DB.prepare("INSERT INTO admin_accounts(user_id,role) VALUES(?,'owner')").bind(me.id).run();
+      const sessionEnv = { ...testEnv, ADMIN_AUTH_MODE: 'session' as const };
+      expect((await worker.fetch(new Request(`${testEnv.APP_ORIGIN}/api/admin/me`, { headers: { cookie: cookies(login) } }), sessionEnv)).status).toBe(401);
+      for (const channel of ['email', 'telegram']) {
+        client++;
+        const recovery = await request('/api/auth/recovery/start', { identifier: 'otp_customer', channel });
+        expect(recovery.status).toBe(200);
+        const reset = await recovery.json() as { token: string };
+        const nextPassword = `New-password-${channel}-42`;
+        expect((await request('/api/auth/recovery/complete', { ...reset, otp: code, newPassword: nextPassword })).status).toBe(200);
+        expect((await request('/api/me', undefined, oldCookie)).status).toBe(401);
+        expect((await request('/api/auth/sign-in/username', { username: 'otp_customer', password: nextPassword })).status).toBe(200);
+      }
+      expect(send).toHaveBeenCalledOnce();
+    } finally { globalThis.fetch = originalFetch; delete testEnv.EMAIL; delete testEnv.EMAIL_FROM; }
   });
-
-  it('rejects expired and browser-mismatched Telegram login requests', async () => {
+  it('rejects unknown, expired, and repeatedly incorrect OTPs without disclosing unknown accounts', async () => {
     client++;
-    const first = await request('/api/auth/telegram/start', {});
-    const cookie = cookies(first), challenge = await first.json() as { token: string };
-    const second = await request('/api/auth/telegram/start', {});
-    expect((await request('/api/auth/telegram/complete', { token: challenge.token }, cookies(second))).status).toBe(400);
-    await env.DB.prepare('UPDATE telegram_logins SET expires_at=? WHERE id=?').bind(now() - 1, await sha256(challenge.token)).run();
-    expect((await request('/api/auth/telegram/complete', { token: challenge.token }, cookie)).status).toBe(400);
+    const unknown = await request('/api/auth/telegram/otp/start', { identifier: '98765432' });
+    expect(unknown.status).toBe(200);
+    const challenge = await unknown.json() as { token: string };
+    expect((await request('/api/auth/telegram/otp/complete', { ...challenge, otp: '123456' })).status).toBe(400);
+    const token = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO verification(id,identifier,value,expiresAt,createdAt,updatedAt) VALUES(?,?,?,?,?,?)').bind(token, 'customer-otp:login', '{}', Date.now()-1, Date.now(), Date.now()).run();
+    expect((await request('/api/auth/telegram/otp/complete', { token, otp: '123456' })).status).toBe(400);
+    for (let i=0;i<2;i++) expect((await request('/api/auth/telegram/otp/complete', { ...challenge, otp: '123456' })).status).toBe(400);
+    expect((await request('/api/auth/telegram/otp/complete', { ...challenge, otp: '123456' })).status).toBe(429);
+    expect((await request('/api/auth/telegram/start', {})).status).toBe(404);
   });
 });

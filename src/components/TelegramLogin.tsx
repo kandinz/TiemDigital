@@ -1,54 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../services/platform';
-
-interface Challenge { token: string; url: string; expiresAt: number }
-
 export function TelegramLogin({ onLogin }: { onLogin: () => void }) {
-  const [challenge, setChallenge] = useState<Challenge | null>(null);
+  const [identifier, setIdentifier] = useState('');
+  const [token, setToken] = useState('');
+  const [otp, setOtp] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const login = useRef(onLogin);
-  useEffect(() => { login.current = onLogin; }, [onLogin]);
-  useEffect(() => {
-    if (!challenge) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    async function poll() {
-      if (stopped) return;
-      if (Date.now() >= challenge!.expiresAt * 1000) {
-        setError('Yêu cầu đã hết hạn. Vui lòng tạo lại.');
-        setChallenge(null);
-        return;
-      }
-      if (!document.hidden) {
-        try {
-          const result = await api<{ status: 'PENDING' | 'SIGNED_IN' }>('/api/auth/telegram/complete', { body: { token: challenge!.token } });
-          if (stopped) return;
-          if (result.status === 'SIGNED_IN') { setChallenge(null); login.current(); return; }
-        } catch (e) {
-          if (!stopped) { setError((e as Error).message); setChallenge(null); }
-          return;
-        }
-      }
-      if (!stopped) timer = setTimeout(() => void poll(), 5000);
-    }
-    timer = setTimeout(() => void poll(), 2000);
-    return () => { stopped = true; clearTimeout(timer); };
-  }, [challenge]);
-
-  async function start() {
-    setBusy(true); setError('');
-    try { setChallenge(await api<Challenge>('/api/auth/telegram/start', { body: {} })); }
-    catch (e) { setError((e as Error).message); }
-    finally { setBusy(false); }
-  }
-
-  return <div className="telegram-login">
-    {challenge ? <>
-      <a className="primary" href={challenge.url} target="_blank" rel="noopener noreferrer">Mở bot để xác nhận đăng nhập</a>
-      <p className="muted" role="status">Xác nhận trong bot rồi quay lại đây. Website sẽ tự đăng nhập bằng tài khoản Telegram của bạn.</p>
-      <button type="button" className="quiet" onClick={() => setChallenge(null)}>Hủy yêu cầu</button>
-    </> : <button type="button" disabled={busy} onClick={() => void start()}>{busy ? 'Đang tạo yêu cầu…' : 'Đăng nhập bằng Telegram'}</button>}
-    {error && <p className="notice error" role="alert">{error}</p>}
-  </div>;
+  return <form className="telegram-login" onSubmit={async e => {
+    e.preventDefault(); setBusy(true); setError('');
+    try {
+      if (!token) setToken((await api<{ token: string }>('/api/auth/telegram/otp/start', { body: { identifier } })).token);
+      else { await api('/api/auth/telegram/otp/complete', { body: { token, otp } }); onLogin(); }
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }}>
+    <label>Telegram User ID<input required inputMode="numeric" pattern="[0-9]{1,25}" disabled={!!token || busy} value={identifier} onChange={e => setIdentifier(e.target.value)} /></label>
+    <p className="muted">Dùng User ID đã liên kết và đã mở bot Tiệm Digital.</p>
+    {token && <><p role="status">Nếu User ID đã liên kết, OTP sẽ được gửi qua Telegram. Mã có hiệu lực 5 phút.</p><label>OTP Telegram<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={otp} onChange={e => setOtp(e.target.value)} /></label></>}
+    {error && <p role="alert" className="notice error">{error}</p>}
+    <button disabled={busy}>{busy ? 'Đang xử lý…' : token ? 'Đăng nhập bằng OTP' : 'Gửi OTP Telegram'}</button>
+    {token && <button type="button" disabled={busy} onClick={() => { setToken(''); setOtp(''); setError(''); }}>Đổi User ID / gửi lại</button>}
+  </form>;
 }

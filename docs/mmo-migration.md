@@ -1,6 +1,6 @@
 # Admin chung và dữ liệu nhà cung cấp
 
-Production và local dùng `ADMIN_AUTH_MODE=session`: mở `/admin` trên cùng origin với website, đăng nhập bằng tài khoản TiệmDigital. `admin_accounts.user_id` gắn quyền với ID cố định của tài khoản Better Auth. Email và username trong hồ sơ có thể đổi mà không làm mất hoặc phát sinh quyền. Tài khoản bị khóa hoặc hết phiên không truy cập được API admin. Chế độ `access` vẫn được giữ cho môi trường cấu hình Cloudflare Access riêng.
+Production và local dùng `ADMIN_AUTH_MODE=session`: mở `/quanly` trên cùng origin với website, đăng nhập bằng username/email và mật khẩu qua biểu mẫu quản trị. Phiên đăng nhập OTP khách hàng không cấp quyền truy cập quản trị. `admin_accounts.user_id` gắn quyền với ID cố định của tài khoản Better Auth. Email và username trong hồ sơ có thể đổi mà không làm mất hoặc phát sinh quyền. Tài khoản bị khóa hoặc hết phiên không truy cập được API admin. Chế độ `access` vẫn được giữ cho môi trường cấu hình Cloudflare Access riêng.
 
 ## Cấp quyền
 
@@ -12,9 +12,9 @@ node scripts/admin.mjs --username=khanhdq --role=owner --remote --env=production
 
 Local bỏ `--remote --env=production`. Script báo lỗi nếu username không tồn tại. `--email` chỉ dành cho danh tính Cloudflare Access trong `admin_roles`; quyền của chế độ session luôn đọc `admin_accounts`. Không tự cấp Owner cho người đăng ký đầu tiên và không dùng email chưa xác minh để quyết định quyền.
 
-Các chức năng NCC dùng chung admin React: `/admin/products`, `/admin/providers`, `/admin/orders` và `/admin/finance`. Không có tab MMO hoặc iframe riêng. Đường dẫn iframe cũ chuyển hướng về mục Sản phẩm; `/admin/mmo` mở mục Sản phẩm trong admin chung. Quyền Owner của các thao tác NCC được giữ nguyên. Backend adapter/đơn nhập/giao dịch cũ vẫn dùng namespace `/api/admin/mmo/*` để bảo toàn tích hợp và lịch sử. Các API ghi kiểm tra origin; danh tính Gum Tool/JWT Bearer không được dùng. Audit không ghi API key hoặc dữ liệu giao hàng.
+Các chức năng NCC dùng chung admin React: `/quanly/products`, `/quanly/providers`, `/quanly/orders` và `/quanly/finance`. Không có tab MMO hoặc iframe riêng. Đường dẫn iframe cũ chuyển hướng về mục Sản phẩm; `/quanly/mmo` mở mục Sản phẩm trong admin chung. Quyền Owner của các thao tác NCC được giữ nguyên. Backend adapter/đơn nhập/giao dịch cũ vẫn dùng namespace `/api/admin/mmo/*` để bảo toàn tích hợp và lịch sử. Các API ghi kiểm tra origin; danh tính Gum Tool/JWT Bearer không được dùng. Audit không ghi API key hoặc dữ liệu giao hàng.
 
-Owner có lối vào `/admin/purchases` để tự mua từ NCC. Chọn **Dùng riêng** để xem dữ liệu giao trong chi tiết đơn, hoặc **Nhập vào kho** và chọn sản phẩm kho tự tạo. Đơn hoàn tất được nhập kho bằng dữ liệu mã hóa; nếu NCC giao muộn, mở chi tiết đơn, kiểm tra trạng thái rồi chọn **Nhập đơn này vào kho**. Thao tác nhập lại cùng đơn không tạo thêm hàng, và đơn đã gắn giao dịch bán không được nhập kho. **Ngừng bán** ẩn sản phẩm khỏi cửa hàng nhưng giữ lịch sử đơn và kho. Báo cáo MMO cũ hiển thị ở **Tài chính & báo cáo**, tách doanh thu, giá vốn, chi phí khác và lợi nhuận theo năm/tháng.
+Owner có lối vào `/quanly/purchases` để tự mua từ NCC. Chọn **Dùng riêng** để xem dữ liệu giao trong chi tiết đơn, hoặc **Nhập vào kho** và chọn sản phẩm kho tự tạo. Đơn hoàn tất được nhập kho bằng dữ liệu mã hóa; nếu NCC giao muộn, mở chi tiết đơn, kiểm tra trạng thái rồi chọn **Nhập đơn này vào kho**. Thao tác nhập lại cùng đơn không tạo thêm hàng, và đơn đã gắn giao dịch bán không được nhập kho. **Ngừng bán** ẩn sản phẩm khỏi cửa hàng nhưng giữ lịch sử đơn và kho. Báo cáo MMO cũ hiển thị ở **Tài chính & báo cáo**, tách doanh thu, giá vốn, chi phí khác và lợi nhuận theo năm/tháng.
 
 ## Mã nguồn
 

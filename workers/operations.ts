@@ -34,7 +34,7 @@ export async function processOutbox(env: Env, eventId: string) {
       const config = await catalogConfig(env);
       const { orderId, reason } = JSON.parse(event.body) as { orderId: string; reason: string };
       if (!config.telegramChatId || !env.TELEGRAM_BOT_TOKEN) throw new Error('ADMIN_TELEGRAM_NOT_CONFIGURED');
-      await telegramCall(env, 'sendMessage', { chat_id: config.telegramChatId, text: `TiệmDigital · Đơn ${orderId} cần xử lý: ${reason}. Kiểm tra tại ${env.APP_ORIGIN}/admin/orders` });
+      await telegramCall(env, 'sendMessage', { chat_id: config.telegramChatId, text: `TiệmDigital · Đơn ${orderId} cần xử lý: ${reason}. Kiểm tra tại ${env.APP_ORIGIN}/quanly/orders` });
       await env.DB.prepare("UPDATE outbox SET status='DONE',error=NULL WHERE id=?").bind(event.id).run();
       return;
     }

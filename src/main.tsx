@@ -15,7 +15,7 @@ try {
 } catch {
   document.documentElement.classList.remove('dark');
 }
-const page = path === '/account' ? <AccountPage /> : path === '/admin' || path.startsWith('/admin/') ? <AdminPage /> : path.startsWith('/pages/') ? <ContentPage slug={path.slice(7)} /> : <App />;
+const page = path === '/account' ? <AccountPage /> : path === '/quanly' || path.startsWith('/quanly/') ? <AdminPage /> : path.startsWith('/pages/') ? <ContentPage slug={path.slice(7)} /> : <App />;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

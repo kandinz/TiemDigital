@@ -1,10 +1,10 @@
+import { otpAuth } from './otp-auth';
 import { betterAuth } from "better-auth";
 import { emailOTP, username } from "better-auth/plugins";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { Actor, Admin, Env } from "./types";
 import { HttpError, readBody } from "./http";
 import { z } from 'zod';
-import { telegramAuth } from './telegram-auth';
 import { profileAuth } from './profile-auth';
 import { APIError } from 'better-auth/api';
 
@@ -45,7 +45,7 @@ export function auth(env: Env) {
     },
     plugins: [
       username({ minUsernameLength: 3, maxUsernameLength: 30 }),
-      telegramAuth(env),
+      otpAuth(env),
       profileAuth(),
       emailOTP({
         storeOTP: "hashed",
@@ -91,6 +91,9 @@ export async function administrator(
     const role = await env.DB.prepare('SELECT role FROM admin_accounts WHERE user_id=?')
       .bind(actor.id).first<{ role: Admin['role'] }>();
     if (!role) throw new HttpError(403, 'Tài khoản chưa được cấp quyền quản trị');
+    const session = await auth(env).api.getSession({ headers: request.headers });
+    const proof = session && await env.DB.prepare('SELECT id FROM verification WHERE identifier=? AND value=? AND expiresAt>?').bind(`admin-password:${session.session.id}`, actor.id, Date.now()).first();
+    if (!proof) throw new HttpError(401, 'Vui lòng đăng nhập quản trị bằng tài khoản và mật khẩu.');
     // Audit and two-person approvals use this immutable identity, never a mutable profile email.
     return { userId: actor.id, username: actor.username ?? actor.name, email: `user:${actor.id}`, role: role.role };
   }

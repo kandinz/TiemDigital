@@ -75,6 +75,9 @@ beforeAll(async () => {
   )
     .bind(admin.id)
     .run();
+  const login = await call('/api/auth/admin-password', '', { identifier: 'unified_owner', password: 'Strong-password-42' });
+  expect(login.status).toBe(200);
+  owner = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
   const customer = await account("unified_buyer");
   buyer = customer.cookie;
   buyerId = customer.id;

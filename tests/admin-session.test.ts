@@ -14,11 +14,15 @@ const request = (path: string, cookie = '', body?: unknown, requestOrigin = orig
 it('opens admin with a granted TiệmDigital session, without Access, and binds rights to immutable user ID', async () => {
   const signup = await request('/api/auth/register', '', { username: 'admin_session_test', password: 'Strong-password-42' });
   expect(signup.status).toBe(200);
-  const cookie = signup.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+  let cookie = signup.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
   const me = await (await request('/api/me', cookie)).json() as { id: string };
   // This exact error currently prevents any account from reaching admin on Pages.
   expect((await request('/api/admin/me', cookie)).status).toBe(403);
   await env.DB.prepare('INSERT INTO admin_accounts(user_id,role) VALUES(?,?)').bind(me.id, 'owner').run();
+  expect((await request('/api/admin/me', cookie)).status).toBe(401);
+  const login = await request('/api/auth/admin-password', '', { identifier: 'admin_session_test', password: 'Strong-password-42' });
+  expect(login.status).toBe(200);
+  cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
   const admin = await request('/api/admin/me', cookie);
   expect(admin.status).toBe(200);
   expect(await admin.json()).toMatchObject({ role: 'owner', userId: me.id });

@@ -21,7 +21,7 @@ export default {
     const response = await handle(request, env);
     const headers = new Headers(response.headers);
     const pathname = new URL(request.url).pathname;
-    if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin/')) headers.set('Cache-Control', 'no-store');
+    if (pathname === '/quanly' || pathname.startsWith('/quanly/') || pathname.startsWith('/api/admin/')) headers.set('Cache-Control', 'no-store');
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
     headers.set("X-Frame-Options", 'DENY');
@@ -62,16 +62,16 @@ async function handle(request: Request, env: Env): Promise<Response> {
       env.ADMIN_ORIGIN !== env.APP_ORIGIN &&
       url.pathname === "/"
     )
-      return Response.redirect(`${env.ADMIN_AUTH_MODE === 'session' ? env.APP_ORIGIN : env.ADMIN_ORIGIN}/admin`, 302);
+      return Response.redirect(`${env.ADMIN_AUTH_MODE === 'session' ? env.APP_ORIGIN : env.ADMIN_ORIGIN}/quanly`, 302);
     if (url.pathname.startsWith("/api/admin/"))
       return await adminApi(request, env);
-    if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
+    if (url.pathname === "/quanly" || url.pathname.startsWith("/quanly/")) {
       if (env.ADMIN_AUTH_MODE !== 'session') await administrator(request, env);
       else if (url.origin !== env.APP_ORIGIN) return Response.redirect(`${env.APP_ORIGIN}${url.pathname}${url.search}`, 302);
-      if (url.pathname === '/admin/mmo-ui') {
+      if (url.pathname === '/quanly/mmo-ui') {
         const admin = await administrator(request, env);
         if (admin.role !== 'owner') throw new HttpError(403, 'Không đủ quyền MMO');
-        return Response.redirect(`${url.origin}/admin/products`, 302);
+        return Response.redirect(`${url.origin}/quanly/products`, 302);
       }
       return env.SITE_ASSETS.fetch(request);
     }
@@ -82,7 +82,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/api/public/config" && request.method === "GET")
       return json({
         adminAuthMode: env.ADMIN_AUTH_MODE ?? 'access',
-        adminUrl: `${env.ADMIN_AUTH_MODE === 'session' ? env.APP_ORIGIN : env.ADMIN_ORIGIN}/admin`,
+        adminUrl: `${env.ADMIN_AUTH_MODE === 'session' ? env.APP_ORIGIN : env.ADMIN_ORIGIN}/quanly`,
         turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null,
         botUsername: env.TELEGRAM_BOT_USERNAME ?? null,
       });
@@ -103,7 +103,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       checkOrigin(request, env);
       const profileWrite = ['/api/auth/profile', '/api/auth/password/create', '/api/auth/change-password', '/api/auth/update-user'].includes(url.pathname.replace(/\/+$/, ''));
       if (profileWrite) await customer(request, env);
-      if (request.method === 'POST' && (profileWrite || url.pathname === '/api/auth/register' || url.pathname.startsWith('/api/auth/sign-in/') || url.pathname === '/api/auth/telegram/start')) {
+      if (request.method === 'POST' && (profileWrite || url.pathname === '/api/auth/register' || url.pathname.startsWith('/api/auth/sign-in/') || url.pathname.startsWith('/api/auth/telegram/') || url.pathname.startsWith('/api/auth/recovery/') || url.pathname === '/api/auth/admin-password')) {
         await rateLimit(env, `auth:${request.headers.get('cf-connecting-ip') ?? 'unknown'}`, 12, 60);
       }
       if (url.pathname === '/api/auth/register' && request.method === 'POST') return await register(request, env);

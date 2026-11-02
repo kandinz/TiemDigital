@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { api } from '../services/platform';
 import { EmailLogin } from './EmailLogin';
+import { ForgotPassword } from './ForgotPassword';
 import { TelegramLogin } from './TelegramLogin';
 
 export function AuthForm({ onLogin, admin = false }: { onLogin: () => void; admin?: boolean }) {
-  const [mode, setMode] = useState<'login' | 'register' | 'email'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'email' | 'forgot'>('login');
   const [identifier, setIdentifier] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -13,7 +14,8 @@ export function AuthForm({ onLogin, admin = false }: { onLogin: () => void; admi
   const [error, setError] = useState('');
   const registering = mode === 'register';
 
-  if (mode === 'email') return <EmailLogin onLogin={onLogin} onBack={() => setMode('login')} />;
+  if (mode === 'forgot') return <ForgotPassword onBack={() => setMode('login')} />;
+  if (!admin && mode === 'email') return <EmailLogin onLogin={onLogin} onBack={() => setMode('login')} />;
   return <section className="auth-card">
     {!admin && <div className="auth-modes" role="group" aria-label="Chọn đăng nhập hoặc đăng ký">
       <button type="button" aria-pressed={!registering} onClick={() => { setMode('login'); setError(''); }}>Đăng nhập</button>
@@ -27,6 +29,7 @@ export function AuthForm({ onLogin, admin = false }: { onLogin: () => void; admi
       setBusy(true);
       try {
         if (registering) await api('/api/auth/register', { body: { username: identifier.trim(), password, ...(email.trim() ? { email: email.trim() } : {}) } });
+        else if (admin) await api('/api/auth/admin-password', { body: { identifier: identifier.trim(), password } });
         else {
           const value = identifier.trim();
           await api(value.includes('@') ? '/api/auth/sign-in/email' : '/api/auth/sign-in/username', { body: value.includes('@') ? { email: value.toLowerCase(), password } : { username: value, password } });
@@ -44,7 +47,8 @@ export function AuthForm({ onLogin, admin = false }: { onLogin: () => void; admi
         <button className="primary" disabled={busy}>{busy ? 'Đang xử lý…' : registering ? 'Tạo tài khoản' : 'Đăng nhập'}</button>
       </fieldset>
     </form>
-    <TelegramLogin onLogin={onLogin} />
-    {!registering && <button type="button" className="quiet" onClick={() => setMode('email')}>Dùng mã email</button>}
+    {!registering && <button type="button" className="quiet" onClick={() => setMode('forgot')}>Quên mật khẩu?</button>}
+    {!admin && <TelegramLogin onLogin={onLogin} />}
+    {!admin && !registering && <button type="button" className="quiet" onClick={() => setMode('email')}>Dùng mã email</button>}
   </section>;
 }

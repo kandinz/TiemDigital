@@ -4,7 +4,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   if (!authorization.ok || !authorization.headers.get('content-type')?.includes('text/html')) return authorization;
 
   // Worker owns authorization; Pages owns the HTML and matching hashed assets of its deployment.
-  const path = new URL(request.url).pathname === '/admin/mmo-ui' ? '/mmo/index.html' : '/index.html';
+  const path = new URL(request.url).pathname === '/quanly/mmo-ui' ? '/mmo/index.html' : '/index.html';
   const asset = await env.ASSETS.fetch(new Request(new URL(path, request.url), { method: request.method }));
   await authorization.body?.cancel();
   const headers = new Headers(authorization.headers);

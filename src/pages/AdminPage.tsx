@@ -1529,7 +1529,7 @@ export function AdminPage() {
   const [pageSearch, setPageSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState("session");
-  const [adminUrl, setAdminUrl] = useState("/admin");
+  const [adminUrl, setAdminUrl] = useState("/quanly");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [alertCount, setAlertCount] = useState<number | null>(null);
@@ -1549,7 +1549,7 @@ export function AdminPage() {
   const navigateTab = useCallback((nextTab: Tab) => {
     if (nextTab !== "orders") setPrefillOrderId("");
     setTab(nextTab);
-    window.history.pushState(null, "", `/admin/${nextTab}`);
+    window.history.pushState(null, "", `/quanly/${nextTab}`);
     setError("");
     setPageSearch("");
   }, []);

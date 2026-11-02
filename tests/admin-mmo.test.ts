@@ -8,9 +8,14 @@ const testEnv = { ...env, APP_ORIGIN: origin, ADMIN_ORIGIN: origin, ADMIN_AUTH_M
 async function account(username: string, role?: string) {
   const response = await worker.fetch(new Request(`${origin}/api/auth/register`, { method: 'POST', headers: { origin, 'content-type': 'application/json', 'cf-connecting-ip': `192.0.2.${role ? 233 : 234}` }, body: JSON.stringify({ username, password: 'Strong-password-42' }) }), testEnv);
   expect(response.status).toBe(200);
-  const cookie = response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+  let cookie = response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
   const me = await (await worker.fetch(new Request(`${origin}/api/me`, { headers: { cookie } }), testEnv)).json() as { id: string };
   if (role) await env.DB.prepare('INSERT INTO admin_accounts(user_id,role) VALUES(?,?)').bind(me.id, role).run();
+  if (role) {
+    const login = await worker.fetch(new Request(`${origin}/api/auth/admin-password`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ identifier: username, password: 'Strong-password-42' }) }), testEnv);
+    expect(login.status).toBe(200);
+    cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+  }
   return { cookie, id: me.id };
 }
 function request(path: string, cookie = '', body?: unknown, method = body === undefined ? 'GET' : 'POST', from = origin) {
@@ -25,13 +30,13 @@ it('keeps every MMO route private, uses TiệmDigital identity, and supports ret
   expect((await request('/providers', support.cookie)).status).toBe(403);
   const owner = await account('mmo_owner', 'owner');
   const frameEnv = { ...testEnv, SITE_ASSETS: { fetch: async (request: Request) => new Response(new URL(request.url).pathname, { headers: { 'content-type': 'text/html' } }) } as Fetcher };
-  const frame = await worker.fetch(new Request(`${origin}/admin/mmo-ui`, { headers: { cookie: owner.cookie } }), frameEnv);
+  const frame = await worker.fetch(new Request(`${origin}/quanly/mmo-ui`, { headers: { cookie: owner.cookie } }), frameEnv);
   expect(frame.status).toBe(302);
-  expect(frame.headers.get('location')).toBe(`${origin}/admin/products`);
+  expect(frame.headers.get('location')).toBe(`${origin}/quanly/products`);
   expect(frame.headers.get('x-frame-options')).toBe('DENY');
   expect(frame.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
   expect(frame.headers.get('cache-control')).toBe('no-store');
-  expect((await worker.fetch(new Request(`${origin}/admin/mmo-ui`), frameEnv)).status).toBe(401);
+  expect((await worker.fetch(new Request(`${origin}/quanly/mmo-ui`), frameEnv)).status).toBe(401);
   expect((await request('/settings', owner.cookie, { usd_rate: 26000 }, 'PUT', 'https://attacker.test')).status).toBe(403);
   expect((await request('/settings', owner.cookie, { usd_rate: 26000, categories: [{ name: 'AI', keywords: ['Claude'] }] }, 'PUT')).status).toBe(200);
   expect((await request('/providers', owner.cookie, { id: 'prodseller', name: 'Test provider', base_url: 'https://vendor.test', api_key: 'supplier-secret', auth_type: 'header', auth_key_name: 'Authorization' })).status).toBe(200);
